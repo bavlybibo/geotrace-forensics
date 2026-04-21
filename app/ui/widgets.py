@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from PyQt5.QtCore import QEasingCurve, QPropertyAnimation, QRectF, QSize, Qt, QTimer, pyqtSignal
-from PyQt5.QtGui import QColor, QFont, QPainter, QPen, QPixmap
+from PyQt5.QtGui import QColor, QFont, QPainter, QPen, QPixmap, QTextOption
 from PyQt5.QtWidgets import (
     QFrame,
+    QHBoxLayout,
     QLabel,
     QPlainTextEdit,
     QScrollArea,
@@ -80,8 +81,8 @@ class SmoothScrollArea(QScrollArea):
     def __init__(self) -> None:
         super().__init__()
         self._animation = QPropertyAnimation(self.verticalScrollBar(), b"value", self)
-        self._animation.setDuration(150)
-        self._animation.setEasingCurve(QEasingCurve.OutQuart)
+        self._animation.setDuration(120)
+        self._animation.setEasingCurve(QEasingCurve.OutCubic)
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
@@ -99,7 +100,7 @@ class SmoothScrollArea(QScrollArea):
             return
         scrollbar: QScrollBar = self.verticalScrollBar()
         step = scrollbar.singleStep()
-        multiplier = 1 if abs(delta) < 120 else 1.6
+        multiplier = 1 if abs(delta) < 120 else 2
         target = scrollbar.value() - int(delta / 120) * step * multiplier
         target = max(scrollbar.minimum(), min(scrollbar.maximum(), target))
         self._animation.stop()
@@ -169,7 +170,7 @@ class ResizableImageLabel(QLabel):
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
         if self._source_pixmap is not None:
-            self._refresh_timer.start(50)
+            self._refresh_timer.start(35)
 
     def _refresh_pixmap(self, force: bool = False) -> None:
         if self._source_pixmap is None:
@@ -201,12 +202,13 @@ class TerminalView(QPlainTextEdit):
         font = QFont("Consolas")
         if not font.exactMatch():
             font = QFont("Courier New")
-        font.setPointSize(10)
+        font.setPointSize(9)
         self.setFont(font)
-        self.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.setLineWrapMode(QPlainTextEdit.WidgetWidth)
+        self.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
         self.setTabStopDistance(32)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
 
 class NarrativeView(QTextEdit):
@@ -242,6 +244,49 @@ class AutoHeightNarrativeView(NarrativeView):
         self.setMinimumHeight(target)
         self.setMaximumHeight(target)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded if doc_height > self._max_auto_height else Qt.ScrollBarAlwaysOff)
+
+
+class EvidenceListCard(QFrame):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("EvidenceListCard")
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
+
+        self.thumb = QLabel()
+        self.thumb.setObjectName("EvidenceThumb")
+        self.thumb.setFixedSize(72, 56)
+        self.thumb.setAlignment(Qt.AlignCenter)
+
+        body = QVBoxLayout()
+        body.setSpacing(5)
+        self.title_label = QLabel("Awaiting evidence")
+        self.title_label.setObjectName("EvidenceCardTitle")
+        self.title_label.setWordWrap(True)
+        self.meta_label = QLabel("No metadata yet")
+        self.meta_label.setObjectName("EvidenceCardMeta")
+        self.meta_label.setWordWrap(True)
+        self.badge_label = QLabel("—")
+        self.badge_label.setObjectName("EvidenceCardBadges")
+        self.badge_label.setWordWrap(True)
+        body.addWidget(self.title_label)
+        body.addWidget(self.meta_label)
+        body.addWidget(self.badge_label)
+
+        layout.addWidget(self.thumb)
+        layout.addLayout(body, 1)
+
+    def set_content(self, pixmap: QPixmap | None, title: str, meta: str, badges: str) -> None:
+        if pixmap is not None and not pixmap.isNull():
+            self.thumb.setPixmap(pixmap.scaled(self.thumb.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        else:
+            placeholder = QPixmap(self.thumb.size())
+            placeholder.fill(QColor("#081523"))
+            self.thumb.setPixmap(placeholder)
+        self.title_label.setText(title)
+        self.meta_label.setText(meta)
+        self.badge_label.setText(badges)
 
 
 class ChartCard(QFrame):
