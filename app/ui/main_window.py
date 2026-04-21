@@ -8,8 +8,8 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-from PyQt5.QtCore import Qt, QSize
-from PyQt5.QtGui import QColor, QFont, QIcon, QPixmap
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QColor, QIcon, QPixmap
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -25,7 +25,6 @@ from PyQt5.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
-    QScrollArea,
     QSplitter,
     QStyle,
     QTableWidget,
@@ -41,7 +40,7 @@ from app.core.map_service import MapService
 from app.core.models import EvidenceRecord
 from app.core.report_service import ReportService
 from .styles import APP_STYLESHEET
-from .widgets import ChartCard, StatCard
+from .widgets import ChartCard, ResizableImageLabel, StatCard, TerminalView
 
 
 class GeoTraceMainWindow(QMainWindow):
@@ -60,8 +59,8 @@ class GeoTraceMainWindow(QMainWindow):
         self.assets_dir = project_root / "assets"
 
         self.setWindowTitle("GeoTrace Forensics X — Image Metadata & Geolocation Analysis")
-        self.resize(1680, 1040)
-        self.setMinimumSize(1360, 860)
+        self.resize(1780, 1080)
+        self.setMinimumSize(1460, 900)
         self.setStyleSheet(APP_STYLESHEET)
         icon_path = self.assets_dir / "app_icon.png"
         if icon_path.exists():
@@ -80,7 +79,6 @@ class GeoTraceMainWindow(QMainWindow):
         root.addWidget(self._build_stat_cards())
         root.addWidget(self._build_controls())
         root.addWidget(self._build_main_area(), 1)
-        root.addWidget(self._build_footer())
 
         self.setCentralWidget(central)
 
@@ -110,7 +108,7 @@ class GeoTraceMainWindow(QMainWindow):
         self.mode_badge.setObjectName("BadgeLabel")
         self.export_badge = QLabel("Exports: Ready")
         self.export_badge.setObjectName("BadgeLabel")
-        self.formats_badge = QLabel("Formats: JPG • PNG • TIFF • WEBP • BMP • GIF • HEIC")
+        self.formats_badge = QLabel("Formats: JPG • JPEG • PNG • TIFF • WEBP • BMP • GIF • HEIC")
         self.formats_badge.setObjectName("BadgeLabel")
         for badge in [self.case_badge, self.mode_badge, self.export_badge, self.formats_badge]:
             badge_row.addWidget(badge)
@@ -193,7 +191,7 @@ class GeoTraceMainWindow(QMainWindow):
 
         self.btn_open_map = QPushButton("Open Geolocation Map")
         self.btn_open_map.setObjectName("GhostButton")
-        self.btn_open_map.setIcon(self.style().standardIcon(QStyle.SP_ArrowUp))
+        self.btn_open_map.setIcon(self.style().standardIcon(QStyle.SP_DialogHelpButton))
         self.btn_open_map.clicked.connect(self.open_map)
         self.btn_open_map.setEnabled(False)
 
@@ -230,7 +228,7 @@ class GeoTraceMainWindow(QMainWindow):
         splitter.setChildrenCollapsible(False)
         splitter.addWidget(self._build_left_panel())
         splitter.addWidget(self._build_right_panel())
-        splitter.setSizes([980, 680])
+        splitter.setSizes([460, 1220])
         return splitter
 
     def _build_left_panel(self) -> QWidget:
@@ -287,6 +285,7 @@ class GeoTraceMainWindow(QMainWindow):
         layout.setSpacing(12)
 
         self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
         self.tabs.addTab(self._build_preview_tab(), "Preview")
         self.tabs.addTab(self._build_metadata_tab(), "Metadata")
         self.tabs.addTab(self._build_geo_tab(), "Geo")
@@ -299,108 +298,122 @@ class GeoTraceMainWindow(QMainWindow):
     def _build_preview_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
-        layout.setSpacing(12)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
 
-        title = QLabel("Evidence Preview")
-        title.setObjectName("SectionLabel")
+        split = QSplitter(Qt.Horizontal)
+        split.setChildrenCollapsible(False)
 
-        preview_split = QSplitter(Qt.Vertical)
-        preview_split.setChildrenCollapsible(False)
-
-        preview_shell = QLabel()
-        preview_shell.setObjectName("PreviewShell")
+        preview_shell = QFrame()
+        preview_shell.setObjectName("PanelFrame")
         preview_layout = QVBoxLayout(preview_shell)
         preview_layout.setContentsMargins(12, 12, 12, 12)
-        self.image_preview = QLabel("No evidence selected")
-        self.image_preview.setAlignment(Qt.AlignCenter)
-        self.image_preview.setMinimumHeight(320)
-        self.image_preview.setStyleSheet("border: 1px dashed #2b527e; border-radius: 16px; background:#081524; padding: 12px;")
-        self.image_preview.setWordWrap(True)
-        preview_layout.addWidget(self.image_preview)
+        preview_layout.setSpacing(8)
+        self.image_preview = ResizableImageLabel(
+            "Select an evidence item to inspect preview, metadata, and image intelligence.",
+            min_height=620,
+        )
+        self.image_preview.setStyleSheet(
+            "border: 1px dashed #2b527e; border-radius: 16px; background:#06111d; padding: 12px;"
+        )
+        preview_layout.addWidget(self.image_preview, 1)
 
-        summary_shell = QFrame()
-        summary_shell.setObjectName("PanelFrame")
-        summary_layout = QVBoxLayout(summary_shell)
-        summary_layout.setContentsMargins(14, 14, 14, 14)
-        summary_title = QLabel("Evidence Intelligence Summary")
-        summary_title.setObjectName("SectionLabel")
-        self.summary_text = QTextEdit()
-        self.summary_text.setReadOnly(True)
-        self.summary_text.setMinimumHeight(220)
-        summary_layout.addWidget(summary_title)
-        summary_layout.addWidget(self.summary_text, 1)
+        terminal_shell = QFrame()
+        terminal_shell.setObjectName("PanelFrame")
+        terminal_layout = QVBoxLayout(terminal_shell)
+        terminal_layout.setContentsMargins(12, 12, 12, 12)
+        terminal_layout.setSpacing(8)
+        summary_label = QLabel("Evidence Intelligence Terminal")
+        summary_label.setObjectName("SectionLabel")
+        self.summary_text = TerminalView("Executive evidence summary will appear here.")
+        self.summary_text.setMinimumWidth(420)
+        terminal_layout.addWidget(summary_label)
+        terminal_layout.addWidget(self.summary_text, 1)
 
-        preview_split.addWidget(preview_shell)
-        preview_split.addWidget(summary_shell)
-        preview_split.setSizes([340, 260])
+        split.addWidget(preview_shell)
+        split.addWidget(terminal_shell)
+        split.setSizes([740, 460])
 
-        layout.addWidget(title)
-        layout.addWidget(preview_split, 1)
+        layout.addWidget(split, 1)
         return widget
 
     def _build_metadata_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
-        layout.setSpacing(12)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
 
-        title = QLabel("Metadata Intelligence")
-        title.setObjectName("SectionLabel")
-        self.metadata_view = QTextEdit()
-        self.metadata_view.setReadOnly(True)
+        split = QSplitter(Qt.Vertical)
+        split.setChildrenCollapsible(False)
 
-        notes_title = QLabel("Investigator Notes")
-        notes_title.setObjectName("SectionLabel")
+        self.metadata_view = TerminalView("Metadata extraction details will appear here.")
+        metadata_shell = QFrame()
+        metadata_shell.setObjectName("PanelFrame")
+        metadata_layout = QVBoxLayout(metadata_shell)
+        metadata_layout.setContentsMargins(12, 12, 12, 12)
+        metadata_label = QLabel("Metadata Terminal")
+        metadata_label.setObjectName("SectionLabel")
+        metadata_layout.addWidget(metadata_label)
+        metadata_layout.addWidget(self.metadata_view, 1)
+
+        notes_shell = QFrame()
+        notes_shell.setObjectName("PanelFrame")
+        notes_layout = QVBoxLayout(notes_shell)
+        notes_layout.setContentsMargins(12, 12, 12, 12)
+        notes_layout.setSpacing(8)
+        notes_label = QLabel("Investigator Notes")
+        notes_label.setObjectName("SectionLabel")
         self.note_editor = QTextEdit()
-        self.note_editor.setPlaceholderText("Add analyst observations, significance, or questions for the selected evidence item...")
-        self.note_editor.setMaximumHeight(110)
+        self.note_editor.setPlaceholderText("Add analyst observations, significance, correlation ideas, or follow-up questions for the selected evidence item...")
+        self.note_editor.setMaximumHeight(140)
         save_button = QPushButton("Save Investigator Note")
         save_button.clicked.connect(self.save_note)
+        notes_layout.addWidget(notes_label)
+        notes_layout.addWidget(self.note_editor)
+        notes_layout.addWidget(save_button)
 
-        layout.addWidget(title)
-        layout.addWidget(self.metadata_view, 1)
-        layout.addWidget(notes_title)
-        layout.addWidget(self.note_editor)
-        layout.addWidget(save_button)
+        split.addWidget(metadata_shell)
+        split.addWidget(notes_shell)
+        split.setSizes([560, 180])
+
+        layout.addWidget(split, 1)
         return widget
 
     def _build_geo_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
-        layout.setSpacing(12)
-        title = QLabel("Geolocation & OSINT Leads")
-        title.setObjectName("SectionLabel")
-        self.geo_text = QTextEdit()
-        self.geo_text.setReadOnly(True)
-        self.geo_text.setPlaceholderText("GPS findings, altitude, map availability, and investigation leads will appear here.")
-        open_map_btn = QPushButton("Open Current Map in Browser")
-        open_map_btn.clicked.connect(self.open_map)
-        self.geo_open_map_btn = open_map_btn
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
+
+        top_row = QHBoxLayout()
+        status = QLabel("Location intelligence, GPS parsing, and OSINT leads")
+        status.setObjectName("MutedLabel")
+        top_row.addWidget(status)
+        top_row.addStretch(1)
+        self.geo_open_map_btn = QPushButton("Open Current Map in Browser")
+        self.geo_open_map_btn.clicked.connect(self.open_map)
         self.geo_open_map_btn.setEnabled(False)
-        layout.addWidget(title)
+        top_row.addWidget(self.geo_open_map_btn)
+
+        self.geo_text = TerminalView("GPS findings, altitude, map availability, and investigation leads will appear here.")
+        layout.addLayout(top_row)
         layout.addWidget(self.geo_text, 1)
-        layout.addWidget(open_map_btn)
         return widget
 
     def _build_timeline_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
-        layout.setSpacing(12)
-        title = QLabel("Timeline & Alerts")
-        title.setObjectName("SectionLabel")
-        self.timeline_text = QPlainTextEdit()
-        self.timeline_text.setReadOnly(True)
-        layout.addWidget(title)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
+        self.timeline_text = TerminalView("Timeline output will appear here after evidence is loaded.")
         layout.addWidget(self.timeline_text, 1)
         return widget
 
     def _build_insights_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(12)
-
-        info = QLabel("Operational image-intelligence dashboards: source distribution, risk profile, and duplicate cluster overview.")
-        info.setObjectName("SubtitleLabel")
-        layout.addWidget(info)
 
         chart_grid = QGridLayout()
         chart_grid.setHorizontalSpacing(12)
@@ -411,45 +424,26 @@ class GeoTraceMainWindow(QMainWindow):
         chart_grid.addWidget(self.chart_sources, 0, 0)
         chart_grid.addWidget(self.chart_risks, 0, 1)
         chart_grid.addWidget(self.chart_duplicates, 1, 0, 1, 2)
-        layout.addLayout(chart_grid)
+        chart_grid.setColumnStretch(0, 1)
+        chart_grid.setColumnStretch(1, 1)
+        layout.addLayout(chart_grid, 1)
         return widget
 
     def _build_custody_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
-        layout.setSpacing(12)
-        title = QLabel("Chain of Custody")
-        title.setObjectName("SectionLabel")
-        self.custody_text = QPlainTextEdit()
-        self.custody_text.setReadOnly(True)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
+        controls = QHBoxLayout()
+        controls.addWidget(QLabel("Evidence acquisition and action log"))
+        controls.addStretch(1)
         refresh_button = QPushButton("Refresh Custody Log")
         refresh_button.clicked.connect(self.populate_custody_log)
-        layout.addWidget(title)
+        controls.addWidget(refresh_button)
+        self.custody_text = TerminalView("No chain-of-custody activity logged yet.")
+        layout.addLayout(controls)
         layout.addWidget(self.custody_text, 1)
-        layout.addWidget(refresh_button)
         return widget
-
-    def _build_footer(self) -> QWidget:
-        frame = QFrame()
-        frame.setObjectName("PanelFrame")
-        layout = QGridLayout(frame)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setHorizontalSpacing(18)
-        layout.setVerticalSpacing(8)
-
-        tips = [
-            "SHA-256 + MD5 hashing and perceptual fingerprinting on evidence import",
-            "GPS extraction, altitude parsing, and interactive map generation for location-enabled media",
-            "Context-aware anomaly scoring to reduce false positives on screenshots and chat exports",
-            "Timestamp recovery hierarchy: EXIF → filename patterns → filesystem times",
-            "Rich metadata extraction: format, color mode, DPI, lens, ISO, exposure, authoring tags",
-            "HTML, PDF, CSV, and JSON reporting for demos, documentation, and case packaging",
-        ]
-        for idx, text in enumerate(tips):
-            label = QLabel(f"• {text}")
-            label.setObjectName("SubtitleLabel")
-            layout.addWidget(label, idx // 2, idx % 2)
-        return frame
 
     def import_images(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(
@@ -471,7 +465,7 @@ class GeoTraceMainWindow(QMainWindow):
         self.progress_bar.setValue(10)
         self.records = self.case_manager.load_images(paths)
         self.progress_bar.setFormat("Extracting metadata…")
-        self.progress_bar.setValue(50)
+        self.progress_bar.setValue(55)
         self.filtered_records = list(self.records)
         self.populate_table(self.filtered_records)
         self.refresh_dashboard()
@@ -499,7 +493,7 @@ class GeoTraceMainWindow(QMainWindow):
             values = [
                 record.evidence_id,
                 record.file_name,
-                record.timestamp.replace(':', '-', 2) if record.timestamp != 'Unknown' else 'Unknown',
+                self._display_timestamp(record.timestamp),
                 record.source_type,
                 record.device_model,
                 record.gps_display,
@@ -522,13 +516,18 @@ class GeoTraceMainWindow(QMainWindow):
                 if column == 8:
                     item.setForeground(QColor("#9fe8ff"))
                 self.table.setItem(row, column, item)
-            self.table.setRowHeight(row, 40)
+            self.table.setRowHeight(row, 42)
 
         self.table.setSortingEnabled(True)
         if self.table.rowCount() == 0:
             self.inventory_meta.setText("No results match the current filter.")
         else:
             self.inventory_meta.setText(f"Showing {len(records)} evidence items.")
+
+    def _display_timestamp(self, timestamp: str) -> str:
+        if timestamp == "Unknown":
+            return timestamp
+        return timestamp.replace(":", "-", 2)
 
     def refresh_dashboard(self) -> None:
         stats = self.case_manager.build_stats()
@@ -572,7 +571,9 @@ class GeoTraceMainWindow(QMainWindow):
                 continue
             if mode == "Low Risk" and record.risk_level != "Low":
                 continue
-            if mode == "Screenshots / Exports" and not ("Screenshot" in record.source_type or "Messaging" in record.source_type):
+            if mode == "Screenshots / Exports" and not (
+                "Screenshot" in record.source_type or "Messaging" in record.source_type
+            ):
                 continue
             if mode == "Camera Photos" and record.source_type != "Camera Photo":
                 continue
@@ -604,8 +605,9 @@ class GeoTraceMainWindow(QMainWindow):
 
     def clear_details(self) -> None:
         self.current_preview_pixmap = None
-        self.image_preview.clear()
-        self.image_preview.setText("Select an evidence item to inspect preview, metadata, geolocation, and OSINT leads.")
+        self.image_preview.clear_source(
+            "Select an evidence item to inspect preview, metadata, geolocation, and OSINT leads."
+        )
         self.summary_text.clear()
         self.metadata_view.clear()
         self.note_editor.clear()
@@ -615,15 +617,7 @@ class GeoTraceMainWindow(QMainWindow):
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
         if self.current_preview_pixmap is not None:
-            self._set_preview_pixmap(self.current_preview_pixmap)
-
-    def _set_preview_pixmap(self, pixmap: QPixmap) -> None:
-        if pixmap.isNull():
-            self.image_preview.setText("Preview unavailable")
-            return
-        target = self.image_preview.size() - QSize(24, 24)
-        scaled = pixmap.scaled(target, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        self.image_preview.setPixmap(scaled)
+            self.image_preview.set_source_pixmap(self.current_preview_pixmap)
 
     def populate_details(self) -> None:
         record = self.selected_record()
@@ -635,108 +629,140 @@ class GeoTraceMainWindow(QMainWindow):
         pixmap = QPixmap(str(record.file_path))
         self.current_preview_pixmap = pixmap if not pixmap.isNull() else None
         if self.current_preview_pixmap is not None:
-            self._set_preview_pixmap(self.current_preview_pixmap)
+            self.image_preview.set_source_pixmap(self.current_preview_pixmap)
         else:
-            self.image_preview.setText("Preview unavailable for the selected evidence item.")
+            self.image_preview.clear_source("Preview unavailable for the selected evidence item.")
 
-        summary_html = f"""
-        <h3 style='color:#8edfff; margin:0 0 8px 0;'>Executive Evidence Summary</h3>
-        <p><b>Evidence ID:</b> {record.evidence_id}<br>
-        <b>File:</b> {record.file_name}<br>
-        <b>Source Type:</b> {record.source_type}<br>
-        <b>Timestamp:</b> {record.timestamp} <span style='color:#8caac7;'>({record.timestamp_source})</span><br>
-        <b>Device:</b> {record.device_model}<br>
-        <b>Dimensions:</b> {record.dimensions} | <b>Format:</b> {record.format_name} | <b>Color Mode:</b> {record.color_mode}<br>
-        <b>GPS:</b> {record.gps_display}<br>
-        <b>Risk:</b> {record.risk_level} ({record.suspicion_score}/100) | <b>Confidence:</b> {record.confidence_score}/100</p>
-        <h4 style='color:#8edfff;'>Key Findings</h4>
-        <ul>{''.join(f'<li>{reason}</li>' for reason in record.anomaly_reasons)}</ul>
-        <h4 style='color:#8edfff;'>Investigation / OSINT Leads</h4>
-        <ul>{''.join(f'<li>{lead}</li>' for lead in record.osint_leads)}</ul>
-        """
-        self.summary_text.setHtml(summary_html)
+        self.summary_text.setPlainText(self._build_summary_text(record))
+        self.metadata_view.setPlainText(self._build_metadata_text(record))
+        self.geo_text.setPlainText(self._build_geo_text(record))
 
-        metadata_rows = [
-            ("File Path", str(record.file_path)),
-            ("File Size", f"{record.file_size:,} bytes"),
-            ("Format", record.format_name),
-            ("Dimensions", record.dimensions),
-            ("Color Mode", record.color_mode),
-            ("Alpha Channel", "Yes" if record.has_alpha else "No"),
-            ("DPI", record.dpi),
-            ("Timestamp", record.timestamp),
-            ("Timestamp Source", record.timestamp_source),
-            ("Filesystem Created", record.created_time),
-            ("Filesystem Modified", record.modified_time),
-            ("Source Type", record.source_type),
-            ("Camera / Device", record.device_model),
-            ("Software", record.software),
-            ("Orientation", record.orientation),
-            ("Lens Model", record.lens_model),
-            ("ISO", record.iso),
-            ("Exposure Time", record.exposure_time),
-            ("F-Number", record.f_number),
-            ("Focal Length", record.focal_length),
-            ("Artist", record.artist),
-            ("Copyright", record.copyright_notice),
-            ("GPS", record.gps_display),
-            ("GPS Altitude", f"{record.gps_altitude:.2f} m" if record.gps_altitude is not None else "Unavailable"),
-            ("SHA-256", record.sha256),
-            ("MD5", record.md5),
-            ("Perceptual Hash", record.perceptual_hash),
-            ("Duplicate Cluster", record.duplicate_group or "None"),
-            ("Integrity", record.integrity_status),
+    def _build_summary_text(self, record: EvidenceRecord) -> str:
+        lines = [
+            "[ EXECUTIVE EVIDENCE SUMMARY ]",
+            "=" * 88,
+            f"Evidence ID        : {record.evidence_id}",
+            f"File               : {record.file_name}",
+            f"Path               : {record.file_path}",
+            f"Source Type        : {record.source_type}",
+            f"Timestamp          : {record.timestamp}",
+            f"Timestamp Source   : {record.timestamp_source}",
+            f"Device / Camera    : {record.device_model}",
+            f"Software Tag       : {record.software}",
+            f"Dimensions         : {record.dimensions}",
+            f"Format / Mode      : {record.format_name} / {record.color_mode}",
+            f"GPS                : {record.gps_display}",
+            f"Risk / Score       : {record.risk_level} / {record.suspicion_score}",
+            f"Confidence         : {record.confidence_score}",
+            f"Integrity          : {record.integrity_status}",
+            f"Duplicate Cluster  : {record.duplicate_group or 'None'}",
+            "",
+            "[ KEY FINDINGS ]",
+            "-" * 88,
         ]
-        metadata_html = "<table style='width:100%; border-collapse:collapse;'>" + "".join(
-            f"<tr><td style='padding:6px 8px; color:#88dfff; width:210px; vertical-align:top;'><b>{key}</b></td>"
-            f"<td style='padding:6px 8px; color:#eef6ff;'>{value}</td></tr>"
-            for key, value in metadata_rows
-        ) + "</table>"
-        if record.exif:
-            metadata_html += "<h3 style='color:#8edfff; margin-top:14px;'>Embedded EXIF Tags</h3><table style='width:100%; border-collapse:collapse;'>"
-            for key, value in sorted(record.exif.items()):
-                metadata_html += (
-                    f"<tr><td style='padding:5px 8px; color:#88dfff; width:240px; vertical-align:top;'><b>{key}</b></td>"
-                    f"<td style='padding:5px 8px; color:#eef6ff;'>{value}</td></tr>"
-                )
-            metadata_html += "</table>"
-        self.metadata_view.setHtml(metadata_html)
+        lines.extend([f"- {item}" for item in (record.anomaly_reasons or ["No major metadata anomalies were detected."])])
+        lines.extend([
+            "",
+            "[ FOLLOW-UP LEADS ]",
+            "-" * 88,
+        ])
+        lines.extend([f"- {lead}" for lead in record.osint_leads])
+        return "\n".join(lines)
 
-        geo_html = f"""
-        <h3 style='color:#8edfff;'>Location Intelligence</h3>
-        <p><b>GPS Coordinates:</b> {record.gps_display}<br>
-        <b>Altitude:</b> {f'{record.gps_altitude:.2f} m' if record.gps_altitude is not None else 'Unavailable'}<br>
-        <b>Map Package:</b> {'Available' if self.current_map_path else 'Not generated'}<br>
-        <b>Source Type:</b> {record.source_type}</p>
-        <h3 style='color:#8edfff;'>Recommended Follow-up</h3>
-        <ul>{''.join(f'<li>{lead}</li>' for lead in record.osint_leads)}</ul>
-        """
-        self.geo_text.setHtml(geo_html)
+    def _build_metadata_text(self, record: EvidenceRecord) -> str:
+        sections = [
+            "[ METADATA TERMINAL ]",
+            "=" * 100,
+            f"File Path              : {record.file_path}",
+            f"File Size              : {record.file_size:,} bytes",
+            f"Format                 : {record.format_name}",
+            f"Dimensions             : {record.dimensions}",
+            f"Color Mode             : {record.color_mode}",
+            f"Alpha Channel          : {'Yes' if record.has_alpha else 'No'}",
+            f"DPI                    : {record.dpi}",
+            f"Timestamp              : {record.timestamp}",
+            f"Timestamp Source       : {record.timestamp_source}",
+            f"Filesystem Created     : {record.created_time}",
+            f"Filesystem Modified    : {record.modified_time}",
+            f"Source Type            : {record.source_type}",
+            f"Camera / Device        : {record.device_model}",
+            f"Camera Make            : {record.camera_make}",
+            f"Software               : {record.software}",
+            f"Orientation            : {record.orientation}",
+            f"Lens Model             : {record.lens_model}",
+            f"ISO                    : {record.iso}",
+            f"Exposure Time          : {record.exposure_time}",
+            f"F-Number               : {record.f_number}",
+            f"Focal Length           : {record.focal_length}",
+            f"Artist                 : {record.artist}",
+            f"Copyright              : {record.copyright_notice}",
+            f"GPS                    : {record.gps_display}",
+            f"GPS Altitude           : {f'{record.gps_altitude:.2f} m' if record.gps_altitude is not None else 'Unavailable'}",
+            f"SHA-256                : {record.sha256}",
+            f"MD5                    : {record.md5}",
+            f"Perceptual Hash        : {record.perceptual_hash}",
+            f"Duplicate Cluster      : {record.duplicate_group or 'None'}",
+            f"Integrity              : {record.integrity_status}",
+        ]
+        if record.exif:
+            sections.extend(["", "[ EMBEDDED EXIF TAGS ]", "-" * 100])
+            for key, value in sorted(record.exif.items()):
+                sections.append(f"{key:<26}: {value}")
+        return "\n".join(sections)
+
+    def _build_geo_text(self, record: EvidenceRecord) -> str:
+        lines = [
+            "[ GEOLOCATION & OSINT LEADS ]",
+            "=" * 92,
+            f"Evidence ID           : {record.evidence_id}",
+            f"GPS Coordinates       : {record.gps_display}",
+            f"Altitude              : {f'{record.gps_altitude:.2f} m' if record.gps_altitude is not None else 'Unavailable'}",
+            f"Map Package           : {'Available' if self.current_map_path else 'Not generated'}",
+            f"Source Type           : {record.source_type}",
+            f"Timestamp             : {record.timestamp} ({record.timestamp_source})",
+            "",
+            "[ RECOMMENDED FOLLOW-UP ]",
+            "-" * 92,
+        ]
+        lines.extend([f"- {lead}" for lead in record.osint_leads])
+        if record.has_gps:
+            lines.extend([
+                "",
+                "[ MAP WORKFLOW ]",
+                "-" * 92,
+                "1. Validate recovered coordinates on the interactive map.",
+                "2. Compare the point with known venues, transit corridors, or CCTV coverage.",
+                "3. Correlate the recovered time with witness, chat, or upload timestamps.",
+            ])
+        return "\n".join(lines)
 
     def populate_timeline(self) -> None:
         if not self.case_manager.records:
             self.timeline_text.setPlainText("No evidence loaded yet.")
             return
-        ordered = sorted(
-            self.case_manager.records,
-            key=lambda r: (r.timestamp == "Unknown", r.timestamp),
-        )
-        lines = ["EVENT TIMELINE", "=" * 72]
+        ordered = sorted(self.case_manager.records, key=lambda r: (r.timestamp == "Unknown", r.timestamp))
+        lines = [
+            "[ EVENT TIMELINE ]",
+            "=" * 100,
+        ]
         for record in ordered:
             lines.append(
-                f"{record.timestamp} | {record.evidence_id} | Score {record.suspicion_score} | {record.risk_level} | {record.source_type}"
+                f"{record.timestamp:<19} | {record.evidence_id:<8} | {record.risk_level:<6} | Score {record.suspicion_score:<3} | {record.source_type}"
             )
-            lines.append(f"File: {record.file_name}")
-            lines.append(f"GPS: {record.gps_display} | Device: {record.device_model} | Time Source: {record.timestamp_source}")
+            lines.append(f"  File      : {record.file_name}")
+            lines.append(f"  GPS       : {record.gps_display}")
+            lines.append(f"  Device    : {record.device_model}")
+            lines.append(f"  Time Src  : {record.timestamp_source}")
             for reason in record.anomaly_reasons[:3]:
-                lines.append(f"  - {reason}")
+                lines.append(f"  Finding   : {reason}")
             if record.duplicate_group:
-                lines.append(f"  - Duplicate cluster: {record.duplicate_group}")
-            lines.append("")
+                lines.append(f"  Duplicate : {record.duplicate_group}")
+            lines.append("-" * 100)
         self.timeline_text.setPlainText("\n".join(lines))
 
     def populate_custody_log(self) -> None:
-        self.custody_text.setPlainText(self.case_manager.export_chain_of_custody())
+        log = self.case_manager.export_chain_of_custody()
+        self.custody_text.setPlainText("[ CHAIN OF CUSTODY ]\n" + "=" * 92 + "\n" + log)
 
     def save_note(self) -> None:
         record = self.selected_record()
@@ -748,12 +774,13 @@ class GeoTraceMainWindow(QMainWindow):
         record.note = note
         self.show_info("Note Saved", f"Investigator note updated for {record.evidence_id}.")
         self.populate_details()
+        self.populate_custody_log()
 
     def update_charts(self) -> None:
         records = self.case_manager.records
         if not records:
             for card in [self.chart_sources, self.chart_risks, self.chart_duplicates]:
-                card.image_label.setText("Load evidence to generate charts.")
+                card.set_chart_pixmap(None, "Load evidence to generate charts.")
                 card.caption.setText("")
             return
 
@@ -765,7 +792,7 @@ class GeoTraceMainWindow(QMainWindow):
             list(source_counts.keys()),
             list(source_counts.values()),
             "Evidence Count",
-            "Operational split between screenshots, camera photos, messaging exports, and edited media.",
+            "Distribution across screenshots, camera photos, messaging exports, and edited media.",
             self.export_dir / "chart_sources.png",
         )
 
@@ -776,7 +803,7 @@ class GeoTraceMainWindow(QMainWindow):
             risk_order,
             risk_counts,
             "Count",
-            "Metadata-anomaly distribution after context-aware scoring.",
+            "Risk profile after context-aware anomaly scoring.",
             self.export_dir / "chart_risks.png",
         )
 
@@ -797,27 +824,52 @@ class GeoTraceMainWindow(QMainWindow):
             rotate_labels=True,
         )
 
-    def _render_bar_chart(self, card: ChartCard, labels: List[str], values: List[int], ylabel: str, caption: str, output_path: Path, rotate_labels: bool = False) -> None:
-        plt.close('all')
-        fig, ax = plt.subplots(figsize=(7.0, 3.0), dpi=160)
-        fig.patch.set_facecolor('#081524')
-        ax.set_facecolor('#081524')
-        bars = ax.bar(range(len(labels)), values, color=['#18b2ff', '#42d8ff', '#8bdfff', '#0f72bb'][:len(labels)])
+    def _render_bar_chart(
+        self,
+        card: ChartCard,
+        labels: List[str],
+        values: List[int],
+        ylabel: str,
+        caption: str,
+        output_path: Path,
+        rotate_labels: bool = False,
+    ) -> None:
+        plt.close("all")
+        fig, ax = plt.subplots(figsize=(8.8, 3.8), dpi=170)
+        fig.patch.set_facecolor("#06111d")
+        ax.set_facecolor("#06111d")
+        colors = ["#20beff", "#4bdfff", "#7ed8ff", "#2386d1"]
+        bars = ax.bar(range(len(labels)), values, color=colors[: len(labels)], edgecolor="#9ae8ff", linewidth=0.5)
         ax.set_xticks(range(len(labels)))
-        ax.set_xticklabels(labels, rotation=18 if rotate_labels else 0, ha='right' if rotate_labels else 'center', color='#e8f4ff', fontsize=8)
-        ax.tick_params(axis='y', colors='#cce7ff', labelsize=8)
-        ax.set_ylabel(ylabel, color='#cce7ff', fontsize=9)
+        ax.set_xticklabels(
+            labels,
+            rotation=18 if rotate_labels else 0,
+            ha="right" if rotate_labels else "center",
+            color="#e8f4ff",
+            fontsize=9,
+        )
+        ax.tick_params(axis="y", colors="#cce7ff", labelsize=9)
+        ax.set_ylabel(ylabel, color="#cce7ff", fontsize=10)
+        ax.margins(x=0.08)
         for spine in ax.spines.values():
-            spine.set_color('#2f5c8e')
-        ax.grid(axis='y', alpha=0.18)
+            spine.set_color("#2f5c8e")
+        ax.grid(axis="y", alpha=0.18, color="#7ecfff")
         for bar, value in zip(bars, values):
-            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.03, str(value), ha='center', va='bottom', color='#ffffff', fontsize=8)
-        plt.tight_layout()
-        fig.savefig(output_path, transparent=False)
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.05,
+                str(value),
+                ha="center",
+                va="bottom",
+                color="#ffffff",
+                fontsize=9,
+                fontweight="bold",
+            )
+        fig.tight_layout(pad=1.2)
+        fig.savefig(output_path, facecolor=fig.get_facecolor(), bbox_inches="tight")
         plt.close(fig)
         pixmap = QPixmap(str(output_path))
-        if not pixmap.isNull():
-            card.image_label.setPixmap(pixmap.scaled(card.image_label.size() or QSize(620, 230), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        card.set_chart_pixmap(pixmap, "Chart unavailable")
         card.caption.setText(caption)
 
     def open_map(self) -> None:
