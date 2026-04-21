@@ -220,8 +220,7 @@ def compute_perceptual_hash(file_path: Path) -> str:
             if getattr(image, "is_animated", False):
                 image.seek(0)
             image = image.convert("L").resize((9, 8))
-            flattened = image.getdata()
-            pixels = list(flattened)
+            pixels = list(image.get_flattened_data())
         rows = [pixels[i * 9:(i + 1) * 9] for i in range(8)]
         bits = []
         for row in rows:
@@ -246,6 +245,108 @@ def extract_exif(file_path: Path) -> Dict[str, str]:
     except Exception:
         data["__raw_tags__"] = {}
     return data
+
+def extract_embedded_text_hints(file_path: Path, format_name: str = "Unknown") -> Dict[str, object]:
+    try:
+        blob = file_path.read_bytes()
+    except Exception:
+        return {
+            "strings": [],
+            "code_indicators": [],
+            "summary": "The file bytes could not be read for hidden-content scanning.",
+            "overview": "Embedded text and hidden-code scan unavailable.",
+            "urls": [],
+        }
+
+    if not blob:
+        return {
+            "strings": [],
+            "code_indicators": [],
+            "summary": "No byte content was available for hidden-content scanning.",
+            "overview": "Embedded text and hidden-code scan unavailable.",
+            "urls": [],
+        }
+
+    ascii_strings = [
+        s.decode("utf-8", errors="ignore").strip()
+        for s in re.findall(rb"[\x20-\x7e]{8,}", blob)
+    ]
+    seen = set()
+    cleaned: list[str] = []
+    for item in ascii_strings:
+        item = re.sub(r"\s+", " ", item).strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        cleaned.append(item)
+    urls = []
+    url_seen = set()
+    for item in cleaned:
+        for match in re.findall(r"""https?://[^\s"'<>]+""", item, flags=re.IGNORECASE):
+            if match not in url_seen:
+                url_seen.add(match)
+                urls.append(match)
+
+    suspicious_patterns = [
+        (r"<script\b", "HTML/JavaScript <script> marker"),
+        (r"javascript:", "javascript: URI payload"),
+        (r"<svg\b", "SVG/vector payload marker"),
+        (r"onload=|onerror=", "HTML event-handler payload marker"),
+        (r"<\?php", "PHP code marker"),
+        (r"eval\(", "eval() marker"),
+        (r"document\.cookie|localStorage|sessionStorage", "browser data access marker"),
+        (r"powershell|cmd\.exe|/bin/bash|curl\s|wget\s", "shell / command execution marker"),
+        (r"base64,|frombase64string|atob\(", "base64 payload marker"),
+        (r"import\s+os|subprocess\.|__import__", "Python execution marker"),
+        (r"SELECT\s+.+FROM|UNION\s+SELECT", "SQL payload marker"),
+        (r"token=|api[_-]?key|secret|password=|authorization:", "credential/token marker"),
+        (r"-----BEGIN [A-Z ]+-----", "embedded key / certificate block"),
+    ]
+    code_indicators: list[str] = []
+    preview_strings: list[str] = []
+    for item in cleaned:
+        lower = item.lower()
+        matched = False
+        for pattern, label in suspicious_patterns:
+            if re.search(pattern, item, flags=re.IGNORECASE):
+                indicator = f"{label}: {item[:140]}"
+                if indicator not in code_indicators:
+                    code_indicators.append(indicator)
+                matched = True
+        if matched or any(token in lower for token in ["http://", "https://", "data:", "script", "token", "secret", "password", "key", "cmd", "curl", "wget"]):
+            if item not in preview_strings:
+                preview_strings.append(item[:180])
+        if len(preview_strings) >= 12 and len(code_indicators) >= 8:
+            break
+
+    format_hint = str(format_name or file_path.suffix.upper().replace('.', '') or 'Unknown')
+    if file_path.suffix.lower() == '.svg' or any('<svg' in s.lower() for s in cleaned[:8]):
+        code_indicators.insert(0, 'SVG content can legally contain scripts, hyperlinks, CSS, and embedded XML payloads.')
+
+    if code_indicators:
+        summary = (
+            f"Potential embedded code/content markers were found during byte-level scanning. "
+            f"Indicators: {min(len(code_indicators), 8)} shown. Treat this as heuristic evidence until a manual parser confirms the payload context."
+        )
+        overview = (
+            f"Embedded text scan for {format_hint}: {len(preview_strings) or len(cleaned)} readable string(s) recovered, "
+            f"with {len(code_indicators)} code-like or credential-like marker(s)."
+        )
+    elif cleaned:
+        summary = f"Readable embedded strings were recovered from the {format_hint} container, but no strong script/code markers were detected."
+        overview = f"Embedded text scan for {format_hint}: {len(cleaned)} readable string(s) recovered with no strong code markers."
+    else:
+        summary = f"No readable embedded strings or code-like markers were recovered from the {format_hint} container."
+        overview = "No embedded text payloads or code-like markers were detected."
+
+    strings_out = preview_strings if preview_strings else cleaned[:12]
+    return {
+        "strings": strings_out[:12],
+        "code_indicators": code_indicators[:12],
+        "summary": summary,
+        "overview": overview,
+        "urls": urls[:12],
+    }
 
 
 def infer_timestamp_from_filename(file_name: str) -> Optional[str]:

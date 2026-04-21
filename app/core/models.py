@@ -73,6 +73,11 @@ class EvidenceRecord:
     metadata_score: int = 0
     technical_score: int = 0
     score_breakdown: List[str] = field(default_factory=list)
+    extracted_strings: List[str] = field(default_factory=list)
+    hidden_code_indicators: List[str] = field(default_factory=list)
+    hidden_code_summary: str = "No embedded code-like content detected."
+    hidden_content_overview: str = "No embedded text payloads or code-like markers detected."
+    urls_found: List[str] = field(default_factory=list)
 
     @property
     def has_gps(self) -> bool:

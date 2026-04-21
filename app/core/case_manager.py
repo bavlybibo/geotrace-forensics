@@ -16,6 +16,7 @@ from .exif_service import (
     compute_perceptual_hash,
     extract_basic_image_info,
     extract_device_model,
+    extract_embedded_text_hints,
     extract_exif,
     extract_file_times,
     extract_gps,
@@ -182,6 +183,7 @@ class CaseManager:
             int(basic["height"]),
             str(basic["parser_status"]),
         )
+        embedded_scan = extract_embedded_text_hints(file_path, str(basic["format_name"]))
         record = EvidenceRecord(
             case_id=self.active_case_id,
             case_name=self.active_case_name,
@@ -234,6 +236,11 @@ class CaseManager:
             frame_count=int(basic["frame_count"]),
             is_animated=bool(basic["is_animated"]),
             animation_duration_ms=int(basic["animation_duration_ms"]),
+            extracted_strings=list(embedded_scan.get("strings", [])),
+            hidden_code_indicators=list(embedded_scan.get("code_indicators", [])),
+            hidden_code_summary=str(embedded_scan.get("summary", "No embedded code-like content detected.")),
+            hidden_content_overview=str(embedded_scan.get("overview", "No embedded text payloads or code-like markers detected.")),
+            urls_found=list(embedded_scan.get("urls", [])),
         )
         record.osint_leads = build_osint_leads(
             file_path,
@@ -284,6 +291,11 @@ class CaseManager:
             verdict_bits.append("Header signature and file extension disagree, which is a strong structure-integrity concern even if a parser can still render the file.")
         elif record.is_animated:
             verdict_bits.append("The media is animated, so frame-level review is important because the visible first frame may not represent the full sequence.")
+
+        if record.hidden_code_indicators:
+            verdict_bits.append("Byte-level scanning recovered code-like or credential-like markers inside the container, so the file should be treated as content-bearing rather than image-only until confirmed.")
+        elif record.extracted_strings:
+            verdict_bits.append("Readable embedded strings were recovered from the container even though no strong script markers were found.")
 
         if record.risk_level == "High":
             verdict_bits.append("Priority review is recommended because metadata anomalies materially affect source confidence.")

@@ -121,6 +121,16 @@ def detect_anomalies(record: EvidenceRecord, baseline_device: str, file_path: Pa
             reasons.append(f"Software tag present: {record.software}.")
             breakdown.append("Authenticity +4 — software tag present")
 
+    if record.hidden_code_indicators:
+        technical += 26
+        confidence += 6
+        reasons.append("Byte-level scanning recovered embedded code-like, credential-like, or script-capable content markers inside the container.")
+        breakdown.append("Technical +26 — embedded code/content markers")
+    elif record.extracted_strings:
+        technical += 4
+        reasons.append("Readable embedded strings were recovered from the container even though no strong code markers were found.")
+        breakdown.append("Technical +4 — embedded string payloads")
+
     if baseline_device and record.device_model not in {"Unknown", baseline_device}:
         authenticity += 10
         reasons.append(f"Device differs from the dominant device observed in this batch ({baseline_device}).")
