@@ -1,119 +1,26 @@
-# GeoTrace Forensics X v5
+# GeoTrace Forensics X v4
 
-**GeoTrace Forensics X** is a polished desktop digital-forensics tool built for investigators, students, and analysts who need fast, structured insight from image-based evidence.
+# GeoTrace Forensics X
 
-It focuses on **image metadata extraction, timestamp recovery, GPS correlation, evidence hashing, chain-of-custody logging, duplicate detection, and analyst-ready reporting** in a clean cyber-style interface.
+A polished desktop digital-forensics tool for **image metadata extraction, timestamp recovery, GPS correlation, evidence hashing, chain-of-custody logging, duplicate clustering, and analyst-ready reporting**.
 
----
+## What this version adds
 
-## Overview
+- Premium dark cyber UI with **splash screen** and app icon
+- Rich metadata extraction for:
+  - EXIF camera/device tags
+  - software/editor tags
+  - lens / ISO / exposure / focal length
+  - color mode / alpha channel / DPI / format
+  - timestamp recovery from EXIF, filename patterns, and filesystem timestamps
+  - GPS coordinates and altitude when available
+- **Context-aware anomaly scoring** to reduce false positives on screenshots and chat exports
+- **Perceptual hash clustering** to spot near-duplicate images
+- Interactive **Geo / OSINT leads** panel
+- HTML / PDF / CSV / JSON export package
+- Operational charts for source types, risks, and duplicate/GPS coverage
 
-GeoTrace Forensics X helps analysts examine image evidence through a practical forensic workflow:
-
-**Acquire → Verify → Extract → Correlate → Score → Report**
-
-The tool is designed to support real investigative work by turning raw image files into structured forensic findings, visual insights, and presentation-ready reports.
-
----
-
-## Key Capabilities
-
-### Metadata Extraction
-GeoTrace extracts a broad range of metadata and forensic context, including:
-
-- EXIF camera and device tags
-- software / editor tags
-- lens, ISO, exposure, focal length
-- image format, DPI, color mode, alpha channel
-- filesystem timestamps
-- filename-based timestamp recovery
-- GPS coordinates and altitude when available
-
-### Timestamp Recovery
-The tool does not rely only on EXIF. It also attempts to recover time context from:
-
-- EXIF date/time fields
-- filename patterns
-- filesystem timestamps
-- exported-media naming conventions
-
-This is especially useful for screenshots, messaging exports, and edited media where full EXIF is often missing.
-
-### GPS Correlation
-When GPS data is present, GeoTrace helps correlate:
-
-- latitude / longitude
-- altitude
-- location consistency
-- geospatial investigation leads
-
-### Evidence Integrity
-To support sound forensic handling, the tool includes:
-
-- file hashing
-- evidence verification workflow
-- chain-of-custody event logging
-
-### Duplicate Detection
-GeoTrace uses **perceptual hashing** to identify visually similar or near-duplicate images, not just identical files.
-
-This helps investigators detect:
-
-- repeated evidence
-- resized or recompressed copies
-- visually similar images with different file hashes
-
-### Analyst-Focused Scoring
-The tool applies **context-aware anomaly scoring** to reduce false positives, especially for:
-
-- screenshots
-- messaging exports
-- edited/exported media
-- synthetic or non-camera image sources
-
-Each item is evaluated with both:
-
-- **risk score**
-- **confidence score**
-
-This gives more realistic and explainable results.
-
-### Reporting & Export
-GeoTrace can generate a complete export package in:
-
-- HTML
-- PDF
-- CSV
-- JSON
-
-It also provides operational charts for:
-
-- source-type distribution
-- risk levels
-- GPS coverage
-- duplicate coverage
-
----
-
-## What’s New in v5
-
-Version 5 introduces a more refined and investigation-ready experience, including:
-
-- premium dark cyber UI
-- splash screen and app icon
-- richer metadata extraction
-- smarter timestamp recovery
-- improved anomaly scoring logic
-- perceptual duplicate clustering
-- interactive Geo / OSINT leads panel
-- multi-format export package
-- analytical charts for reporting and presentation
-
----
-
-## Supported Formats
-
-GeoTrace currently supports:
+## Supported formats
 
 - JPG / JPEG
 - PNG
@@ -121,16 +28,55 @@ GeoTrace currently supports:
 - WEBP
 - BMP
 - GIF
-- HEIC / HEIF *(via `pillow-heif`)*
+- HEIC / HEIF (via `pillow-heif`)
 
----
-
-## Quick Start
-
-### Windows
-
-Install dependencies and run the application:
+## How to run on Windows
 
 ```powershell
 python -m pip install -r requirements.txt
 python main.py
+```
+
+Or use the batch files:
+
+- `setup_windows.bat`
+- `run_windows.bat`
+
+## Suggested demo workflow
+
+1. Import 1 image or a folder of evidence images
+2. Review the dashboard stats
+3. Open one image and show the preview + metadata intelligence tab
+4. Show the timeline tab and explain timestamp recovery
+5. Show the insights charts
+6. Open the geolocation map if GPS is available
+7. Generate the HTML/PDF/CSV/JSON report package
+
+## Investigation methodology
+
+This build follows a practical workflow:
+
+**Acquire → Verify → Extract → Correlate → Score → Report**
+
+- Acquire: load evidence image(s)
+- Verify: compute hashes and log import event
+- Extract: pull metadata and filesystem context
+- Correlate: link timestamps, device hints, GPS, duplicates
+- Score: assign anomaly/risk indicators with context
+- Report: export a presentation-ready package
+
+## Recommended presentation talking points
+
+- Screenshots and messaging exports often lack EXIF, so the tool uses **smart fallback timestamp recovery** instead of treating every missing tag as suspicious.
+- The tool distinguishes **source types** such as screenshot, messaging export, camera photo, edited/exported media, and graphic assets.
+- Each item gets both a **risk score** and a **confidence score** to show analytical maturity.
+- Duplicate clusters are identified using a **perceptual fingerprint**, not only raw file hashes.
+
+
+
+## v4 upgrades
+- cleaner command-center layout with larger terminals and preview panes
+- footer removed to free vertical space
+- deeper terminal-style metadata, geo, timeline, and custody views
+- improved timestamp parsing for WhatsApp-style filenames with AM/PM
+- cleaner chart rendering and scalable chart panels
