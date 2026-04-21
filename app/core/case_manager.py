@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime, timezone
+from dataclasses import fields
 from pathlib import Path
 from typing import Callable, List, Optional
 
@@ -45,6 +46,7 @@ class CaseManager:
         if active is None:
             active = self.new_case("Launch Candidate Case")
         self.active_case = active
+        self.records = self.load_case_snapshot(self.active_case_id)
 
     @property
     def active_case_id(self) -> str:
@@ -76,7 +78,7 @@ class CaseManager:
             return None
         self.db.set_active_case(case_id)
         self.active_case = case
-        self.records = []
+        self.records = self.load_case_snapshot(case_id)
         return self.active_case
 
     def load_images(
@@ -94,9 +96,11 @@ class CaseManager:
             self._write_case_snapshot()
             return []
 
+        existing = list(self.records)
         collected: List[EvidenceRecord] = []
         self.db.log_action(self.active_case_id, None, "IMPORT_BATCH", f"Queued {total} evidence item(s)")
-        for index, file_path in enumerate(files, start=1):
+        start_index = len(existing) + 1
+        for index, file_path in enumerate(files, start=start_index):
             if cancel_callback and cancel_callback():
                 raise AnalysisCancelled()
             if progress_callback:
@@ -105,10 +109,11 @@ class CaseManager:
 
         if progress_callback:
             progress_callback(62, "Correlating duplicates and baseline devices…")
-        assign_duplicate_groups(collected)
-        baseline_device = dominant_device(collected)
+        combined = existing + collected
+        assign_duplicate_groups(combined)
+        baseline_device = dominant_device(combined)
 
-        for index, record in enumerate(collected, start=1):
+        for index, record in enumerate(combined, start=1):
             if cancel_callback and cancel_callback():
                 raise AnalysisCancelled()
             if progress_callback:
@@ -138,7 +143,7 @@ class CaseManager:
             self.db.upsert_evidence(record)
             self.db.log_action(record.case_id, record.evidence_id, "ANALYZE", f"Risk={level}, Score={score}, Confidence={confidence}")
 
-        self.records = collected
+        self.records = combined
         self._write_case_snapshot()
         self.db.log_action(self.active_case_id, None, "BATCH_COMPLETE", f"Analysis complete for {len(self.records)} item(s)")
         if progress_callback:
@@ -327,6 +332,38 @@ class CaseManager:
                 return record
         return None
 
+    def load_case_snapshot(self, case_id: str) -> List[EvidenceRecord]:
+        snapshot_path = self.case_root / case_id / "case_snapshot.json"
+        if not snapshot_path.exists():
+            return []
+        try:
+            payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+        loaded: List[EvidenceRecord] = []
+        valid_fields = {field.name for field in fields(EvidenceRecord)}
+        for raw in payload.get("records", []):
+            prepared = {}
+            for key, value in raw.items():
+                if key not in valid_fields:
+                    continue
+                if key == "file_path":
+                    prepared[key] = Path(value) if value else Path('.')
+                else:
+                    prepared[key] = value
+            prepared.setdefault("case_id", case_id)
+            prepared.setdefault("case_name", payload.get("case_name", self.active_case_name))
+            prepared.setdefault("file_path", Path(prepared.get("file_name", "unknown")))
+            try:
+                loaded.append(EvidenceRecord(**prepared))
+            except Exception:
+                continue
+        return loaded
+
+    def case_snapshot_path(self, case_id: Optional[str] = None) -> Path:
+        case_id = case_id or self.active_case_id
+        return self.case_root / case_id / "case_snapshot.json"
+
     def export_chain_of_custody(self) -> str:
         logs = self.db.fetch_logs(self.active_case_id)
         if not logs:
@@ -359,35 +396,12 @@ class CaseManager:
             "records": [],
         }
         for record in self.records:
-            payload["records"].append(
-                {
-                    "evidence_id": record.evidence_id,
-                    "file_name": record.file_name,
-                    "timestamp": record.timestamp,
-                    "timestamp_source": record.timestamp_source,
-                    "device_model": record.device_model,
-                    "source_type": record.source_type,
-                    "gps_display": record.gps_display,
-                    "suspicion_score": record.suspicion_score,
-                    "confidence_score": record.confidence_score,
-                    "risk_level": record.risk_level,
-                    "anomaly_reasons": record.anomaly_reasons,
-                    "osint_leads": record.osint_leads,
-                    "duplicate_group": record.duplicate_group,
-                    "analyst_verdict": record.analyst_verdict,
-                    "parser_status": record.parser_status,
-                    "preview_status": record.preview_status,
-                    "structure_status": record.structure_status,
-                    "format_trust": record.format_trust,
-                    "signature_status": record.signature_status,
-                    "format_signature": record.format_signature,
-                    "authenticity_score": record.authenticity_score,
-                    "metadata_score": record.metadata_score,
-                    "technical_score": record.technical_score,
-                    "score_breakdown": record.score_breakdown,
-                    "note": record.note,
-                    "tags": record.tags,
-                    "bookmarked": record.bookmarked,
-                }
-            )
+            row = {}
+            for field in fields(EvidenceRecord):
+                value = getattr(record, field.name)
+                if isinstance(value, Path):
+                    row[field.name] = str(value)
+                else:
+                    row[field.name] = value
+            payload["records"].append(row)
         snapshot_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
