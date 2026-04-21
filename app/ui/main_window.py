@@ -1621,17 +1621,17 @@ class GeoTraceMainWindow(QMainWindow):
             badge_bits = [
                 f"● {record.risk_level}",
                 f"● {'GPS' if record.has_gps else 'No GPS'}",
-                f"● {record.source_type}",
+                f"● {record.source_subtype if record.source_subtype not in {'Unknown', record.source_type} else record.source_type}",
             ]
             if record.duplicate_group:
                 badge_bits.append(record.duplicate_group)
             if record.bookmarked:
                 badge_bits.append('★ bookmarked')
-            support = f"{record.timestamp_source} {record.timestamp_confidence}% • Value {record.evidentiary_value}% • Courtroom {record.courtroom_strength}%"
+            support = f"{record.timestamp_source} {record.timestamp_confidence}% • OCR {record.ocr_confidence}% • Value {record.evidentiary_value}% • Courtroom {record.courtroom_strength}%"
             card.set_content(
                 self._thumbnail_for_record(record),
                 f"{record.evidence_id} — {record.file_name}",
-                f"{self._display_timestamp(record.timestamp)} • {record.source_type}",
+                f"{self._display_timestamp(record.timestamp)} • {record.source_subtype if record.source_subtype not in {'Unknown', record.source_type} else record.source_type}",
                 " • ".join(badge_bits),
                 risk=record.risk_level,
                 support=support,
@@ -2268,6 +2268,10 @@ class GeoTraceMainWindow(QMainWindow):
     def _build_confidence_tree_text(self, record: EvidenceRecord) -> str:
         lines = [
             f"Triage score: {record.suspicion_score} • Risk: {record.risk_level}",
+            f"Primary issue: {record.score_primary_issue}",
+            f"Why: {record.score_reason}",
+            f"Next step: {record.score_next_step}",
+            "",
             f"├─ Analytic confidence: {record.confidence_score}%",
             f"├─ Evidentiary value: {record.evidentiary_value}% ({record.evidentiary_label})",
             f"└─ Courtroom strength: {record.courtroom_strength}% ({record.courtroom_label})",
@@ -2279,28 +2283,42 @@ class GeoTraceMainWindow(QMainWindow):
             lines.extend(f"• {item}" for item in contributors)
         else:
             lines.append("• No strong anomaly contributor was recorded.")
+        if record.validation_hits or record.validation_misses:
+            lines.extend([
+                "",
+                f"Validation hits: {len(record.validation_hits)} • misses: {len(record.validation_misses)}",
+            ])
+            if record.validation_misses:
+                lines.append(f"Validation focus: {record.validation_misses[0]}")
         lines.extend([
             "",
             "Reading guide:",
+            "• Primary issue = the top reason this file deserves attention.",
             "• Confidence = stability of the analytic reading.",
             "• Value = usefulness for time, place, origin, or linkage.",
             "• Courtroom = how conservative the posture should remain.",
         ])
         return "\n".join(lines)
 
+
     def _build_metadata_overview_text(self, record: EvidenceRecord) -> str:
         ocr_line = record.visible_text_excerpt or "No strong OCR clue recovered."
+        lead_issue = record.metadata_issues[0] if record.metadata_issues else record.metadata_issue_summary
+        strength = record.metadata_strengths[0] if record.metadata_strengths else "No strong metadata strength was captured yet."
+        recommendation = record.metadata_recommendations[0] if record.metadata_recommendations else record.score_next_step
         lines = [
-            f"Parser: {record.parser_status} • Trust: {record.format_trust}",
-            f"Dimensions: {record.dimensions} • Frames: {record.frame_count}",
-            f"Time: {record.timestamp} ({record.timestamp_source})",
-            f"Source: {record.source_type} ({record.source_profile_confidence}%) • App {record.app_detected}",
+            f"Parser: {record.parser_status} • Trust: {record.format_trust} • Signature: {record.signature_status}",
+            f"Main metadata issue: {lead_issue}",
+            f"Best strength: {strength}",
+            f"Action: {recommendation}",
+            f"Dimensions: {record.dimensions} • Frames: {record.frame_count} • Source: {record.source_type} ({record.source_profile_confidence}%)",
+            f"Time: {record.timestamp} ({record.timestamp_source}, {record.timestamp_confidence}%)",
             f"Native GPS: {record.gps_display} • Derived: {record.derived_geo_display}",
-            f"Confidence {record.confidence_score}% • Value {record.evidentiary_value}% • Courtroom {record.courtroom_strength}%",
             f"OCR clue: {ocr_line}",
             f"Hashes: SHA-256 {self._short_hash(record.sha256, 14)} • MD5 {self._short_hash(record.md5, 8)}",
         ]
         return "\n".join(lines)
+
 
     def _build_summary_text(self, record: EvidenceRecord) -> str:
         if record.parser_status != "Valid":
@@ -2332,7 +2350,8 @@ class GeoTraceMainWindow(QMainWindow):
             "=" * 96,
             f"Case ID                : {record.case_id}",
             f"Evidence ID            : {record.evidence_id}",
-            f"File Path              : {record.file_path}",
+            f"Original File Path     : {record.original_file_path}",
+            f"Working Copy Path      : {record.working_copy_path}",
             f"File Size              : {record.file_size:,} bytes",
             f"Format                 : {record.format_name}",
             f"Signature Status       : {record.signature_status}",
@@ -2350,24 +2369,32 @@ class GeoTraceMainWindow(QMainWindow):
             f"DPI                    : {record.dpi}",
             f"Timestamp              : {record.timestamp}",
             f"Timestamp Source       : {record.timestamp_source}",
+            f"Timestamp Confidence   : {record.timestamp_confidence}%",
+            f"Timestamp Verdict      : {record.timestamp_verdict}",
             f"Filesystem Birth/Created: {record.created_time}",
             f"Birth-Time Note        : {record.created_time_note}",
             f"Filesystem Modified    : {record.modified_time}",
             f"Source Type            : {record.source_type}",
+            f"Source Subtype         : {record.source_subtype}",
             f"Source Confidence      : {record.source_profile_confidence}%",
             f"Environment Profile    : {record.environment_profile}",
             f"Application Detected   : {record.app_detected}",
+            f"OCR Confidence         : {record.ocr_confidence}%",
             f"Camera / Device        : {record.device_model}",
             f"Camera Make            : {record.camera_make}",
             f"Software               : {record.software}",
             f"Native GPS             : {record.gps_display}",
             f"Derived Geo            : {record.derived_geo_display}",
             f"Derived Geo Source     : {record.derived_geo_source}",
+            f"Possible Geo Clues     : {', '.join(record.possible_geo_clues) if record.possible_geo_clues else 'None'}",
             f"GPS Altitude           : {f'{record.gps_altitude:.2f} m' if record.gps_altitude is not None else 'Unavailable'}",
             f"SHA-256                : {record.sha256}",
             f"MD5                    : {record.md5}",
             f"Perceptual Hash        : {record.perceptual_hash}",
             f"Duplicate Cluster      : {record.duplicate_group or 'None'}",
+            f"Duplicate Relation     : {record.duplicate_relation or 'None'}",
+            f"Duplicate Method       : {record.duplicate_method or 'None'}",
+            f"Duplicate Peers        : {', '.join(record.duplicate_peers) if record.duplicate_peers else 'None'}",
             f"Scene Group            : {record.scene_group or 'None'}",
             f"Similarity Note        : {record.similarity_note}",
             f"Frames / Animation     : {record.frame_count} / {'Animated' if record.is_animated else 'Static'}",
@@ -2377,13 +2404,30 @@ class GeoTraceMainWindow(QMainWindow):
             f"Tags                   : {record.tags or 'None'}",
             f"Bookmarked             : {'Yes' if record.bookmarked else 'No'}",
             "",
-            "[ SCORE BREAKDOWN ]",
+            "[ EXPLAINABILITY ]",
             "-" * 96,
+            f"Primary issue          : {record.score_primary_issue}",
+            f"Why it matters         : {record.score_reason}",
+            f"Recommended next step  : {record.score_next_step}",
+            f"Metadata summary       : {record.metadata_issue_summary}",
+            "",
+            "Metadata issues:",
         ]
+        lines.extend([f"- {item}" for item in (record.metadata_issues or ["No dominant metadata issue recorded."])])
+        lines.extend(["", "Metadata strengths:"])
+        lines.extend([f"- {item}" for item in (record.metadata_strengths or ["No major metadata strength recorded."])])
+        lines.extend(["", "Recommendations:"])
+        lines.extend([f"- {item}" for item in (record.metadata_recommendations or [record.score_next_step])])
+        lines.extend(["", "[ SCORE BREAKDOWN ]", "-" * 96])
         lines.extend(record.score_breakdown or ["No score breakdown available."])
+        if record.validation_hits or record.validation_misses:
+            lines.extend(["", "[ VALIDATION AGAINST GROUND TRUTH ]", "-" * 96])
+            lines.extend([f"PASS: {item}" for item in record.validation_hits] or ["PASS: none recorded"])
+            lines.extend([f"MISS: {item}" for item in record.validation_misses] or ["MISS: none recorded"])
         if record.parse_error:
             lines.extend(["", "[ PARSER DIAGNOSTICS ]", "-" * 96, record.parse_error])
         return "\n".join(lines)
+
 
     def _build_raw_exif_text(self, record: EvidenceRecord) -> str:
         lines = ["[ RAW EXIF / EMBEDDED TAGS ]", "=" * 96]
@@ -2408,12 +2452,19 @@ class GeoTraceMainWindow(QMainWindow):
             f"Altitude              : {f'{record.gps_altitude:.2f} m' if record.gps_altitude is not None else 'Unavailable'}",
             f"Map Package           : {'Available' if self.current_map_path else 'Not generated'}",
             f"Time Anchor           : {record.timestamp} ({record.timestamp_source}, {record.timestamp_confidence}%)",
-            f"Source Profile        : {record.source_type}",
+            f"Source Profile        : {record.source_type} / {record.source_subtype}",
             f"Parser / Signature    : {record.parser_status} / {record.signature_status}",
             "",
+            f"Primary GPS posture   : {record.gps_primary_issue}",
             f"Verification note     : {record.gps_verification}",
+            f"Possible geo clues    : {', '.join(record.possible_geo_clues[:4]) if record.possible_geo_clues else 'None'}",
+            f"Source reasons        : {'; '.join(record.source_profile_reasons[:2]) if record.source_profile_reasons else 'None'}",
             "",
+            "[ GPS VERIFICATION LADDER ]",
+            "-" * 96,
         ]
+        lines.extend(record.gps_ladder or ["No GPS verification ladder generated."])
+        lines.extend(["", "Interpretation:"])
         if record.has_gps:
             lines.extend(
                 [
@@ -2440,6 +2491,7 @@ class GeoTraceMainWindow(QMainWindow):
         if record.parser_status != "Valid":
             lines.extend(["", "Structure warning: decoder failed, so geolocation conclusions must rely on external evidence rather than preview content."])
         return "\n".join(lines)
+
 
     def _build_geo_leads_text(self, record: EvidenceRecord) -> str:
         if record.has_gps:
@@ -2853,7 +2905,7 @@ class GeoTraceMainWindow(QMainWindow):
                 clusters.setdefault(record.duplicate_group, []).append(record)
         lines = ["[ DUPLICATE DIFF / REUSE REVIEW ]", "=" * 96]
         if not clusters:
-            lines.append("No visual reuse found in the active case. Perceptual hashing did not produce any duplicate clusters.")
+            lines.append("No visual reuse found in the active case. Exact-hash, perceptual-hash, and derivative heuristics did not produce any duplicate clusters.")
             return "\n".join(lines)
         for cluster, items in sorted(clusters.items()):
             lines.append(f"{cluster} ({len(items)} file(s))")
@@ -2862,14 +2914,22 @@ class GeoTraceMainWindow(QMainWindow):
             lines.append(f"Lead item: {lead.evidence_id} — {lead.file_name} — {lead.dimensions} — {lead.timestamp}")
             for peer in items[1:]:
                 lines.append(
-                    f"Peer: {peer.evidence_id} — {peer.file_name} | dims {peer.dimensions} | time {peer.timestamp} | parser {peer.parser_status} | signature {peer.signature_status}"
+                    f"Peer: {peer.evidence_id} — {peer.file_name} | relation {peer.duplicate_relation or 'linked'} | method {peer.duplicate_method or 'heuristic'} | distance {peer.duplicate_distance} | time {peer.timestamp}"
                 )
             similarity_notes = [peer.similarity_note for peer in items if peer.similarity_note]
             if similarity_notes:
                 lines.append(f"Correlation explanation: {similarity_notes[0]}")
-            lines.append("Interpretation: compare timestamps, workflow profile, perceptual-hash distance, and editing/software tags to decide which item is original vs derivative.")
+            lines.append("Interpretation: use relation type, method, and distance together to decide whether the file is exact reuse, near-duplicate, or derivative/edited media.")
             lines.append("")
+        singles = [record for record in self.case_manager.records if not record.duplicate_group and record.duplicate_relation]
+        if singles:
+            lines.extend(["[ CLOSEST NON-CLUSTERED PEERS ]", "-" * 96])
+            for record in singles[:6]:
+                lines.append(
+                    f"{record.evidence_id}: {record.duplicate_relation} via {record.duplicate_method or 'heuristic'} | closest peer {', '.join(record.duplicate_peers) if record.duplicate_peers else 'unknown'} | note {record.similarity_note}"
+                )
         return "\n".join(lines)
+
 
     def _render_relationship_graph(self, records: List[EvidenceRecord]) -> None:
         output_path = self.export_dir / "chart_relationships.png"
@@ -3024,13 +3084,18 @@ class GeoTraceMainWindow(QMainWindow):
         lines = [
             record.hidden_content_overview,
             "",
+            f"Primary issue: {record.score_primary_issue}",
             f"Tier summary: {record.hidden_context_summary}",
             f"Finding types: {', '.join(record.hidden_finding_types) if record.hidden_finding_types else 'None'}",
             f"URLs recovered: {len(record.urls_found)}",
             f"Readable strings kept for context: {len(record.extracted_strings)}",
             f"Code-like indicators: {len(record.hidden_code_indicators)}",
             f"Structural warnings: {len(record.hidden_suspicious_embeds)}",
+            f"Container findings: {len(record.hidden_container_findings)}",
+            f"Carved payloads: {len(record.hidden_carved_files)}",
+            f"Carved summary: {record.hidden_carved_summary}",
             f"Stego / appended-payload note: {record.stego_suspicion}",
+            f"OCR entities: apps {', '.join(record.ocr_app_names) if record.ocr_app_names else 'None'} • locations {', '.join(record.ocr_location_entities[:3]) if record.ocr_location_entities else 'None'}",
             "",
             "Interpretation:",
         ]
@@ -3042,7 +3107,14 @@ class GeoTraceMainWindow(QMainWindow):
             lines.append("Readable strings exist inside the file, but they do not currently look like strong executable payloads. They are preserved as analyst context and may still help with provenance, origin tracing, or hidden-message review.")
         else:
             lines.append("No readable payload strings or code markers were recovered from the file bytes during the lightweight scan.")
+        if record.hidden_carved_files:
+            lines.extend(["", "Recovered payload files:"])
+            lines.extend([f"- {item}" for item in record.hidden_carved_files[:4]])
+        elif record.hidden_container_findings:
+            lines.extend(["", "Container findings:"])
+            lines.extend([f"- {item}" for item in record.hidden_container_findings[:6]])
         return "\n".join(lines)
+
 
     def _build_hidden_content_dump(self, record: EvidenceRecord) -> str:
         lines = ["[ EMBEDDED TEXT / CODE-LIKE MARKER SCAN ]", "=" * 96]
@@ -3064,6 +3136,14 @@ class GeoTraceMainWindow(QMainWindow):
         if record.hidden_payload_markers:
             lines.append("Payload-marker snippets:")
             lines.extend(f"- {item}" for item in record.hidden_payload_markers)
+            lines.append("")
+        if record.hidden_container_findings:
+            lines.append("Container findings:")
+            lines.extend(f"- {item}" for item in record.hidden_container_findings)
+            lines.append("")
+        if record.hidden_carved_files:
+            lines.append("Recovered payload files:")
+            lines.extend(f"- {item}" for item in record.hidden_carved_files)
             lines.append("")
         if record.visible_urls or record.visible_text_lines:
             lines.append("Visible OCR clues:")
@@ -3095,13 +3175,21 @@ class GeoTraceMainWindow(QMainWindow):
 
     def _build_verdict_panel_text(self, record: EvidenceRecord) -> str:
         top = ", ".join(record.anomaly_contributors[:3]) if record.anomaly_contributors else "No major anomaly contributor"
-        return "\n".join([
+        recommendation = record.metadata_recommendations[0] if record.metadata_recommendations else record.score_next_step
+        lines = [
             f"{record.evidence_id} • {record.source_type}",
+            f"Primary issue: {record.score_primary_issue}",
+            f"Why it matters: {record.score_reason}",
+            f"Recommended next step: {recommendation}",
             f"Time anchor: {record.timestamp_source} ({record.timestamp_confidence}%)",
             f"Value {record.evidentiary_value}% • Courtroom {record.courtroom_strength}%",
             f"Top signal: {top}",
-            record.courtroom_notes or record.analyst_verdict or "No focused verdict is available.",
-        ])
+        ]
+        if record.validation_hits or record.validation_misses:
+            lines.append(f"Validation: {len(record.validation_hits)} hit(s), {len(record.validation_misses)} miss(es)")
+        lines.append(record.courtroom_notes or record.analyst_verdict or "No focused verdict is available.")
+        return "\n".join(lines)
+
 
     def dragEnterEvent(self, event) -> None:  # type: ignore[override]
         mime = event.mimeData()

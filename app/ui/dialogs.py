@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Dict, Iterable, List, Optional
 
 from PyQt5.QtCore import QPoint, QPropertyAnimation, Qt, QTimer
-from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QColor, QPixmap
 from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
