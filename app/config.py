@@ -1,0 +1,6 @@
+APP_NAME = 'GeoTrace Forensics X'
+APP_VERSION = '10.2.0-rc1'
+APP_ORGANIZATION = 'Cyber Forensics Team'
+APP_BUILD_CHANNEL = 'Launch Candidate'
+APP_COPYRIGHT = 'GeoTrace Forensics X • Review Workflow RC • Internal Evaluation Build'
+DEFAULT_ANALYST_NAME = 'Lead Analyst'

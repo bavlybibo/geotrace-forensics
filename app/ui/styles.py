@@ -98,4 +98,13 @@ QSplitter::handle:horizontal { width:4px; }
 QSplitter::handle:vertical { height:4px; }
 QScrollArea { background:transparent; border:none; }
 QScrollArea > QWidget > QWidget { background:transparent; }
+
+QFrame#FailurePanel { background-color:#08121b; border:1px solid #204564; border-radius:18px; }
+QTabWidget#ReviewTabs::pane { border:1px solid #133046; border-radius:16px; top:-1px; background-color:#06111b; }
+QTabWidget#ReviewTabs QTabBar::tab {
+    background-color:#091827; border:1px solid #17314a; color:#cbeeff; border-top-left-radius:12px; border-top-right-radius:12px;
+    padding:9px 14px; margin-right:6px; font-weight:700;
+}
+QTabWidget#ReviewTabs QTabBar::tab:selected { background-color:#10283d; border-color:#43d2ff; color:#8fe6ff; }
+QTabWidget#ReviewTabs QTabBar::tab:hover { border-color:#35cdff; background-color:#0b1d2d; }
 """

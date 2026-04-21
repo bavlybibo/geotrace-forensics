@@ -6,6 +6,7 @@ from PyQt5.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt5.QtWidgets import QApplication, QSplashScreen
 
 from app.ui.main_window import GeoTraceMainWindow
+from app.config import APP_NAME, APP_ORGANIZATION
 
 
 class GeoTraceSplash(QSplashScreen):
@@ -48,8 +49,8 @@ def build_splash(project_root: Path) -> GeoTraceSplash:
 
 def main() -> None:
     app = QApplication(sys.argv)
-    app.setApplicationName("GeoTrace Forensics X")
-    app.setOrganizationName("Cyber Forensics Team")
+    app.setApplicationName(APP_NAME)
+    app.setOrganizationName(APP_ORGANIZATION)
 
     project_root = Path(__file__).resolve().parent
     icon_path = project_root / "assets" / "app_icon.png"

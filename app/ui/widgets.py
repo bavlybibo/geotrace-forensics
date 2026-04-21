@@ -369,3 +369,27 @@ class ScoreRing(QWidget):
             painter.setFont(QFont("Segoe UI", 7))
             sub_rect = QRectF(ring_rect.left(), ring_rect.center().y() + 34, ring_rect.width(), 24)
             painter.drawText(sub_rect, Qt.AlignHCenter | Qt.AlignTop, self._subcaption)
+
+
+class CaseListCard(QFrame):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("EvidenceListCard")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(5)
+        self.title_label = QLabel("Case")
+        self.title_label.setObjectName("EvidenceCardTitle")
+        self.meta_label = QLabel("Metadata")
+        self.meta_label.setObjectName("EvidenceCardMeta")
+        self.badge_label = QLabel("Badges")
+        self.badge_label.setObjectName("EvidenceCardBadges")
+        self.badge_label.setWordWrap(True)
+        layout.addWidget(self.title_label)
+        layout.addWidget(self.meta_label)
+        layout.addWidget(self.badge_label)
+
+    def set_content(self, title: str, meta: str, badges: str) -> None:
+        self.title_label.setText(title)
+        self.meta_label.setText(meta)
+        self.badge_label.setText(badges)

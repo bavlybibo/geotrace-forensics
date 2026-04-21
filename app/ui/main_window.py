@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import logging
 import os
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -10,10 +12,10 @@ matplotlib.use("Agg")
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 
-from PyQt5.QtCore import QObject, QSize, Qt, QThread, QUrl, pyqtSignal
-from PyQt5.QtGui import QColor, QDesktopServices, QIcon, QImage, QPixmap
+from PyQt5.QtCore import QObject, QSettings, QSize, Qt, QThread, QTimer, QUrl, pyqtSignal
+from PyQt5.QtGui import QColor, QDesktopServices, QIcon, QImage, QKeySequence, QPixmap
 from PyQt5.QtWidgets import (
-    QButtonGroup,
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -30,10 +32,12 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QShortcut,
     QScrollArea,
     QSplitter,
     QStackedWidget,
     QStyle,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -46,8 +50,10 @@ from app.core.case_manager import AnalysisCancelled, CaseManager
 from app.core.map_service import MapService
 from app.core.models import EvidenceRecord
 from app.core.report_service import ReportService
+from app.config import APP_NAME, APP_ORGANIZATION, APP_VERSION, APP_BUILD_CHANNEL, DEFAULT_ANALYST_NAME
 from .styles import APP_STYLESHEET
-from .widgets import AutoHeightNarrativeView, ChartCard, EvidenceListCard, ResizableImageLabel, ScoreRing, SmoothScrollArea, StatCard, TerminalView
+from .dialogs import CompareDialog, DuplicateReviewDialog, OnboardingDialog, RecentCasesDialog, SettingsDialog, ToastPopup
+from .widgets import AutoHeightNarrativeView, CaseListCard, ChartCard, EvidenceListCard, ResizableImageLabel, ScoreRing, SmoothScrollArea, StatCard, TerminalView
 
 
 class AnalysisWorker(QObject):
@@ -116,9 +122,15 @@ class GeoTraceMainWindow(QMainWindow):
     def __init__(self, project_root: Path) -> None:
         super().__init__()
         self.project_root = project_root
+        self.settings = QSettings(APP_ORGANIZATION, APP_NAME)
+        self.logger = self._build_logger()
         self.case_manager = CaseManager(project_root)
-        self.records: List[EvidenceRecord] = []
-        self.filtered_records: List[EvidenceRecord] = []
+        self.records: List[EvidenceRecord] = list(self.case_manager.records)
+        self.filtered_records: List[EvidenceRecord] = list(self.records)
+        self.pending_batches: List[List[Path]] = []
+        self.current_batch_manifest: List[Path] = []
+        self.last_export_payload: Dict[str, str] = {}
+        self.last_error_message: str = ''
         self.current_preview_pixmap: Optional[QPixmap] = None
         self.current_map_path: Optional[Path] = None
         self.assets_dir = project_root / "assets"
@@ -135,8 +147,16 @@ class GeoTraceMainWindow(QMainWindow):
         self.current_frames: List[QPixmap] = []
         self.current_frame_index = 0
         self.current_frame_record: Optional[str] = None
+        self.note_templates = {
+            "Initial triage": "Initial review summary:\nObserved:\nInferred:\nNeeds confirmation:\n",
+            "Timeline anchor": "Timeline anchor note:\nRecovered time source:\nExternal corroboration needed:\n",
+            "Courtroom caveat": "Courtroom caveat:\nLimitations:\nSecondary validation required before courtroom use:\n",
+            "OSINT follow-up": "OSINT / next pivots:\n1)\n2)\n3)\n",
+            "Duplicate workflow": "Duplicate / derivative review:\nCluster relation:\nPrimary source candidate:\nNeed compare with:\n",
+        }
 
-        self.setWindowTitle("GeoTrace Forensics X — Image Metadata & Geolocation Analysis")
+        self.setAcceptDrops(True)
+        self.setWindowTitle(f"{APP_NAME} {APP_VERSION} — Image Metadata & Geolocation Analysis")
         self.resize(1720, 1020)
         self.setMinimumSize(1280, 780)
         self.setStyleSheet(APP_STYLESHEET)
@@ -144,9 +164,157 @@ class GeoTraceMainWindow(QMainWindow):
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
         self._build_ui()
+        self._setup_shortcuts()
+        self._apply_startup_settings()
         self._refresh_case_badges()
         self.refresh_dashboard()
+        self.update_charts()
+        self.populate_timeline()
+        self.populate_custody_log()
+        self._refresh_batch_queue_view()
+        self._refresh_cases_page()
         self.clear_details()
+        QTimer.singleShot(120, self._show_onboarding_if_needed)
+
+    def _build_logger(self) -> logging.Logger:
+        logs_dir = self.project_root / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        logger = logging.getLogger(f"geotrace-ui-{id(self)}")
+        logger.setLevel(logging.INFO)
+        logger.handlers.clear()
+        handler = logging.FileHandler(logs_dir / "app_errors.log", encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s"))
+        logger.addHandler(handler)
+        return logger
+
+    def _startup_settings(self) -> Dict[str, object]:
+        return {
+            "analyst_name": self.settings.value("analyst_name", DEFAULT_ANALYST_NAME),
+            "default_page": self.settings.value("default_page", "Dashboard"),
+            "default_sort": self.settings.value("default_sort", "Score ↓"),
+            "auto_reopen_last_case": self.settings.value("auto_reopen_last_case", True, type=bool),
+            "open_reports_after_export": self.settings.value("open_reports_after_export", True, type=bool),
+            "show_toasts": self.settings.value("show_toasts", True, type=bool),
+            "confirm_before_new_case": self.settings.value("confirm_before_new_case", True, type=bool),
+            "show_onboarding": self.settings.value("show_onboarding", True, type=bool),
+        }
+
+    def _apply_startup_settings(self) -> None:
+        values = self._startup_settings()
+        self.analyst_name = str(values["analyst_name"])
+        if hasattr(self, "sort_combo"):
+            self.sort_combo.setCurrentText(str(values["default_sort"]))
+        self._set_workspace_page(str(values["default_page"]))
+
+    def _show_onboarding_if_needed(self) -> None:
+        if not bool(self._startup_settings().get("show_onboarding", True)):
+            return
+        if self.settings.value("onboarding_seen_once", False, type=bool):
+            return
+        dialog = OnboardingDialog(self)
+        if dialog.exec_():
+            self.settings.setValue("onboarding_seen_once", True)
+            self.settings.setValue("show_onboarding", not dialog.hide_future.isChecked())
+            if dialog.selected_action == "demo":
+                demo_dir = self.project_root / "demo_evidence"
+                if demo_dir.exists():
+                    self._start_analysis([demo_dir])
+            elif dialog.selected_action == "import":
+                self.import_images()
+            elif dialog.selected_action == "cases":
+                self._set_workspace_page("Cases")
+
+    def _setup_shortcuts(self) -> None:
+        shortcuts = {
+            "Ctrl+N": self.start_new_case,
+            "Ctrl+O": self.import_images,
+            "Ctrl+Shift+O": self.import_folder,
+            "Ctrl+R": self.generate_reports,
+            "Ctrl+F": lambda: self.search_box.setFocus(),
+            "Ctrl+S": self.save_note_and_tags,
+            "Ctrl+,": self.open_settings,
+            "Ctrl+Shift+C": self.open_compare_mode,
+            "Ctrl+Shift+D": self.open_duplicate_review,
+            "Ctrl+1": lambda: self._set_workspace_page("Dashboard"),
+            "Ctrl+2": lambda: self._set_workspace_page("Review"),
+            "Ctrl+3": lambda: self._set_workspace_page("Geo"),
+            "Ctrl+4": lambda: self._set_workspace_page("Timeline"),
+            "Ctrl+5": lambda: self._set_workspace_page("Custody"),
+            "Ctrl+6": lambda: self._set_workspace_page("Reports"),
+            "Ctrl+7": lambda: self._set_workspace_page("Cases"),
+        }
+        self._shortcuts = []
+        for key, callback in shortcuts.items():
+            shortcut = QShortcut(QKeySequence(key), self)
+            shortcut.activated.connect(callback)
+            self._shortcuts.append(shortcut)
+
+    def _show_toast(self, title: str, message: str, tone: str = "info") -> None:
+        if not self.settings.value("show_toasts", True, type=bool):
+            return
+        toast = ToastPopup(self, title, message, tone=tone)
+        toast.show_top_right()
+
+    def _log_error(self, context: str, message: str) -> None:
+        self.last_error_message = f"{context}: {message}"
+        self.logger.error(self.last_error_message)
+        if hasattr(self, "error_log_view"):
+            existing = self.error_log_view.toPlainText().strip()
+            combined = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {self.last_error_message}"
+            self.error_log_view.setPlainText(((combined + "\n\n" + existing) if existing else combined).strip())
+        self._show_toast("Error logged", context, tone="error")
+
+    def _refresh_batch_queue_view(self) -> None:
+        if not hasattr(self, "batch_queue_view"):
+            return
+        lines = []
+        if self.current_batch_manifest:
+            lines.append("Current batch:")
+            lines.append(f"- {len(self.current_batch_manifest)} path(s) in active analysis")
+            for path in self.current_batch_manifest[:5]:
+                lines.append(f"  • {path.name}")
+        else:
+            lines.append("No active analysis batch.")
+        lines.append("")
+        lines.append(f"Queued batches: {len(self.pending_batches)}")
+        for idx, batch in enumerate(self.pending_batches[:6], start=1):
+            names = ", ".join(path.name for path in batch[:3])
+            if len(batch) > 3:
+                names += f" … (+{len(batch) - 3} more)"
+            lines.append(f"{idx}. {len(batch)} path(s) — {names}")
+        self.batch_queue_view.setPlainText("\n".join(lines).strip())
+
+    def _queue_or_start_analysis(self, paths: List[Path]) -> None:
+        if self.analysis_thread is not None:
+            self.pending_batches.append(paths)
+            self.command_progress.setText(f"Batch queued ({len(self.pending_batches)} waiting)")
+            self._refresh_batch_queue_view()
+            self._show_toast("Batch queued", f"Queued {len(paths)} path(s) to start after the current batch.", tone="info")
+            return
+        self._start_analysis(paths)
+
+    def _consume_next_batch(self) -> None:
+        if self.analysis_thread is not None or not self.pending_batches:
+            return
+        next_batch = self.pending_batches.pop(0)
+        self._refresh_batch_queue_view()
+        self._start_analysis(next_batch)
+
+    def _refresh_cases_page(self) -> None:
+        if not hasattr(self, "cases_summary"):
+            return
+        cases = self.case_manager.list_cases()
+        lines = [f"Total cases in library: {len(cases)}", f"Active case: {self.case_manager.active_case_id} — {self.case_manager.active_case_name}", "", "Recent cases:"]
+        for case in cases[:10]:
+            lines.append(f"- {case.case_name} | {case.case_id} | {case.item_count} item(s) | updated {case.updated_at}")
+        self.cases_summary.setPlainText("\n".join(lines))
+        self.cases_list.clear()
+        for case in cases:
+            item = QListWidgetItem(f"{case.case_name} — {case.case_id} — {case.item_count} item(s)")
+            item.setData(Qt.UserRole, case.case_id)
+            self.cases_list.addItem(item)
+            if case.case_id == self.case_manager.active_case_id:
+                self.cases_list.setCurrentItem(item)
 
     def _case_export_dir(self) -> Path:
         path = self.project_root / "exports" / self.case_manager.active_case_id
@@ -217,47 +385,62 @@ class GeoTraceMainWindow(QMainWindow):
     def _build_command_bar(self) -> QWidget:
         frame = QFrame()
         frame.setObjectName("PanelFrame")
-        layout = QHBoxLayout(frame)
-        layout.setContentsMargins(14, 10, 14, 10)
-        layout.setSpacing(8)
+        outer = QVBoxLayout(frame)
+        outer.setContentsMargins(14, 10, 14, 10)
+        outer.setSpacing(8)
+
+        row_top = QHBoxLayout()
+        row_top.setSpacing(6)
+        row_bottom = QHBoxLayout()
+        row_bottom.setSpacing(8)
 
         self.btn_new_case = QPushButton("New Case")
         self.btn_new_case.setObjectName("PrimaryButton")
         self.btn_new_case.clicked.connect(self.start_new_case)
 
-        self.btn_load_images = QPushButton("Import Files")
+        self.btn_load_images = QPushButton("Files")
         self.btn_load_images.clicked.connect(self.import_images)
         self.btn_load_images.setIcon(self.style().standardIcon(QStyle.SP_DialogOpenButton))
 
-        self.btn_load_folder = QPushButton("Import Folder")
+        self.btn_load_folder = QPushButton("Folder")
         self.btn_load_folder.clicked.connect(self.import_folder)
         self.btn_load_folder.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
 
-        self.btn_cancel_analysis = QPushButton("Cancel Analysis")
+        self.btn_cancel_analysis = QPushButton("Cancel")
         self.btn_cancel_analysis.clicked.connect(self.cancel_analysis)
         self.btn_cancel_analysis.setEnabled(False)
 
-        self.btn_generate_report = QPushButton("Generate Report")
+        self.btn_generate_report = QPushButton("Report")
         self.btn_generate_report.clicked.connect(self.generate_reports)
         self.btn_generate_report.setEnabled(False)
 
-        self.btn_courtroom = QPushButton("Courtroom Summary")
+        self.btn_courtroom = QPushButton("Courtroom")
         self.btn_courtroom.clicked.connect(self.generate_reports)
         self.btn_courtroom.setEnabled(False)
 
-        self.btn_open_map = QPushButton("Open Map")
+        self.btn_open_map = QPushButton("Map")
         self.btn_open_map.clicked.connect(self.open_map)
         self.btn_open_map.setEnabled(False)
         self.btn_open_map.setObjectName("GhostButton")
 
-        self.btn_open_exports = QPushButton("Export Hub")
+        self.btn_open_exports = QPushButton("Exports")
         self.btn_open_exports.clicked.connect(lambda: self._set_workspace_page("Reports"))
 
+        self.btn_compare = QPushButton("Compare")
+        self.btn_compare.clicked.connect(self.open_compare_mode)
+        self.btn_compare.setEnabled(False)
+
+        self.btn_recent_cases = QPushButton("Recent")
+        self.btn_recent_cases.clicked.connect(self.open_recent_cases_dialog)
+
+        self.btn_settings = QPushButton("Prefs")
+        self.btn_settings.clicked.connect(self.open_settings)
+
         self.command_progress = QLabel("Ready")
-        self.command_progress.setObjectName("MutedLabel")
+        self.command_progress.setObjectName("PreviewStateBadge")
 
         self.case_switch_combo = QComboBox()
-        self.case_switch_combo.setMinimumWidth(230)
+        self.case_switch_combo.setMinimumWidth(320)
         self.case_switch_combo.currentIndexChanged.connect(self._switch_case_from_combo)
 
         for btn in [
@@ -269,12 +452,25 @@ class GeoTraceMainWindow(QMainWindow):
             self.btn_courtroom,
             self.btn_open_map,
             self.btn_open_exports,
+            self.btn_compare,
+            self.btn_recent_cases,
+            self.btn_settings,
         ]:
-            layout.addWidget(btn)
-        layout.addStretch(1)
-        layout.addWidget(QLabel("Recent Cases"))
-        layout.addWidget(self.case_switch_combo)
-        layout.addWidget(self.command_progress)
+            row_top.addWidget(btn)
+        row_top.addStretch(1)
+
+        switch_label = QLabel("Case Switcher")
+        switch_label.setObjectName("MutedLabel")
+        self.command_hint = QLabel("Ctrl+2 Review • Ctrl+Shift+C Compare • Ctrl+R Report")
+        self.command_hint.setObjectName("MutedLabel")
+        row_bottom.addWidget(switch_label)
+        row_bottom.addWidget(self.case_switch_combo, 1)
+        row_bottom.addStretch(1)
+        row_bottom.addWidget(self.command_hint)
+        row_bottom.addWidget(self.command_progress)
+
+        outer.addLayout(row_top)
+        outer.addLayout(row_bottom)
         return frame
 
     def _build_page_bar(self) -> QWidget:
@@ -284,14 +480,14 @@ class GeoTraceMainWindow(QMainWindow):
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(8)
         self.page_buttons = {}
-        for key in ["Dashboard", "Review", "Geo", "Timeline", "Custody", "Reports"]:
+        for key in ["Dashboard", "Review", "Geo", "Timeline", "Custody", "Reports", "Cases"]:
             btn = QPushButton(key)
             btn.setObjectName("PageButton")
             btn.clicked.connect(lambda checked=False, page=key: self._set_workspace_page(page))
             layout.addWidget(btn)
             self.page_buttons[key] = btn
         layout.addStretch(1)
-        hint = QLabel("One focus area per page • no giant all-in-one screen")
+        hint = QLabel(f"{APP_NAME} {APP_VERSION} • page-based investigation")
         hint.setObjectName("MutedLabel")
         layout.addWidget(hint)
         return frame
@@ -310,6 +506,7 @@ class GeoTraceMainWindow(QMainWindow):
         self.timeline_page = self._wrap_page(self._build_timeline_page(), scrollable=True)
         self.custody_page = self._wrap_page(self._build_custody_page(), scrollable=True)
         self.reports_page = self._wrap_page(self._build_reports_page(), scrollable=True)
+        self.cases_page = self._wrap_page(self._build_cases_page(), scrollable=True)
         self.workspace_pages = {
             "Dashboard": self.dashboard_page,
             "Review": self.review_page,
@@ -317,8 +514,9 @@ class GeoTraceMainWindow(QMainWindow):
             "Timeline": self.timeline_page,
             "Custody": self.custody_page,
             "Reports": self.reports_page,
+            "Cases": self.cases_page,
         }
-        for key in ["Dashboard", "Review", "Geo", "Timeline", "Custody", "Reports"]:
+        for key in ["Dashboard", "Review", "Geo", "Timeline", "Custody", "Reports", "Cases"]:
             self.workspace_stack.addWidget(self.workspace_pages[key])
         self._set_workspace_page("Dashboard")
         return self.workspace_stack
@@ -414,23 +612,12 @@ class GeoTraceMainWindow(QMainWindow):
 
     def _build_review_page(self) -> QWidget:
         splitter = QSplitter(Qt.Horizontal)
-        splitter.setObjectName("ReviewPageSplitter")
         splitter.setChildrenCollapsible(False)
         splitter.setOpaqueResize(False)
-        inventory = self._build_inventory_panel()
-        center = self._build_review_center()
-        sidebar = self._build_review_sidebar()
-        inventory.setMinimumWidth(300)
-        inventory.setMaximumWidth(360)
-        sidebar.setMinimumWidth(330)
-        sidebar.setMaximumWidth(390)
-        splitter.addWidget(inventory)
-        splitter.addWidget(center)
-        splitter.addWidget(sidebar)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setStretchFactor(2, 0)
-        splitter.setSizes([320, 980, 360])
+        splitter.addWidget(self._build_inventory_panel())
+        splitter.addWidget(self._build_review_center())
+        splitter.addWidget(self._build_review_sidebar())
+        splitter.setSizes([310, 980, 330])
         return splitter
 
     def _build_inventory_panel(self) -> QWidget:
@@ -449,7 +636,7 @@ class GeoTraceMainWindow(QMainWindow):
         self.inventory_meta.setObjectName("MutedLabel")
 
         self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("Search by ID, filename, tag, source, device, GPS, software, or verdict signal…")
+        self.search_box.setPlaceholderText("Search all fields… try gps:yes risk:high parser:failed hidden:yes url:yes tag:foo note:bar")
         self.search_box.textChanged.connect(self.apply_filters)
 
         filter_row = QHBoxLayout()
@@ -470,6 +657,10 @@ class GeoTraceMainWindow(QMainWindow):
         ])
         self.filter_combo.currentTextChanged.connect(self.apply_filters)
         filter_row.addWidget(self.filter_combo)
+        self.sort_combo = QComboBox()
+        self.sort_combo.addItems(["Score ↓", "Time ↑", "Time ↓", "Filename A→Z", "Filename Z→A", "Confidence ↓", "Bookmarked First"])
+        self.sort_combo.currentTextChanged.connect(self.apply_filters)
+        filter_row.addWidget(self.sort_combo)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
@@ -479,6 +670,7 @@ class GeoTraceMainWindow(QMainWindow):
         self.inventory_list = QListWidget()
         self.inventory_list.setObjectName("EvidenceList")
         self.inventory_list.setSpacing(8)
+        self.inventory_list.setSelectionMode(QListWidget.ExtendedSelection)
         self.inventory_list.currentItemChanged.connect(self.populate_details)
 
         layout.addWidget(title)
@@ -491,79 +683,63 @@ class GeoTraceMainWindow(QMainWindow):
         return frame
 
     def _build_review_center(self) -> QWidget:
-        splitter = QSplitter(Qt.Vertical)
-        splitter.setObjectName("ReviewCenterSplitter")
-        splitter.setChildrenCollapsible(False)
-        splitter.setOpaqueResize(False)
+        self.review_tabs = QTabWidget()
+        self.review_tabs.setObjectName("ReviewTabs")
 
-        preview_shell = self._build_preview_shell()
-        preview_shell.setMinimumHeight(520)
+        self.review_tab_preview = self._build_preview_shell()
+        self.review_tab_overview = self._build_overview_tab()
+        self.review_tab_metadata = self._build_metadata_panel()
+        self.review_tab_hidden = self._build_hidden_content_tab()
+        self.review_tab_notes = self._build_notes_tab()
+        self.review_tab_audit = self._build_review_audit_tab()
 
-        details_host = QFrame()
-        details_host.setObjectName("PanelFrame")
-        host_layout = QVBoxLayout(details_host)
-        host_layout.setContentsMargins(12, 12, 12, 12)
-        host_layout.setSpacing(10)
+        self.review_tabs.addTab(self.review_tab_preview, "Preview")
+        self.review_tabs.addTab(self.review_tab_overview, "Overview")
+        self.review_tabs.addTab(self.review_tab_metadata, "Metadata")
+        self.review_tabs.addTab(self.review_tab_hidden, "Hidden / Code")
+        self.review_tabs.addTab(self.review_tab_notes, "Notes")
+        self.review_tabs.addTab(self.review_tab_audit, "Audit")
+        return self.review_tabs
 
-        nav_row = QHBoxLayout()
-        nav_row.setSpacing(8)
-        nav_title = QLabel("Review Details")
-        nav_title.setObjectName("SectionLabel")
-        nav_meta = QLabel("Only one detail layer stays open at a time to keep the review page calm.")
-        nav_meta.setObjectName("SectionMetaLabel")
-        nav_left = QVBoxLayout()
-        nav_left.setSpacing(2)
-        nav_left.addWidget(nav_title)
-        nav_left.addWidget(nav_meta)
-        nav_row.addLayout(nav_left)
-        nav_row.addStretch(1)
-
-        self.review_subpage_buttons = {}
-        self.review_subpage_group = QButtonGroup(self)
-        self.review_subpage_group.setExclusive(True)
-        for idx, key in enumerate(["Overview", "Metadata", "Notes"]):
-            btn = QPushButton(key)
-            btn.setObjectName("SmallGhostButton")
-            btn.setCheckable(True)
-            btn.clicked.connect(lambda checked=False, page=key: self._set_review_subpage(page))
-            self.review_subpage_group.addButton(btn)
-            self.review_subpage_buttons[key] = btn
-            nav_row.addWidget(btn)
-
-        self.review_subpage_stack = QStackedWidget()
-        self.review_subpage_stack.addWidget(self._build_review_overview_page())
-        self.review_subpage_stack.addWidget(self._build_metadata_panel())
-        self.review_subpage_stack.addWidget(self._build_review_notes_page())
-
-        host_layout.addLayout(nav_row)
-        host_layout.addWidget(self.review_subpage_stack, 1)
-
-        splitter.addWidget(preview_shell)
-        splitter.addWidget(details_host)
-        splitter.setStretchFactor(0, 4)
-        splitter.setStretchFactor(1, 2)
-        splitter.setSizes([620, 260])
-        self._set_review_subpage("Overview")
-        return splitter
-
-    def _build_review_overview_page(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
+    def _build_overview_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
-        self.metadata_overview = AutoHeightNarrativeView("Metadata overview will appear here.", max_auto_height=220)
-        layout.addWidget(self._shell("Metadata Overview", self.metadata_overview, "Readable summary first. Raw dumps stay hidden until you explicitly open them."))
-        self.review_overview_hint = AutoHeightNarrativeView("Preview fallback guidance and quick interpretation will appear here.", max_auto_height=160)
-        layout.addWidget(self._shell("Review Interpretation", self.review_overview_hint, "Short context that supports the preview without turning the center lane into a wall of text."))
+
+        self.review_time_shell = self._preview_meta_block("Recovered Time", "—")
+        self.review_file_shell = self._preview_meta_block("Evidence", "—")
+        self.review_profile_shell = self._preview_meta_block("Source Profile", "—")
+        top_grid = QGridLayout()
+        top_grid.setHorizontalSpacing(10)
+        top_grid.setVerticalSpacing(10)
+        top_grid.addWidget(self.review_time_shell, 0, 0, 1, 2)
+        top_grid.addWidget(self.review_file_shell, 1, 0)
+        top_grid.addWidget(self.review_profile_shell, 1, 1)
+        layout.addLayout(top_grid)
+
+        self.metadata_overview = AutoHeightNarrativeView("Metadata overview will appear here.", max_auto_height=340)
+        layout.addWidget(self._shell("Metadata Overview", self.metadata_overview, "Readable summary first. Technical dumps stay hidden until requested."))
+
+        quick = QHBoxLayout()
+        quick.setSpacing(8)
+        self.btn_review_export = QPushButton("Export This Case")
+        self.btn_review_export.setObjectName("SmallGhostButton")
+        self.btn_review_export.clicked.connect(self.generate_reports)
+        self.btn_review_compare = QPushButton("Compare Selected")
+        self.btn_review_compare.setObjectName("SmallGhostButton")
+        self.btn_review_compare.clicked.connect(self.open_compare_mode)
+        quick.addWidget(self.btn_review_export)
+        quick.addWidget(self.btn_review_compare)
+        quick.addStretch(1)
+        self.review_hint_label = QLabel("Quick actions: F fullscreen • +/- zoom • Ctrl+S save note")
+        self.review_hint_label.setObjectName("MutedLabel")
+        quick.addWidget(self.review_hint_label)
+        layout.addLayout(quick)
         layout.addStretch(1)
-        return page
+        return widget
 
-    def _build_review_notes_page(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
-
+    def _build_notes_tab(self) -> QWidget:
         notes_shell = QFrame()
         notes_shell.setObjectName("CompactPanel")
         notes_layout = QVBoxLayout(notes_shell)
@@ -571,43 +747,54 @@ class GeoTraceMainWindow(QMainWindow):
         notes_layout.setSpacing(8)
         notes_label = QLabel("Case Notes, Tags & Bookmarks")
         notes_label.setObjectName("SectionLabel")
-        notes_meta = QLabel("Notes stay available without permanently occupying the main review stage.")
+        notes_meta = QLabel("Keep analyst notes on their own tab so the preview stage stays clean and readable.")
         notes_meta.setObjectName("SectionMetaLabel")
+        template_row = QHBoxLayout()
+        template_row.setSpacing(8)
+        self.note_template_combo = QComboBox()
+        self.note_template_combo.addItems(["Choose template…", *self.note_templates.keys()])
+        apply_template_button = QPushButton("Insert Template")
+        apply_template_button.clicked.connect(self.insert_note_template)
+        template_row.addWidget(self.note_template_combo)
+        template_row.addWidget(apply_template_button)
         self.note_editor = QTextEdit()
         self.note_editor.setPlaceholderText("Add analyst observations, correlation ideas, or courtroom caveats for the selected evidence item…")
-        self.note_editor.setMinimumHeight(140)
+        self.note_editor.setMinimumHeight(180)
         self.tags_editor = QLineEdit()
         self.tags_editor.setPlaceholderText("Tags (comma-separated), e.g. malformed, timeline-anchor, priority-review")
-        self.bookmark_checkbox = QCheckBox("Bookmark selected evidence")
+        self.bookmark_checkbox = QCheckBox("Pin / bookmark selected evidence")
         save_button = QPushButton("Save Notes & Tags")
         save_button.clicked.connect(self.save_note_and_tags)
         notes_layout.addWidget(notes_label)
         notes_layout.addWidget(notes_meta)
+        notes_layout.addLayout(template_row)
         notes_layout.addWidget(self.note_editor)
         notes_layout.addWidget(self.tags_editor)
         notes_layout.addWidget(self.bookmark_checkbox)
         notes_layout.addWidget(save_button, alignment=Qt.AlignLeft)
-        layout.addWidget(notes_shell)
-        layout.addStretch(1)
-        return page
+        return notes_shell
 
-    def _set_review_subpage(self, key: str) -> None:
-        if not hasattr(self, "review_subpage_stack"):
-            return
-        index_map = {"Overview": 0, "Metadata": 1, "Notes": 2}
-        self.review_subpage_stack.setCurrentIndex(index_map.get(key, 0))
-        for name, btn in getattr(self, "review_subpage_buttons", {}).items():
-            btn.blockSignals(True)
-            btn.setChecked(name == key)
-            btn.setObjectName("PageButtonActive" if name == key else "SmallGhostButton")
-            btn.style().unpolish(btn)
-            btn.style().polish(btn)
-            btn.update()
-            btn.blockSignals(False)
+    def _build_hidden_content_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        self.hidden_overview_view = AutoHeightNarrativeView("Hidden-content scan results will appear here.", max_auto_height=220)
+        self.hidden_code_view = TerminalView("Code-like markers, URLs, and embedded strings will appear here when detected.")
+        layout.addWidget(self._shell("Embedded Text & Code Scan", self.hidden_overview_view, "Byte-level heuristics look for readable strings, URLs, and obvious script or credential markers hidden inside the container."))
+        layout.addWidget(self._shell("Recovered Markers", self.hidden_code_view, "Heuristic view only: readable payloads do not automatically prove exploitability."), 1)
+        return widget
+
+    def _build_review_audit_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        self.review_audit_view = TerminalView("Select an evidence item to load its case-scoped audit activity.")
+        layout.addWidget(self._shell("Evidence Audit Trail", self.review_audit_view, "Case-scoped events filtered to the selected evidence item so note, import, and analysis activity stay visible during review."), 1)
+        return widget
 
     def _build_review_sidebar(self) -> QWidget:
-        scroll = SmoothScrollArea()
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -618,11 +805,11 @@ class GeoTraceMainWindow(QMainWindow):
         verdict_layout = QVBoxLayout(verdict)
         verdict_layout.setContentsMargins(14, 14, 14, 14)
         verdict_layout.setSpacing(10)
-        top_title = QLabel("Verdict")
+        top_title = QLabel("Decision Rail")
         top_title.setObjectName("SectionLabel")
-        top_meta = QLabel("Short, calm, and focused: score, confidence, four priority facts, then one narrative block.")
+        top_meta = QLabel("Score, confidence, four priority facts, one verdict block, then concise next steps.")
         top_meta.setObjectName("SectionMetaLabel")
-        self.score_ring = ScoreRing(88)
+        self.score_ring = ScoreRing(104)
         self.confidence_bar = QProgressBar()
         self.confidence_bar.setObjectName("ConfidenceBar")
         self.confidence_bar.setRange(0, 100)
@@ -630,31 +817,20 @@ class GeoTraceMainWindow(QMainWindow):
         self.confidence_bar_label = QLabel("0% analyst confidence")
         self.confidence_bar_label.setObjectName("MutedLabel")
 
-        top_stats = QHBoxLayout()
-        top_stats.setSpacing(12)
-        top_stats.addWidget(self.score_ring, alignment=Qt.AlignTop)
-
-        summary_col = QVBoxLayout()
-        summary_col.setSpacing(8)
-        self.badge_risk = self._risk_badge("Risk: —", "Low")
-        self.badge_time = self._micro_badge("Time Source: —")
-        self.badge_parser = self._micro_badge("Parser: —")
-        self.badge_signature = self._micro_badge("Signature: —")
+        facts = QGridLayout()
+        facts.setHorizontalSpacing(8)
+        facts.setVerticalSpacing(8)
+        self.badge_parser = self._micro_badge("Parser / Trust: —")
+        self.badge_time = self._micro_badge("Time Anchor: —")
+        self.badge_source = self._micro_badge("Source Profile: —")
         self.badge_gps = self._micro_badge("GPS: —")
-        for badge in [self.badge_risk, self.badge_time, self.badge_parser, self.badge_signature, self.badge_gps]:
-            summary_col.addWidget(badge)
-        summary_col.addStretch(1)
-        top_stats.addLayout(summary_col, 1)
+        for idx, badge in enumerate([self.badge_parser, self.badge_time, self.badge_source, self.badge_gps]):
+            facts.addWidget(badge, idx // 2, idx % 2)
 
-        secondary_row = QGridLayout()
-        secondary_row.setHorizontalSpacing(8)
-        secondary_row.setVerticalSpacing(8)
-        self.badge_source = self._micro_badge("Source: —")
+        self.badge_signature = self._micro_badge("Signature: —")
         self.badge_trust = self._micro_badge("Trust: —")
+        self.badge_risk = self._risk_badge("Risk: —", "Low")
         self.badge_format = self._micro_badge("Format: —")
-        secondary_row.addWidget(self.badge_source, 0, 0)
-        secondary_row.addWidget(self.badge_trust, 0, 1)
-        secondary_row.addWidget(self.badge_format, 1, 0, 1, 2)
 
         self.score_auth_badge = QLabel("Authenticity 0")
         self.score_auth_badge.setObjectName("ScoreBreakdownBadge")
@@ -669,34 +845,20 @@ class GeoTraceMainWindow(QMainWindow):
         scores_row.addWidget(self.score_tech_badge)
 
         self.selection_verdict_view = AutoHeightNarrativeView("Select an item to load a focused verdict summary.", max_auto_height=150)
+        self.review_pivots_text = AutoHeightNarrativeView("Select evidence to load next-step pivots.", max_auto_height=170)
         verdict_layout.addWidget(top_title)
         verdict_layout.addWidget(top_meta)
-        verdict_layout.addLayout(top_stats)
+        verdict_layout.addWidget(self.score_ring, alignment=Qt.AlignHCenter)
         verdict_layout.addWidget(self.confidence_bar)
         verdict_layout.addWidget(self.confidence_bar_label)
-        verdict_layout.addLayout(secondary_row)
+        verdict_layout.addLayout(facts)
         verdict_layout.addLayout(scores_row)
-        verdict_layout.addWidget(self.selection_verdict_view)
-
-        pivots = QFrame()
-        pivots.setObjectName("CompactPanel")
-        pivots_layout = QVBoxLayout(pivots)
-        pivots_layout.setContentsMargins(14, 14, 14, 14)
-        pivots_layout.setSpacing(8)
-        pivots_title = QLabel("Smart Next Pivots")
-        pivots_title.setObjectName("SectionLabel")
-        pivots_meta = QLabel("Designed empty states keep the review page useful before or after selection.")
-        pivots_meta.setObjectName("SectionMetaLabel")
-        self.review_pivots_text = AutoHeightNarrativeView("Select evidence to load next-step pivots.", max_auto_height=200)
-        pivots_layout.addWidget(pivots_title)
-        pivots_layout.addWidget(pivots_meta)
-        pivots_layout.addWidget(self.review_pivots_text)
+        verdict_layout.addWidget(self._shell("Analyst Verdict", self.selection_verdict_view, "Observed posture first, then what still needs confirmation."))
+        verdict_layout.addWidget(self._shell("Next Steps", self.review_pivots_text, "Concise pivots only — no repeated narrative blocks."))
 
         layout.addWidget(verdict)
-        layout.addWidget(pivots)
         layout.addStretch(1)
-        scroll.setWidget(widget)
-        return scroll
+        return widget
 
     def _build_preview_shell(self) -> QWidget:
         preview_shell = QFrame()
@@ -708,7 +870,7 @@ class GeoTraceMainWindow(QMainWindow):
         toolbar = QHBoxLayout()
         title = QLabel("Evidence Stage")
         title.setObjectName("SectionLabel")
-        subtitle = QLabel("Preview is the hero. Metadata and technical depth stay below it and raw panels stay closed until requested.")
+        subtitle = QLabel("Preview stays in front. Use tabs for overview, metadata, hidden-content scan, notes, and audit history.")
         subtitle.setObjectName("SectionMetaLabel")
         left = QVBoxLayout()
         left.addWidget(title)
@@ -745,11 +907,15 @@ class GeoTraceMainWindow(QMainWindow):
         self.btn_open_external = QPushButton("Open Original")
         self.btn_open_external.setObjectName("SmallGhostButton")
         self.btn_open_external.clicked.connect(self.open_selected_file)
+        self.btn_export_from_review = QPushButton("Export")
+        self.btn_export_from_review.setObjectName("SmallGhostButton")
+        self.btn_export_from_review.clicked.connect(self.generate_reports)
         for btn in [self.btn_zoom_out, self.btn_zoom_in, self.btn_zoom_fit, self.btn_zoom_reset, self.btn_prev_frame, self.btn_next_frame]:
             toolbar.addWidget(btn)
         toolbar.addWidget(self.frame_index_badge)
         toolbar.addWidget(self.btn_fullscreen_preview)
         toolbar.addWidget(self.btn_open_external)
+        toolbar.addWidget(self.btn_export_from_review)
 
         state_row = QGridLayout()
         state_row.setHorizontalSpacing(8)
@@ -765,30 +931,26 @@ class GeoTraceMainWindow(QMainWindow):
         for idx, badge in enumerate([self.preview_state_badge, self.preview_parser_badge, self.preview_signature_badge, self.preview_trust_badge]):
             state_row.addWidget(badge, 0, idx)
 
+        hint = QLabel("Keyboard: Ctrl+2 review • F fullscreen • +/- zoom • Ctrl+Shift+C compare")
+        hint.setObjectName("MutedLabel")
+
         preview_frame = QFrame()
         preview_frame.setObjectName("PreviewCanvasFrame")
         preview_frame_layout = QVBoxLayout(preview_frame)
         preview_frame_layout.setContentsMargins(10, 10, 10, 10)
-        self.image_preview = ResizableImageLabel("Choose an evidence item to start review. No-selection mode keeps the workspace calm instead of filling the screen with dead panels.", min_height=460)
-        self.image_preview.setMinimumHeight(460)
+        self.image_preview = ResizableImageLabel("Choose an evidence item to start review. No-selection mode keeps the workspace calm instead of filling the screen with dead panels.", min_height=620)
+        self.image_preview.setMinimumHeight(620)
         preview_frame_layout.addWidget(self.image_preview, 1)
 
-        meta_grid = QGridLayout()
-        meta_grid.setHorizontalSpacing(10)
-        meta_grid.setVerticalSpacing(8)
         self.preview_file_meta = self._preview_meta_block("Evidence", "—")
         self.preview_source_meta = self._preview_meta_block("Source Profile", "—")
         self.preview_time_meta = self._preview_meta_block("Recovered Time", "—")
         self.preview_geo_meta = self._preview_meta_block("GPS / Geo", "—")
-        meta_grid.addWidget(self.preview_file_meta, 0, 0)
-        meta_grid.addWidget(self.preview_source_meta, 0, 1)
-        meta_grid.addWidget(self.preview_time_meta, 1, 0)
-        meta_grid.addWidget(self.preview_geo_meta, 1, 1)
 
         layout.addLayout(toolbar)
         layout.addLayout(state_row)
+        layout.addWidget(hint)
         layout.addWidget(preview_frame, 1)
-        layout.addLayout(meta_grid)
         return preview_shell
 
     def _preview_meta_block(self, title: str, value: str) -> QWidget:
@@ -813,8 +975,9 @@ class GeoTraceMainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self.metadata_overview = AutoHeightNarrativeView("Metadata overview will appear here.", max_auto_height=260)
-        layout.addWidget(self._shell("Metadata Overview", self.metadata_overview, "Readable summary first. Technical dumps stay hidden until requested."))
+        meta_intro = QLabel("Technical depth lives here so the preview tab stays clean. Open normalized or raw views only when needed.")
+        meta_intro.setObjectName("SectionMetaLabel")
+        layout.addWidget(meta_intro)
 
         toggle_row = QHBoxLayout()
         toggle_row.setSpacing(8)
@@ -837,6 +1000,7 @@ class GeoTraceMainWindow(QMainWindow):
         self.raw_shell.hide()
         layout.addWidget(self.normalized_shell)
         layout.addWidget(self.raw_shell)
+        layout.addStretch(1)
         return widget
 
     def _build_geo_page(self) -> QWidget:
@@ -907,8 +1071,10 @@ class GeoTraceMainWindow(QMainWindow):
         layout.addLayout(badge_row)
 
         self.timeline_chart = ChartCard("Timeline Reconstruction", "Single-item cases use a compact evidence anchor instead of a giant empty plot.")
+        self.timeline_narrative = AutoHeightNarrativeView("Timeline narrative generation will appear here after evidence is loaded.", max_auto_height=220)
         self.timeline_text = AutoHeightNarrativeView("Timeline analysis will appear here after evidence is loaded.", max_auto_height=240)
         layout.addWidget(self.timeline_chart, 1)
+        layout.addWidget(self._shell("Timeline Narrative", self.timeline_narrative, "Readable chronological story generated from the available anchors and parser context."))
         layout.addWidget(self._shell("Timeline Analyst Notes", self.timeline_text, "Chronological interpretation with parser, signature, and trust context."))
         layout.addStretch(1)
         return widget
@@ -930,7 +1096,19 @@ class GeoTraceMainWindow(QMainWindow):
         hero_layout.addWidget(title)
         hero_layout.addWidget(meta)
         layout.addWidget(hero)
+        audit_row = QHBoxLayout()
+        audit_row.setSpacing(8)
+        self.audit_search = QLineEdit()
+        self.audit_search.setPlaceholderText("Filter audit trail by action, evidence ID, or keyword…")
+        self.audit_search.textChanged.connect(self.populate_custody_log)
+        self.btn_copy_audit = QPushButton("Copy Audit")
+        self.btn_copy_audit.clicked.connect(self.copy_audit_log)
+        audit_row.addWidget(self.audit_search)
+        audit_row.addWidget(self.btn_copy_audit)
+        self.audit_summary = AutoHeightNarrativeView("Audit summary appears here.", max_auto_height=140)
         self.custody_text = TerminalView("No chain-of-custody activity logged yet.")
+        layout.addWidget(self._shell("Audit Summary", self.audit_summary, "Quick reading layer before the full event stream."))
+        layout.addLayout(audit_row)
         layout.addWidget(self._shell("Current Case Log", self.custody_text, "Event stream for the active isolated case."), 1)
         return widget
 
@@ -954,9 +1132,54 @@ class GeoTraceMainWindow(QMainWindow):
 
         self.export_summary = AutoHeightNarrativeView("No export package generated for the current case yet.", max_auto_height=260)
         self.report_notes_view = AutoHeightNarrativeView("Generate reports to populate courtroom-ready output notes here.", max_auto_height=220)
+        self.batch_queue_view = AutoHeightNarrativeView("No active or queued import batches.", max_auto_height=240)
+        self.error_log_view = TerminalView("Graceful error logs will appear here for user-visible troubleshooting.")
         layout.addWidget(self._shell("Package Status", self.export_summary, "HTML, PDF, CSV, JSON, and courtroom summary are generated here."))
+        layout.addWidget(self._shell("Batch Queue & Intake Progress", self.batch_queue_view, "Drag-and-drop or import multiple sets; queued batches start automatically."))
         layout.addWidget(self._shell("Courtroom Output Notes", self.report_notes_view, "Use this page as the document hub after generation."))
+        layout.addWidget(self._shell("Graceful Error Log", self.error_log_view, "User-visible runtime issues are stored here and mirrored to logs/app_errors.log."))
         layout.addStretch(1)
+        return widget
+
+    def _build_cases_page(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+        hero = QFrame()
+        hero.setObjectName("PanelFrame")
+        hero_layout = QVBoxLayout(hero)
+        hero_layout.setContentsMargins(14, 14, 14, 14)
+        hero_layout.setSpacing(8)
+        title = QLabel("Cases & Reopen")
+        title.setObjectName("SectionLabel")
+        meta = QLabel("Stronger case save/load/reopen flow with snapshots, quick switching, and a dedicated page instead of a hidden combo only.")
+        meta.setObjectName("SectionMetaLabel")
+        hero_layout.addWidget(title)
+        hero_layout.addWidget(meta)
+        layout.addWidget(hero)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+        self.btn_cases_open = QPushButton("Open Selected Case")
+        self.btn_cases_open.clicked.connect(self.open_selected_case_from_page)
+        self.btn_cases_snapshot = QPushButton("Open Snapshot Folder")
+        self.btn_cases_snapshot.clicked.connect(self.open_case_snapshot_folder)
+        self.btn_cases_rename = QPushButton("Rename Active Case")
+        self.btn_cases_rename.clicked.connect(self.rename_active_case)
+        self.btn_cases_refresh = QPushButton("Refresh")
+        self.btn_cases_refresh.clicked.connect(self._refresh_cases_page)
+        for btn in [self.btn_cases_open, self.btn_cases_snapshot, self.btn_cases_rename, self.btn_cases_refresh]:
+            action_row.addWidget(btn)
+        action_row.addStretch(1)
+        layout.addLayout(action_row)
+
+        self.cases_summary = AutoHeightNarrativeView("Case library summary will appear here.", max_auto_height=240)
+        self.cases_list = QListWidget()
+        self.cases_list.setObjectName("EvidenceList")
+        self.cases_list.itemDoubleClicked.connect(lambda item: self.open_selected_case_from_page())
+        layout.addWidget(self._shell("Case Library", self.cases_summary, "Active case identity, snapshot coverage, and recent case history."))
+        layout.addWidget(self.cases_list, 1)
         return widget
 
     def _shell(self, title: str, body: QWidget, subtitle: str = "") -> QWidget:
@@ -1005,8 +1228,8 @@ class GeoTraceMainWindow(QMainWindow):
         switched = self.case_manager.switch_case(case_id)
         if switched is None:
             return
-        self.records = []
-        self.filtered_records = []
+        self.records = list(self.case_manager.records)
+        self.filtered_records = list(self.records)
         self.export_dir = self._case_export_dir()
         self.map_service = MapService(self.export_dir)
         self.report_service = ReportService(self.export_dir)
@@ -1014,13 +1237,15 @@ class GeoTraceMainWindow(QMainWindow):
         self.thumbnail_cache.clear()
         self.preview_cache.clear()
         self.frame_cache.clear()
-        self.populate_table([])
+        self.populate_table(self.filtered_records)
         self.refresh_dashboard()
         self.update_charts()
         self.populate_timeline()
         self.populate_custody_log()
         self.clear_details()
         self._refresh_case_badges()
+        self._refresh_cases_page()
+        self._show_toast("Case reopened", f"Loaded {self.case_manager.active_case_name}", tone="success")
 
     def _refresh_case_switcher(self) -> None:
         if not hasattr(self, "case_switch_combo"):
@@ -1060,6 +1285,10 @@ class GeoTraceMainWindow(QMainWindow):
         label.update()
 
     def start_new_case(self) -> None:
+        if self.settings.value("confirm_before_new_case", True, type=bool) and self.records:
+            answer = QMessageBox.question(self, "Start New Case", "Create a new active case and clear the current review context? Existing cases remain saved.")
+            if answer != QMessageBox.Yes:
+                return
         name, ok = QInputDialog.getText(self, "New Case", "Case name:", text=f"Case {self.case_manager.active_case_name}")
         if not ok:
             return
@@ -1085,6 +1314,8 @@ class GeoTraceMainWindow(QMainWindow):
         self.clear_details()
         self.populate_custody_log()
         self.export_summary.setPlainText(f"Active case changed to {case.case_id}. Previous case logs remain isolated.")
+        self._refresh_cases_page()
+        self._show_toast("New case created", case.case_id, tone="success")
 
     def _refresh_case_badges(self) -> None:
         self.case_badge.setText(f"{self.case_manager.active_case_id} — {self.case_manager.active_case_name}")
@@ -1099,17 +1330,18 @@ class GeoTraceMainWindow(QMainWindow):
             "Images (*.jpg *.jpeg *.png *.tif *.tiff *.webp *.bmp *.gif *.heic *.heif)",
         )
         if files:
-            self._start_analysis([Path(file) for file in files])
+            self._queue_or_start_analysis([Path(file) for file in files])
 
     def import_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Select Evidence Folder", str(self.project_root))
         if folder:
-            self._start_analysis([Path(folder)])
+            self._queue_or_start_analysis([Path(folder)])
 
     def _start_analysis(self, paths: List[Path]) -> None:
         if self.analysis_thread is not None:
             self.show_info("Analysis Running", "Wait for the current batch to finish or cancel it before starting another one.")
             return
+        self.current_batch_manifest = list(paths)
         self.thumbnail_cache.clear()
         self.preview_cache.clear()
         self.frame_cache.clear()
@@ -1121,6 +1353,8 @@ class GeoTraceMainWindow(QMainWindow):
         self.btn_load_folder.setEnabled(False)
         self.btn_generate_report.setEnabled(False)
         self.btn_courtroom.setEnabled(False)
+        self.btn_compare.setEnabled(False)
+        self._refresh_batch_queue_view()
 
         self.analysis_thread = QThread(self)
         self.analysis_worker = AnalysisWorker(self.case_manager, paths)
@@ -1163,20 +1397,28 @@ class GeoTraceMainWindow(QMainWindow):
         self.btn_open_map.setEnabled(self.current_map_path is not None)
         self.btn_generate_report.setEnabled(bool(self.records))
         self.btn_courtroom.setEnabled(bool(self.records))
+        self.btn_compare.setEnabled(len(self.records) >= 2)
         if self.filtered_records:
             self.inventory_list.setCurrentRow(0)
         else:
             self.clear_details()
+        self._refresh_batch_queue_view()
+        self._refresh_cases_page()
+        self._show_toast("Analysis complete", f"Processed {len(self.records)} evidence item(s).", tone="success")
 
     def _on_analysis_error(self, message: str) -> None:
         self.progress_bar.setFormat("Analysis failed")
         self.command_progress.setText("Analysis failed")
+        self._log_error("Analysis Error", message)
         self.show_info("Analysis Error", message)
+        self._refresh_batch_queue_view()
 
     def _on_analysis_cancelled(self) -> None:
         self.progress_bar.setFormat("Analysis cancelled")
         self.command_progress.setText("Analysis cancelled")
         self.show_info("Cancelled", "Background analysis was cancelled before completion.")
+        self._show_toast("Analysis cancelled", "The active batch was cancelled.", tone="warning")
+        self._refresh_batch_queue_view()
 
     def _cleanup_analysis_thread(self) -> None:
         self.btn_cancel_analysis.setEnabled(False)
@@ -1188,6 +1430,9 @@ class GeoTraceMainWindow(QMainWindow):
             self.analysis_thread.deleteLater()
         self.analysis_worker = None
         self.analysis_thread = None
+        self.current_batch_manifest = []
+        self._refresh_batch_queue_view()
+        self._consume_next_batch()
 
     def populate_table(self, records: List[EvidenceRecord]) -> None:
         self.inventory_list.clear()
@@ -1241,6 +1486,7 @@ class GeoTraceMainWindow(QMainWindow):
         self.btn_open_map.setEnabled(stats.gps_enabled > 0 and self.current_map_path is not None)
         self.btn_generate_report.setEnabled(stats.total_images > 0 and self.analysis_thread is None)
         self.btn_courtroom.setEnabled(stats.total_images > 0 and self.analysis_thread is None)
+        self.btn_compare.setEnabled(len(self.records) >= 2)
         assessment = self._build_case_assessment_text()
         priority = self._build_priority_text()
         self.export_summary.setPlainText(self.export_summary.toPlainText() if self.export_summary.toPlainText().strip() else "No export package generated for the current case yet.")
@@ -1266,28 +1512,12 @@ class GeoTraceMainWindow(QMainWindow):
         self.apply_filters()
 
     def apply_filters(self) -> None:
-        query = self.search_box.text().lower().strip()
+        query = self.search_box.text().strip()
         mode = self.filter_combo.currentText()
         filtered: List[EvidenceRecord] = []
+        tokens = [token for token in query.lower().split() if token]
         for record in self.case_manager.records:
-            haystack = " ".join(
-                [
-                    record.evidence_id,
-                    record.file_name,
-                    record.device_model,
-                    record.gps_display,
-                    record.timestamp,
-                    record.software,
-                    record.source_type,
-                    record.parser_status,
-                    record.signature_status,
-                    record.format_trust,
-                    record.duplicate_group,
-                    record.analyst_verdict,
-                    record.tags,
-                ]
-            ).lower()
-            if query and query not in haystack:
+            if not self._record_matches_query(record, tokens):
                 continue
             if mode == "Has GPS" and not record.has_gps:
                 continue
@@ -1311,12 +1541,92 @@ class GeoTraceMainWindow(QMainWindow):
                 continue
             filtered.append(record)
 
+        sort_mode = self.sort_combo.currentText() if hasattr(self, "sort_combo") else "Score ↓"
+        filtered = self._sort_records(filtered, sort_mode)
         self.filtered_records = filtered
         self.populate_table(filtered)
         if filtered:
             self.inventory_list.setCurrentRow(0)
         else:
             self.clear_details()
+
+    def _record_search_haystack(self, record: EvidenceRecord) -> str:
+        parts = [
+            record.evidence_id, record.file_name, str(record.file_path), record.device_model, record.gps_display,
+            record.timestamp, record.timestamp_source, record.software, record.source_type, record.parser_status,
+            record.signature_status, record.format_trust, record.duplicate_group, record.analyst_verdict, record.tags, record.note,
+            record.parse_error, record.hidden_code_summary, record.hidden_content_overview, record.format_name, record.dimensions,
+            " ".join(record.anomaly_reasons), " ".join(record.osint_leads), " ".join(record.extracted_strings),
+            " ".join(record.hidden_code_indicators), " ".join(record.urls_found),
+        ]
+        return " ".join(part for part in parts if part).lower()
+
+    def _record_matches_query(self, record: EvidenceRecord, tokens: List[str]) -> bool:
+        if not tokens:
+            return True
+        haystack = self._record_search_haystack(record)
+        for token in tokens:
+            if ':' in token:
+                key, value = token.split(':', 1)
+                value = value.strip()
+                if key == 'gps':
+                    expected = value in {'yes', 'true', '1', 'on'}
+                    if record.has_gps != expected:
+                        return False
+                    continue
+                if key == 'risk' and record.risk_level.lower() != value:
+                    return False
+                elif key == 'parser' and value not in record.parser_status.lower():
+                    return False
+                elif key == 'source' and value not in record.source_type.lower():
+                    return False
+                elif key == 'tag' and value not in (record.tags or '').lower():
+                    return False
+                elif key == 'note' and value not in (record.note or '').lower():
+                    return False
+                elif key in {'hidden', 'code'}:
+                    expected = value in {'yes', 'true', '1', 'on'}
+                    if bool(record.hidden_code_indicators) != expected:
+                        return False
+                    continue
+                elif key == 'url':
+                    expected = value in {'yes', 'true', '1', 'on'}
+                    if bool(record.urls_found) != expected:
+                        return False
+                    continue
+                elif token not in haystack:
+                    return False
+            elif token not in haystack:
+                return False
+        return True
+
+    def _sort_records(self, records: List[EvidenceRecord], mode: str) -> List[EvidenceRecord]:
+        def ts(record: EvidenceRecord):
+            parsed = parse_timestamp(record.timestamp)
+            return parsed or datetime.max
+
+        if mode == "Time ↑":
+            return sorted(records, key=lambda r: (ts(r), r.evidence_id))
+        if mode == "Time ↓":
+            return sorted(records, key=lambda r: (ts(r), r.evidence_id), reverse=True)
+        if mode == "Filename A→Z":
+            return sorted(records, key=lambda r: (r.file_name.lower(), r.evidence_id))
+        if mode == "Filename Z→A":
+            return sorted(records, key=lambda r: (r.file_name.lower(), r.evidence_id), reverse=True)
+        if mode == "Confidence ↓":
+            return sorted(records, key=lambda r: (-r.confidence_score, -r.suspicion_score, r.evidence_id))
+        if mode == "Bookmarked First":
+            return sorted(records, key=lambda r: (not r.bookmarked, -r.suspicion_score, r.evidence_id))
+        return sorted(records, key=lambda r: (-r.suspicion_score, -r.confidence_score, r.evidence_id))
+
+    def selected_records(self) -> List[EvidenceRecord]:
+        selected: List[EvidenceRecord] = []
+        for item in self.inventory_list.selectedItems():
+            evidence_id = item.data(Qt.UserRole)
+            record = self.case_manager.get_record(str(evidence_id)) if evidence_id else None
+            if record is not None:
+                selected.append(record)
+        return selected
 
     def selected_record(self) -> Optional[EvidenceRecord]:
         item = self.inventory_list.currentItem()
@@ -1334,8 +1644,9 @@ class GeoTraceMainWindow(QMainWindow):
         self.current_frame_record = None
         self.image_preview.clear_source("Select evidence to open the hero preview stage. No-selection mode keeps the workspace calm until you choose an item.")
         self.metadata_overview.setPlainText("Choose an evidence item to see a calm metadata overview instead of a raw dump wall.")
-        if hasattr(self, "review_overview_hint"):
-            self.review_overview_hint.setPlainText("Preview guidance and quick interpretation will appear here after you select evidence.")
+        self.hidden_overview_view.setPlainText("Hidden-content scan results will appear here.")
+        self.hidden_code_view.setPlainText("Code-like markers, URLs, and embedded strings will appear here when detected.")
+        self.review_audit_view.setPlainText("Select an evidence item to load its case-scoped audit activity.")
         self.metadata_view.clear()
         self.raw_exif_view.clear()
         self.normalized_shell.hide()
@@ -1348,12 +1659,19 @@ class GeoTraceMainWindow(QMainWindow):
         self.geo_text.setPlainText("No GPS selected yet. When an item is chosen, this page explains whether missing GPS is normal for its workflow.")
         self.geo_leads_text.setPlainText("Location pivots and next-step suggestions will appear here.")
         self.timeline_text.setPlainText("Timeline analysis will appear here after evidence is loaded.")
+        if hasattr(self, "timeline_narrative"):
+            self.timeline_narrative.setPlainText("Timeline narrative generation will appear here after evidence is loaded.")
         self.selection_verdict_view.setPlainText("Select an item to load a shorter, calmer verdict narrative.")
         self.review_pivots_text.setPlainText("Choose evidence to see next pivots, or stay on Dashboard for case-wide triage.")
+        if hasattr(self, "review_tabs"):
+            self.review_tabs.setCurrentIndex(0)
         self.preview_file_meta.value_label.setText("—")  # type: ignore[attr-defined]
         self.preview_source_meta.value_label.setText("—")  # type: ignore[attr-defined]
         self.preview_time_meta.value_label.setText("—")  # type: ignore[attr-defined]
         self.preview_geo_meta.value_label.setText("—")  # type: ignore[attr-defined]
+        self.review_time_shell.value_label.setText("—")  # type: ignore[attr-defined]
+        self.review_file_shell.value_label.setText("—")  # type: ignore[attr-defined]
+        self.review_profile_shell.value_label.setText("—")  # type: ignore[attr-defined]
         self.score_ring.set_value(0)
         self.score_ring.set_caption("Evidence Score", "Awaiting selection")
         self.confidence_bar.setValue(0)
@@ -1382,9 +1700,9 @@ class GeoTraceMainWindow(QMainWindow):
         self.btn_next_frame.setEnabled(animated)
 
     def _set_badge_defaults(self) -> None:
-        self.badge_source.setText("Source: —")
-        self.badge_time.setText("Time Source: —")
-        self.badge_parser.setText("Parser: —")
+        self.badge_source.setText("Source Profile: —")
+        self.badge_time.setText("Time Anchor: —")
+        self.badge_parser.setText("Parser / Trust: —")
         self.badge_signature.setText("Signature: —")
         self.badge_trust.setText("Trust: —")
         self.badge_gps.setText("GPS: —")
@@ -1431,14 +1749,17 @@ class GeoTraceMainWindow(QMainWindow):
         self.preview_source_meta.value_label.setText(record.source_type)  # type: ignore[attr-defined]
         self.preview_time_meta.value_label.setText(f"{record.timestamp} ({record.timestamp_source})")  # type: ignore[attr-defined]
         self.preview_geo_meta.value_label.setText(record.gps_display)  # type: ignore[attr-defined]
+        self.review_time_shell.value_label.setText(f"{record.timestamp} ({record.timestamp_source})")  # type: ignore[attr-defined]
+        self.review_file_shell.value_label.setText(f"{record.evidence_id} — {record.file_name}")  # type: ignore[attr-defined]
+        self.review_profile_shell.value_label.setText(f"{record.source_type} • {record.risk_level} • Score {record.suspicion_score}")  # type: ignore[attr-defined]
         self.preview_state_badge.setText(f"Preview State: {record.preview_status}")
         self.preview_parser_badge.setText(f"Parser: {record.parser_status}")
         self.preview_signature_badge.setText(f"Signature: {record.signature_status} • {record.format_signature}")
         self.preview_trust_badge.setText(f"Trust: {record.format_trust}")
         self.frame_index_badge.setText(f"Frame {self.current_frame_index + 1}/{max(1, len(self.current_frames))}")
-        self.badge_source.setText(f"Source: {record.source_type}")
-        self.badge_time.setText(f"Time Source: {record.timestamp_source}")
-        self.badge_parser.setText(f"Parser: {record.parser_status}")
+        self.badge_source.setText(f"Source Profile: {record.source_type}")
+        self.badge_time.setText(f"Time Anchor: {record.timestamp_source}")
+        self.badge_parser.setText(f"Parser / Trust: {record.parser_status} • {record.format_trust}")
         self.badge_signature.setText(f"Signature: {record.signature_status}")
         self.badge_trust.setText(f"Trust: {record.format_trust}")
         self.badge_gps.setText(f"GPS: {'Recovered' if record.has_gps else 'Unavailable'}")
@@ -1460,14 +1781,16 @@ class GeoTraceMainWindow(QMainWindow):
         self.summary_text.setPlainText(self._build_case_assessment_text())
         self.dashboard_priority_text.setPlainText(self._build_priority_text())
         self.review_pivots_text.setPlainText(self._build_summary_text(record))
-        if hasattr(self, "review_overview_hint"):
-            self.review_overview_hint.setPlainText(self._build_summary_text(record))
         self.metadata_overview.setPlainText(self._build_metadata_overview_text(record))
         self.metadata_view.setPlainText(self._build_metadata_text(record))
         self.raw_exif_view.setPlainText(self._build_raw_exif_text(record))
+        self.hidden_overview_view.setPlainText(self._build_hidden_content_text(record))
+        self.hidden_code_view.setPlainText(self._build_hidden_content_dump(record))
+        self.review_audit_view.setPlainText(self._build_review_audit_text(record))
         self.geo_text.setPlainText(self._build_geo_text(record))
         self.geo_leads_text.setPlainText(self._build_geo_leads_text(record))
         self.selection_verdict_view.setPlainText(self._build_verdict_panel_text(record))
+        self.review_pivots_text.setPlainText(self._build_summary_text(record))
         self._select_default_tab(record)
         self._highlight_selected_inventory_card()
 
@@ -1521,13 +1844,18 @@ class GeoTraceMainWindow(QMainWindow):
 
     def _build_parser_fallback_text(self, record: EvidenceRecord) -> str:
         return (
-            "FORENSIC FALLBACK VIEW\n\n"
+            "Forensic Fallback View\n\n"
             f"Parser: {record.parser_status}\n"
             f"Signature: {record.signature_status} ({record.format_signature})\n"
             f"Trust: {record.format_trust}\n"
+            f"File Size: {record.file_size:,} bytes\n"
+            f"SHA-256: {record.sha256}\n"
+            f"MD5: {record.md5}\n"
             f"Reason: {record.parse_error or 'Preview unavailable.'}\n\n"
-            f"SHA-256: {record.sha256[:18]}…\n"
-            "Next: preserve hashes, confirm header signature, and validate the time anchor externally."
+            "Recommended validation workflow:\n"
+            "1) Preserve hashes and original path.\n"
+            "2) Confirm header signature separately from decoder output.\n"
+            "3) Validate timeline anchors externally before relying on preview content."
         )
 
     def _refresh_zoom_pill(self) -> None:
@@ -1553,15 +1881,52 @@ class GeoTraceMainWindow(QMainWindow):
         record = self.selected_record()
         dialog = QDialog(self)
         dialog.setWindowTitle(f"Fullscreen Evidence Stage — {record.evidence_id if record else 'Preview'}")
-        dialog.resize(1200, 820)
+        dialog.resize(1380, 900)
+        dialog.setStyleSheet(APP_STYLESHEET)
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(10, 10, 10, 10)
-        viewer = ResizableImageLabel("Preview unavailable.", min_height=720)
+        layout.setSpacing(8)
+
+        toolbar = QHBoxLayout()
+        title = QLabel(f"{record.evidence_id if record else 'Preview'} • fullscreen review")
+        title.setObjectName("SectionLabel")
+        toolbar.addWidget(title)
+        toolbar.addStretch(1)
+        zoom_label = QLabel("Zoom 100%")
+        zoom_label.setObjectName("PreviewZoomPill")
+        toolbar.addWidget(zoom_label)
+
+        viewer = ResizableImageLabel("Preview unavailable.", min_height=760)
         if self.current_preview_pixmap is not None:
             viewer.set_source_pixmap(self.current_preview_pixmap)
         else:
             viewer.clear_source(self.image_preview.text())
-        layout.addWidget(viewer)
+
+        def sync_zoom() -> None:
+            zoom_label.setText(f"Zoom {viewer.zoom_percent()}%")
+
+        controls = []
+        for label, callback in [("−", viewer.zoom_out), ("+", viewer.zoom_in), ("Fit", viewer.fit_to_window), ("100%", viewer.reset_zoom)]:
+            btn = QPushButton(label)
+            btn.setObjectName("SmallGhostButton")
+            btn.clicked.connect(lambda checked=False, cb=callback: (cb(), sync_zoom()))
+            toolbar.addWidget(btn)
+            controls.append(btn)
+        close_btn = QPushButton("Close")
+        close_btn.setObjectName("SmallGhostButton")
+        close_btn.clicked.connect(dialog.accept)
+        toolbar.addWidget(close_btn)
+
+        hint = QLabel("Esc close • +/- zoom • F fit")
+        hint.setObjectName("MutedLabel")
+        layout.addLayout(toolbar)
+        layout.addWidget(hint)
+        layout.addWidget(viewer, 1)
+
+        QShortcut(QKeySequence(Qt.Key_Escape), dialog, activated=dialog.reject)
+        QShortcut(QKeySequence(Qt.Key_Plus), dialog, activated=lambda: (viewer.zoom_in(), sync_zoom()))
+        QShortcut(QKeySequence(Qt.Key_Minus), dialog, activated=lambda: (viewer.zoom_out(), sync_zoom()))
+        QShortcut(QKeySequence("F"), dialog, activated=lambda: (viewer.fit_to_window(), sync_zoom()))
         dialog.exec_()
 
     def open_selected_file(self) -> None:
@@ -1591,12 +1956,16 @@ class GeoTraceMainWindow(QMainWindow):
             return None
 
     def _select_default_tab(self, record: EvidenceRecord) -> None:
-        if record.has_gps:
-            self._set_workspace_page("Geo")
-        elif record.parser_status != "Valid":
-            self._set_workspace_page("Review")
-        else:
-            self._set_workspace_page("Review")
+        if hasattr(self, "review_tabs"):
+            if record.parser_status != "Valid":
+                self.review_tabs.setCurrentIndex(0)
+            elif record.hidden_code_indicators:
+                self.review_tabs.setCurrentIndex(3)
+            elif record.note:
+                self.review_tabs.setCurrentIndex(4)
+            else:
+                self.review_tabs.setCurrentIndex(0)
+        self._set_workspace_page("Review")
 
     def _highlight_selected_inventory_card(self) -> None:
         for index in range(self.inventory_list.count()):
@@ -1619,6 +1988,7 @@ class GeoTraceMainWindow(QMainWindow):
             f"Source profile: {record.source_type}",
             f"Device / software: {record.device_model} / {record.software}",
             f"GPS: {record.gps_display}",
+            f"Hidden-content scan: {len(record.hidden_code_indicators)} code marker(s) / {len(record.extracted_strings)} string(s)",
             "",
             "Why this matters:",
             record.analyst_verdict or "No analyst verdict is available.",
@@ -1758,6 +2128,8 @@ class GeoTraceMainWindow(QMainWindow):
         records = self.case_manager.records
         if not records:
             self.timeline_text.setPlainText("No evidence loaded yet.")
+            if hasattr(self, "timeline_narrative"):
+                self.timeline_narrative.setPlainText("No evidence loaded yet.")
             self.timeline_chart.set_chart_pixmap(None, "Load evidence to generate a visual timeline.")
             self._set_timeline_defaults()
             return
@@ -1793,6 +2165,36 @@ class GeoTraceMainWindow(QMainWindow):
         else:
             self._set_timeline_defaults()
         self._render_timeline_chart(ordered)
+
+    def _build_timeline_narrative(self, ordered: List[EvidenceRecord], parsed_points: List[tuple[EvidenceRecord, object]]) -> str:
+        if not ordered:
+            return "No evidence loaded yet."
+        if len(ordered) == 1:
+            record = ordered[0]
+            code_hint = " "
+            if record.hidden_code_indicators:
+                code_hint = " Byte-level scanning also recovered code-like markers that should be reviewed before sharing or executing anything derived from the file."
+            elif record.extracted_strings:
+                code_hint = " Embedded readable strings were recovered from the container, so the file should still be treated as content-bearing rather than image-only."
+            return (
+                f"Single-item case: {record.evidence_id} is the only visible anchor. "
+                f"Recovered time comes from {record.timestamp_source}. "
+                f"Parser state is {record.parser_status} and trust is {record.format_trust}. "
+                f"Source profile is {record.source_type} and GPS is {'present' if record.has_gps else 'absent'}."
+                + code_hint +
+                " Use external context such as uploads, chats, witness timelines, or cloud sync history before making chronology claims."
+            )
+        first = ordered[0]
+        last = ordered[-1]
+        risky = [r.evidence_id for r in ordered if r.risk_level == "High"]
+        duplicates = sorted({r.duplicate_group for r in ordered if r.duplicate_group})
+        return (
+            f"The reconstructed sequence begins with {first.evidence_id} at {first.timestamp} and ends with {last.evidence_id} at {last.timestamp}. "
+            f"Anchored items: {len(parsed_points)} of {len(ordered)}. "
+            f"High-priority items: {', '.join(risky) if risky else 'none'}. "
+            f"Duplicate clusters observed: {len(duplicates)}. "
+            "Analyst reading: validate major time gaps, then compare duplicate/derivative media to determine whether later items represent reposts, edits, or separate captures."
+        )
 
     def _render_timeline_chart(self, ordered: List[EvidenceRecord]) -> None:
         parsed = [(record, parse_timestamp(record.timestamp)) for record in ordered]
@@ -1868,7 +2270,128 @@ class GeoTraceMainWindow(QMainWindow):
 
     def populate_custody_log(self) -> None:
         log = self.case_manager.export_chain_of_custody()
-        self.custody_text.setPlainText("[ CHAIN OF CUSTODY — CURRENT CASE ONLY ]\n" + "=" * 92 + "\n" + log)
+        query = self.audit_search.text().lower().strip() if hasattr(self, "audit_search") else ""
+        lines = log.splitlines() if log else []
+        if query:
+            lines = [line for line in lines if query in line.lower()]
+        category_counts = {"CASE": 0, "IMPORT": 0, "ANALYZE": 0, "NOTE": 0, "TAG": 0, "EXPORT": 0}
+        formatted = []
+        for line in lines:
+            action = "OTHER"
+            if "| IMPORT |" in line:
+                action = "IMPORT"
+            elif "| ANALYZE |" in line:
+                action = "ANALYZE"
+            elif "| NOTE |" in line:
+                action = "NOTE"
+            elif "| TAG |" in line:
+                action = "TAG"
+            elif "| CASE_" in line or "CASE |" in line:
+                action = "CASE"
+            elif "| EXPORT" in line or "report" in line.lower():
+                action = "EXPORT"
+            if action in category_counts:
+                category_counts[action] += 1
+            formatted.append(f"[{action:<7}] {line}")
+        summary = [
+            f"Total audit events: {len(log.splitlines()) if log else 0}",
+            f"Filtered events shown: {len(lines)}",
+            f"Active case: {self.case_manager.active_case_id}",
+            f"Badges — CASE {category_counts['CASE']} | IMPORT {category_counts['IMPORT']} | ANALYZE {category_counts['ANALYZE']} | NOTE/TAG {category_counts['NOTE'] + category_counts['TAG']} | EXPORT {category_counts['EXPORT']}",
+            "Case-scoped audit trail only; previous sessions remain isolated.",
+        ]
+        if hasattr(self, "audit_summary"):
+            self.audit_summary.setPlainText("\n".join(summary))
+        body = "\n".join(formatted) if formatted else "No audit events match the current filter."
+        self.custody_text.setPlainText("[ CHAIN OF CUSTODY — CURRENT CASE ONLY ]\n" + "=" * 92 + "\n" + body)
+
+    def copy_audit_log(self) -> None:
+        QApplication.clipboard().setText(self.custody_text.toPlainText())
+        self._show_toast("Audit copied", "Copied the filtered audit trail to the clipboard.", tone="success")
+
+    def insert_note_template(self) -> None:
+        name = self.note_template_combo.currentText()
+        if name in self.note_templates:
+            existing = self.note_editor.toPlainText().strip()
+            template = self.note_templates[name]
+            self.note_editor.setPlainText(((existing + "\n\n" + template) if existing else template).strip())
+
+    def open_settings(self) -> None:
+        dialog = SettingsDialog(self._startup_settings(), self)
+        if dialog.exec_():
+            values = dialog.values()
+            for key, value in values.items():
+                self.settings.setValue(key, value)
+            self._apply_startup_settings()
+            self._show_toast("Settings saved", "Workspace preferences were updated.", tone="success")
+
+    def open_recent_cases_dialog(self) -> None:
+        dialog = RecentCasesDialog(self.case_manager.list_cases(), self)
+        if dialog.exec_() and dialog.selected_case_id:
+            idx = self.case_switch_combo.findData(dialog.selected_case_id)
+            if idx >= 0:
+                self.case_switch_combo.setCurrentIndex(idx)
+                self._set_workspace_page("Cases")
+
+    def open_selected_case_from_page(self) -> None:
+        item = self.cases_list.currentItem()
+        if item is None:
+            return
+        case_id = item.data(Qt.UserRole)
+        idx = self.case_switch_combo.findData(case_id)
+        if idx >= 0:
+            self.case_switch_combo.setCurrentIndex(idx)
+
+    def open_case_snapshot_folder(self) -> None:
+        snapshot_path = self.case_manager.case_snapshot_path()
+        snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(snapshot_path.parent)))
+
+    def rename_active_case(self) -> None:
+        name, ok = QInputDialog.getText(self, "Rename Active Case", "Case name:", text=self.case_manager.active_case_name)
+        if not ok or not name.strip():
+            return
+        self.case_manager.db.rename_case(self.case_manager.active_case_id, name.strip())
+        self.case_manager.active_case = self.case_manager.db.get_active_case() or self.case_manager.active_case
+        self.case_manager._write_case_snapshot()
+        self._refresh_case_badges()
+        self._refresh_case_switcher()
+        self._refresh_cases_page()
+        self._show_toast("Case renamed", self.case_manager.active_case_name, tone="success")
+
+    def open_compare_mode(self) -> None:
+        selected = self.selected_records()
+        left: Optional[EvidenceRecord] = None
+        right: Optional[EvidenceRecord] = None
+        if len(selected) >= 2:
+            left, right = selected[:2]
+        else:
+            left = self.selected_record()
+            if left is None:
+                self.show_info("Compare Evidence", "Select one or two evidence items to open compare mode.")
+                return
+            options = [f"{r.evidence_id} — {r.file_name}" for r in self.case_manager.records if r.evidence_id != left.evidence_id]
+            if not options:
+                self.show_info("Compare Evidence", "At least two evidence items are required for compare mode.")
+                return
+            choice, ok = QInputDialog.getItem(self, "Compare With", "Choose the second evidence item:", options, 0, False)
+            if not ok:
+                return
+            second_id = choice.split(" — ", 1)[0]
+            right = self.case_manager.get_record(second_id)
+        if left is None or right is None:
+            return
+        CompareDialog(left, right, self).exec_()
+
+    def open_duplicate_review(self) -> None:
+        dialog = DuplicateReviewDialog(self.case_manager.records, self)
+        if dialog.exec_() and dialog.selected_evidence_id:
+            for row in range(self.inventory_list.count()):
+                item = self.inventory_list.item(row)
+                if item and item.data(Qt.UserRole) == dialog.selected_evidence_id:
+                    self._set_workspace_page("Review")
+                    self.inventory_list.setCurrentRow(row)
+                    break
 
     def save_note_and_tags(self) -> None:
         record = self.selected_record()
@@ -1883,10 +2406,11 @@ class GeoTraceMainWindow(QMainWindow):
         record.note = note
         record.tags = tags
         record.bookmarked = bookmarked
-        self.populate_table(self.filtered_records or self.records)
+        self.apply_filters()
         self.populate_details()
         self.populate_custody_log()
-        self.show_info("Saved", f"Updated notes, tags, and bookmark state for {record.evidence_id}.")
+        self._refresh_cases_page()
+        self._show_toast("Analyst note saved", f"Updated {record.evidence_id}.", tone="success")
 
     def update_charts(self) -> None:
         records = self.case_manager.records
@@ -2055,6 +2579,7 @@ class GeoTraceMainWindow(QMainWindow):
 
     def _on_report_error(self, message: str) -> None:
         self.command_progress.setText("Export failed")
+        self._log_error("Export Error", message)
         self.show_info("Export Error", message)
 
     def _cleanup_report_thread(self) -> None:
@@ -2105,6 +2630,54 @@ class GeoTraceMainWindow(QMainWindow):
         ])
         return "\n\n".join(lines)
 
+    def _build_hidden_content_text(self, record: EvidenceRecord) -> str:
+        lines = [
+            record.hidden_content_overview,
+            "",
+            f"URLs recovered: {len(record.urls_found)}",
+            f"Readable strings kept for review: {len(record.extracted_strings)}",
+            f"Code-like indicators: {len(record.hidden_code_indicators)}",
+            "",
+            "Interpretation:",
+        ]
+        if record.hidden_code_indicators:
+            lines.append("Potential script-like, credential-like, or payload-bearing content was recovered from inside the container. Treat it as a heuristic lead and verify manually before drawing exploit conclusions.")
+        elif record.extracted_strings:
+            lines.append("Readable strings exist inside the file, but they do not currently look like strong executable payloads. They may still help with provenance, origin tracing, or hidden-message review.")
+        else:
+            lines.append("No readable payload strings or code markers were recovered from the file bytes during the lightweight scan.")
+        return "\n".join(lines)
+
+    def _build_hidden_content_dump(self, record: EvidenceRecord) -> str:
+        lines = ["[ EMBEDDED TEXT / CODE-LIKE MARKER SCAN ]", "=" * 96]
+        if record.urls_found:
+            lines.append("URLs / external references:")
+            lines.extend(f"- {url}" for url in record.urls_found)
+            lines.append("")
+        if record.hidden_code_indicators:
+            lines.append("Code-like indicators:")
+            lines.extend(f"- {item}" for item in record.hidden_code_indicators)
+            lines.append("")
+        if record.extracted_strings:
+            lines.append("Readable embedded strings:")
+            lines.extend(f"- {item}" for item in record.extracted_strings)
+        else:
+            lines.append("No readable strings recovered.")
+        if len(lines) <= 2:
+            lines.append("No embedded text markers recovered.")
+        return "\n".join(lines)
+
+    def _build_review_audit_text(self, record: EvidenceRecord) -> str:
+        logs = self.case_manager.db.fetch_logs(self.case_manager.active_case_id)
+        lines = ["[ REVIEW-SCOPED AUDIT ]", "=" * 96]
+        selected = []
+        for row in logs:
+            if row["evidence_id"] in {None, record.evidence_id}:
+                label = f"[{row['action']}]"
+                selected.append(f"{row['action_time']} {label:<18} {row['evidence_id'] or 'CASE':<10} {row['details']}")
+        lines.extend(selected[:40] if selected else ["No case events found for the selected evidence item."])
+        return "\n".join(lines)
+
     def _build_verdict_panel_text(self, record: EvidenceRecord) -> str:
         lines = [
             f"Record: {record.evidence_id}",
@@ -2117,11 +2690,36 @@ class GeoTraceMainWindow(QMainWindow):
             f"Container trust: {record.format_trust}",
             f"Location signal: {'Present' if record.has_gps else 'Missing'}",
             f"Duplicate relation: {record.duplicate_group or 'None'}",
+            f"Hidden-content markers: {len(record.hidden_code_indicators)} code / {len(record.extracted_strings)} string",
             "",
             "Detailed narrative:",
             record.analyst_verdict or "No analyst verdict is available.",
         ]
         return "\n".join(lines)
+
+    def dragEnterEvent(self, event) -> None:  # type: ignore[override]
+        mime = event.mimeData()
+        if mime.hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:  # type: ignore[override]
+        mime = event.mimeData()
+        if not mime.hasUrls():
+            event.ignore()
+            return
+        paths = []
+        for url in mime.urls():
+            local = url.toLocalFile()
+            if local:
+                paths.append(Path(local))
+        if paths:
+            self._queue_or_start_analysis(paths)
+            self._show_toast("Evidence dropped", f"Queued {len(paths)} dropped path(s).", tone="success")
+            event.acceptProposedAction()
+        else:
+            event.ignore()
 
     def show_info(self, title: str, message: str) -> None:
         box = QMessageBox(self)
