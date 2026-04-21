@@ -1,27 +1,20 @@
-# GeoTrace Forensics X v10.1.1-rc1
+# GeoTrace Forensics X v11.0.0-rc1
 
-GeoTrace Forensics X is a desktop digital-forensics workspace for **image metadata extraction, timestamp recovery, GPS correlation, evidence hashing, chain-of-custody logging, duplicate clustering, comparison review, case snapshots, and analyst-ready reporting**.
+GeoTrace Forensics X is a desktop digital-forensics workspace for **image metadata extraction, timestamp recovery, GPS correlation, evidence hashing, chain-of-custody logging, duplicate clustering, comparison review, case snapshots, courtroom-aware reporting, and validation summaries**.
 
-## What this release adds
+## What v11 adds
 
-- First-run **onboarding flow** with shortcuts to demo data, import, or the Cases page
-- Persistent **settings panel** powered by `QSettings`
-- Stronger **case save / load / reopen** using per-case JSON snapshots and a dedicated Cases page
-- Better **search / filter / sort / bookmark** controls inside the Review page
-- Global **keyboard shortcuts** for common forensic actions
-- Report **branding, versioning, methodology, limits, and footer identity**
-- **Export validation** with completion toasts and package notes
-- User-visible **graceful error logs** mirrored to `logs/app_errors.log`
-- Window-level **drag & drop** intake for files and folders
-- **Batch queue** support so later imports can wait behind the active analysis
-- **Recent cases** dialog plus a full Cases page
-- **Evidence compare mode** for side-by-side review
-- **Duplicate cluster review workflow** with jump-to-item navigation
-- Stronger **timeline narrative generation**
-- Improved **map intelligence** and GPS reasoning states
-- **Analyst note templates** for triage, timeline, courtroom, OSINT, and duplicate workflows
-- Better **audit trail viewer** with filtering and copy support
-- Windows **packaging scaffolding** for PyInstaller-based executable builds
+- Fixed the **Review-state inconsistency** so the left evidence rail, case status, and review stage stay aligned.
+- Removed the old **auto page-jumping** behavior during clear/reset actions.
+- Rebuilt the **preview toolbar** into grouped control rows to avoid clipped labels.
+- Switched Review to a clearer **single-item review flow** with automatic first-item selection after filtering.
+- Upgraded evidence cards with **risk accents, score chips, GPS/hidden markers, and timestamp confidence**.
+- Added **timestamp confidence** and **GPS verification** narratives to the review workflow.
+- Added **anomaly contributor** explanations and stronger courtroom-ready notes.
+- Added richer **hidden/code scan summaries** with finding types and extracted indicators.
+- Added stronger **report packaging** with executive summary, validation summary, and export manifest files.
+- Added **validation metrics** and updated demo-evidence generation for stronger project demos.
+- Expanded automated tests with **report smoke**, **validation sanity**, and a **UI-state test (skipped automatically if PyQt5 is unavailable)**.
 
 ## Supported formats
 
@@ -53,6 +46,17 @@ python main.py
 - `Ctrl+Shift+D` duplicate review
 - `Ctrl+1..7` switch pages
 
+## Export package contents
+
+- HTML report
+- PDF report
+- CSV evidence summary
+- JSON evidence summary
+- Courtroom summary
+- Executive summary
+- Validation summary
+- Export manifest JSON
+
 ## Packaging a Windows executable
 
 Packaging files are included, but the executable is **not prebuilt inside this artifact**.
@@ -64,4 +68,4 @@ build_windows_exe.bat
 
 ## Validation status
 
-Core automated tests pass in this release.
+The current artifact passes the included automated tests in this environment.

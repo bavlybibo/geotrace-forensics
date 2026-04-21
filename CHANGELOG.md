@@ -1,6 +1,14 @@
 # Changelog
 
-# Changelog
+## 11.0.0-rc1 — Review rebuild and forensic-depth pass
+- Fixed review-state inconsistencies so cases with evidence always auto-select a visible item after filtering.
+- Removed auto-navigation side effects from clear/reset flows.
+- Rebuilt the preview control bar into grouped rows to avoid clipped labels and improve fullscreen/export access.
+- Upgraded the evidence rail with richer cards, risk accents, score chips, and supporting confidence metadata.
+- Added timestamp confidence, GPS verification posture, anomaly contributors, courtroom notes, and richer hidden/code summaries.
+- Expanded export packaging with executive summary, validation summary, and export manifest outputs.
+- Added stronger validation helpers, compare-candidate support, and custody event summaries.
+- Refreshed demo-evidence generation and expanded automated test coverage.
 
 ## 10.2.0-rc1 — Review workflow and hidden-content pass
 - Fixed top-bar overflow by separating action controls from case-switch/status rows and shortening crowded labels.
@@ -12,7 +20,6 @@
 - Wired real timeline narrative generation, stronger custody badges, and case cards for the Cases page.
 - Strengthened compare mode visuals and removed the Pillow perceptual-hash deprecation warning.
 
-
 ## 10.1.0-rc1 — Review page polish
 - Rebuilt the Review page around a permanent evidence stage plus lower detail tabs.
 - Moved notes, raw tags, metadata, and audit focus into dedicated tabs so the center stage stays clean.
@@ -20,20 +27,10 @@
 - Simplified the right rail into a calmer decision layout with clearer next steps.
 - Applied a dark themed settings/onboarding dialog pass for readability and visual consistency.
 
-# Changelog
-
 ## 10.1.1-rc1 — Stylesheet syntax hotfix
 - Fixed a stylesheet packaging error in `app/ui/styles.py` that caused startup to fail with `IndentationError`.
 - Verified project compilation and test pass after the fix.
 
-## v10.0.1-rc1
+## 10.0.1-rc1
 - Startup hotfix: registered the Cases workspace page in the stacked workspace to resolve the launch-time `KeyError: 'Cases'`.
 - No feature removals. Existing v10 additions remain intact.
-
-## v10.0.1-rc1
-- Added onboarding flow and settings panel.
-- Added case snapshots and stronger reopen workflow.
-- Added drag-and-drop evidence intake and queued batch processing.
-- Added compare mode, duplicate review, timeline narrative, and stronger audit trail UX.
-- Added report version footer, methodology, limitations, and export validation.
-- Added packaged executable scaffolding for Windows builds.
