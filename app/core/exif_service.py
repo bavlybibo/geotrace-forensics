@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import math
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -80,11 +82,27 @@ def human_datetime(timestamp: float) -> str:
         return "Unknown"
 
 
-def extract_file_times(file_path: Path) -> Tuple[str, str]:
+def extract_file_times(file_path: Path) -> Tuple[str, str, str]:
     stats = file_path.stat()
-    created_ts = getattr(stats, "st_ctime", None)
     modified_ts = getattr(stats, "st_mtime", None)
-    return human_datetime(created_ts) if created_ts else "Unknown", human_datetime(modified_ts) if modified_ts else "Unknown"
+    modified = human_datetime(modified_ts) if modified_ts else "Unknown"
+
+    birth_ts = getattr(stats, "st_birthtime", None)
+    if birth_ts:
+        return human_datetime(birth_ts), modified, "Filesystem birth time reported by the operating system."
+
+    if sys.platform.startswith("win"):
+        created_ts = getattr(stats, "st_ctime", None)
+        if created_ts:
+            return human_datetime(created_ts), modified, "Filesystem creation time reported by Windows."
+
+    change_ts = getattr(stats, "st_ctime", None)
+    change_hint = human_datetime(change_ts) if change_ts else "Unknown"
+    return (
+        "Unavailable",
+        modified,
+        f"Filesystem birth/creation time is unavailable on this platform. The closest available value is ctime={change_hint}, which represents metadata-change time and is not treated as creation time.",
+    )
 
 
 def sniff_file_signature(file_path: Path) -> Tuple[str, str]:
@@ -236,15 +254,81 @@ def extract_exif(file_path: Path) -> Dict[str, str]:
     try:
         if exifread is None:
             data["__raw_tags__"] = {}
+            data["__warning__"] = "EXIF extraction engine unavailable (exifread is not installed). Embedded metadata review is limited."
             return data
         with file_path.open("rb") as handle:
             tags = exifread.process_file(handle, details=False)
         for tag, value in tags.items():
             data[str(tag)] = str(value)
         data["__raw_tags__"] = tags
-    except Exception:
+    except Exception as exc:
         data["__raw_tags__"] = {}
+        data["__warning__"] = f"EXIF parsing failed: {exc.__class__.__name__}. Validate metadata with a secondary parser if needed."
     return data
+
+def _entropy_score(blob: bytes) -> float:
+    if not blob:
+        return 0.0
+    counts = {}
+    for byte in blob:
+        counts[byte] = counts.get(byte, 0) + 1
+    total = len(blob)
+    entropy = 0.0
+    for count in counts.values():
+        p = count / total
+        entropy -= p * math.log2(p)
+    return entropy
+
+
+def _appended_payload_indicator(file_path: Path, blob: bytes) -> str:
+    suffix = file_path.suffix.lower()
+    if suffix == '.png':
+        marker = b'IEND\xaeB`\x82'
+        idx = blob.rfind(marker)
+        if idx >= 0 and idx + len(marker) < len(blob):
+            trailing = blob[idx + len(marker):]
+            if len(trailing) >= 24:
+                return f'Trailing bytes detected after PNG end marker ({len(trailing)} byte(s)).'
+    if suffix in {'.jpg', '.jpeg'}:
+        idx = blob.rfind(b'\xff\xd9')
+        if idx >= 0 and idx + 2 < len(blob):
+            trailing = blob[idx + 2:]
+            if len(trailing) >= 24:
+                return f'Trailing bytes detected after JPEG end marker ({len(trailing)} byte(s)).'
+    return ''
+
+
+def _is_contextual_string(text: str) -> bool:
+    text = re.sub(r"\s+", " ", text or "").strip()
+    if len(text) < 8:
+        return False
+    lower = text.lower()
+    if lower.startswith(("jfif", "exif", "ihdr", "idat", "iend", "photoshop 3.0")):
+        return False
+    letters = sum(ch.isalpha() for ch in text)
+    digits = sum(ch.isdigit() for ch in text)
+    spaces = sum(ch.isspace() for ch in text)
+    punct = len(text) - letters - digits - spaces
+    alpha_ratio = letters / max(len(text), 1)
+    readable_ratio = (letters + digits + spaces) / max(len(text), 1)
+    symbol_ratio = punct / max(len(text), 1)
+    has_urlish = any(token in lower for token in ["http://", "https://", "www.", ".com", "maps", "token", "secret", "password", "script", "geo", "forensic", "camera", "whatsapp", "telegram"])
+    has_word_shape = bool(re.search(r"[aeiou]{1,}|[A-Z][a-z]{2,}|[a-z]{4,}", text))
+    repeated_noise = bool(re.search(r"(.){4,}", text))
+    if has_urlish:
+        return True
+    if readable_ratio < 0.76:
+        return False
+    if symbol_ratio > 0.24:
+        return False
+    if repeated_noise and not has_word_shape:
+        return False
+    if punct > max(8, len(text) * 0.22):
+        return False
+    if alpha_ratio < 0.38 and not has_word_shape:
+        return False
+    return has_word_shape or spaces > 0
+
 
 def extract_embedded_text_hints(file_path: Path, format_name: str = "Unknown") -> Dict[str, object]:
     try:
@@ -252,35 +336,50 @@ def extract_embedded_text_hints(file_path: Path, format_name: str = "Unknown") -
     except Exception:
         return {
             "strings": [],
+            "context_strings": [],
             "code_indicators": [],
+            "payload_markers": [],
+            "suspicious_embeds": [],
             "summary": "The file bytes could not be read for hidden-content scanning.",
+            "context_summary": "Embedded text and hidden-code scan unavailable.",
             "overview": "Embedded text and hidden-code scan unavailable.",
             "urls": [],
             "finding_types": [],
+            "stego_suspicion": "Hidden-content scan unavailable because the file could not be read.",
         }
 
     if not blob:
         return {
             "strings": [],
+            "context_strings": [],
             "code_indicators": [],
+            "payload_markers": [],
+            "suspicious_embeds": [],
             "summary": "No byte content was available for hidden-content scanning.",
+            "context_summary": "Embedded text and hidden-code scan unavailable.",
             "overview": "Embedded text and hidden-code scan unavailable.",
             "urls": [],
             "finding_types": [],
+            "stego_suspicion": "No byte content was available for hidden-content scanning.",
         }
 
     ascii_strings = [
         s.decode("utf-8", errors="ignore").strip()
         for s in re.findall(rb"[\x20-\x7e]{8,}", blob)
     ]
+    cleaned = []
     seen = set()
-    cleaned: list[str] = []
+    noise_count = 0
     for item in ascii_strings:
         item = re.sub(r"\s+", " ", item).strip()
         if not item or item in seen:
             continue
         seen.add(item)
-        cleaned.append(item)
+        if _is_contextual_string(item):
+            cleaned.append(item)
+        else:
+            noise_count += 1
+
     urls = []
     url_seen = set()
     for item in cleaned:
@@ -304,8 +403,11 @@ def extract_embedded_text_hints(file_path: Path, format_name: str = "Unknown") -
         (r"token=|api[_-]?key|secret|password=|authorization:", "credential/token marker", "credential"),
         (r"-----BEGIN [A-Z ]+-----", "embedded key / certificate block", "credential"),
     ]
+
     code_indicators: list[str] = []
-    preview_strings: list[str] = []
+    context_strings: list[str] = []
+    suspicious_embeds: list[str] = []
+    payload_markers: list[str] = []
     finding_types: List[str] = []
     for item in cleaned:
         lower = item.lower()
@@ -318,13 +420,32 @@ def extract_embedded_text_hints(file_path: Path, format_name: str = "Unknown") -
                 if finding_type not in finding_types:
                     finding_types.append(finding_type)
                 matched = True
-        if matched or any(token in lower for token in ["http://", "https://", "data:", "script", "token", "secret", "password", "key", "cmd", "curl", "wget"]):
-            if item not in preview_strings:
-                preview_strings.append(item[:180])
-            if ("url" not in finding_types) and ("http://" in lower or "https://" in lower):
-                finding_types.append("url")
-        if len(preview_strings) >= 12 and len(code_indicators) >= 8:
-            break
+        if matched:
+            payload_markers.append(item[:160])
+        if re.search(r"[A-Za-z0-9+/]{80,}={0,2}", item):
+            suspicious_embeds.append(f"Long encoded-looking blob: {item[:120]}")
+            if "encoded" not in finding_types:
+                finding_types.append("encoded")
+        if ("http://" in lower or "https://" in lower or "token" in lower or "secret" in lower or "password" in lower or "script" in lower):
+            context_strings.append(item[:180])
+        elif len(context_strings) < 12:
+            context_strings.append(item[:120])
+
+    appended = _appended_payload_indicator(file_path, blob)
+    if appended:
+        suspicious_embeds.append(appended)
+        if 'container-appendix' not in finding_types:
+            finding_types.append('container-appendix')
+
+    tail = blob[-4096:] if len(blob) > 4096 else blob
+    entropy = _entropy_score(tail)
+    stego_suspicion = "No strong steganography or appended-payload indicator was detected."
+    if appended and entropy >= 7.4:
+        stego_suspicion = f"High-entropy trailing data suggests appended payload or stego-like packing (entropy {entropy:.2f})."
+    elif appended:
+        stego_suspicion = "Trailing bytes exist after the logical end-of-image marker. Validate whether they are benign packaging or an appended payload."
+    elif entropy >= 7.75 and file_path.suffix.lower() in {'.png', '.bmp'}:
+        stego_suspicion = f"Late-file entropy is elevated ({entropy:.2f}); no payload was confirmed, but deeper stego review could be justified."
 
     format_hint = str(format_name or file_path.suffix.upper().replace('.', '') or 'Unknown')
     if file_path.suffix.lower() == '.svg' or any('<svg' in s.lower() for s in cleaned[:8]):
@@ -332,30 +453,47 @@ def extract_embedded_text_hints(file_path: Path, format_name: str = "Unknown") -
         if 'svg' not in finding_types:
             finding_types.insert(0, 'svg')
 
-    if code_indicators:
+    code_indicators = code_indicators[:12]
+    payload_markers = payload_markers[:12]
+    suspicious_embeds = suspicious_embeds[:8]
+    context_strings = context_strings[:12] if context_strings else cleaned[:12]
+
+    if code_indicators or suspicious_embeds:
         summary = (
-            f"Potential embedded code/content markers were found during byte-level scanning. "
-            f"Indicators: {min(len(code_indicators), 8)} shown. Treat this as heuristic evidence until a manual parser confirms the payload context."
+            f"Tiered hidden-content scanning found {len(code_indicators)} code/payload marker(s) and {len(suspicious_embeds)} structural warning(s). "
+            f"Treat this as heuristic evidence until a manual parser confirms the payload context."
         )
         overview = (
-            f"Embedded text scan for {format_hint}: {len(preview_strings) or len(cleaned)} readable string(s) recovered, "
-            f"with {len(code_indicators)} code-like or credential-like marker(s)."
+            f"Embedded text scan for {format_hint}: {len(cleaned)} readable string(s), {len(code_indicators)} marker(s), "
+            f"{len(suspicious_embeds)} structural warning(s)."
         )
     elif cleaned:
-        summary = f"Readable embedded strings were recovered from the {format_hint} container, but no strong script/code markers were detected."
-        overview = f"Embedded text scan for {format_hint}: {len(cleaned)} readable string(s) recovered with no strong code markers."
+        summary = (
+            f"Readable embedded strings were recovered from the {format_hint} container, but no strong script/code markers were detected. "
+            f"These strings are kept for analyst context only and are not treated as hidden-code hits by default."
+        )
+        overview = f"Embedded text scan for {format_hint}: {len(cleaned)} analyst-readable string(s) recovered with no strong code markers."
     else:
         summary = f"No readable embedded strings or code-like markers were recovered from the {format_hint} container."
         overview = "No embedded text payloads or code-like markers were detected."
 
-    strings_out = preview_strings if preview_strings else cleaned[:12]
+    noise_class = "low" if noise_count < 40 else "moderate" if noise_count < 140 else "heavy"
+    context_summary = (
+        f"Tier 1 analyst-readable context: {min(len(cleaned), 12)}. Tier 2 suspicious embeds: {len(suspicious_embeds)}. "
+        f"Tier 3 payload/code markers: {len(code_indicators)}. Structural noise filtered: {noise_count} ({noise_class})."
+    )
     return {
-        "strings": strings_out[:12],
-        "code_indicators": code_indicators[:12],
+        "strings": context_strings[:12],
+        "context_strings": context_strings[:12],
+        "code_indicators": code_indicators,
+        "payload_markers": payload_markers,
+        "suspicious_embeds": suspicious_embeds,
         "summary": summary,
+        "context_summary": context_summary,
         "overview": overview,
         "urls": urls[:12],
         "finding_types": finding_types[:8],
+        "stego_suspicion": stego_suspicion,
     }
 
 
@@ -402,12 +540,92 @@ def extract_timestamp(exif: Dict[str, str], file_path: Path | None = None) -> Tu
         guessed = infer_timestamp_from_filename(file_path.name)
         if guessed:
             return guessed, "Filename Pattern"
-        created, modified = extract_file_times(file_path)
+        created, modified, _ = extract_file_times(file_path)
         if modified != "Unknown":
             return modified, "Filesystem Modified Time"
-        if created != "Unknown":
-            return created, "Filesystem Created Time"
+        if created != "Unavailable":
+            return created, "Filesystem Birth / Creation Time"
     return "Unknown", "Unavailable"
+
+
+def infer_timestamp_from_text(text: str) -> Optional[str]:
+    text = re.sub(r"\s+", " ", text or "").strip()
+    patterns = [
+        r"(20\d{2})[-/:.](\d{2})[-/:.](\d{2})[ T](\d{1,2})[:.](\d{2})(?::(\d{2}))?",
+        r"(20\d{2})[-_](\d{2})[-_](\d{2})[ _-](\d{2})(\d{2})(\d{2})",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if not match:
+            continue
+        year, month, day, hour, minute, second = match.groups(default='00')
+        try:
+            dt = datetime(int(year), int(month), int(day), int(hour), int(minute), int(second))
+            return dt.strftime("%Y:%m:%d %H:%M:%S")
+        except Exception:
+            continue
+    return None
+
+
+def build_time_assessment(exif: Dict[str, str], file_path: Path, visible_time_strings: List[str] | None = None) -> Dict[str, object]:
+    visible_time_strings = visible_time_strings or []
+    candidates: List[tuple[str, str, int]] = []
+    if exif.get("EXIF DateTimeOriginal"):
+        candidates.append((exif["EXIF DateTimeOriginal"], "Native EXIF Original", 94))
+    if exif.get("Image DateTime"):
+        candidates.append((exif["Image DateTime"], "Embedded EXIF", 84))
+    if exif.get("EXIF DateTimeDigitized"):
+        candidates.append((exif["EXIF DateTimeDigitized"], "Embedded EXIF Digitized", 82))
+    guessed = infer_timestamp_from_filename(file_path.name)
+    if guessed:
+        candidates.append((guessed, "Filename Pattern", 58))
+    for visible in visible_time_strings:
+        inferred = infer_timestamp_from_text(visible) or infer_timestamp_from_filename(visible)
+        if inferred:
+            candidates.append((inferred, "Visible On-Screen Time", 52))
+            break
+    created, modified, _ = extract_file_times(file_path)
+    if modified != "Unknown":
+        candidates.append((modified, "Filesystem Modified Time", 42))
+    if created != "Unavailable":
+        candidates.append((created, "Filesystem Birth / Creation Time", 38))
+
+    if not candidates:
+        confidence, verdict = evaluate_timestamp_confidence("Unknown", "Unavailable")
+        return {
+            "timestamp": "Unknown",
+            "source": "Unavailable",
+            "confidence": confidence,
+            "verdict": verdict,
+            "candidates": [],
+            "conflicts": ["No trusted time candidate was recovered from EXIF, visible text, filename, or filesystem metadata."],
+        }
+
+    candidates = sorted(candidates, key=lambda item: item[2], reverse=True)
+    best = candidates[0]
+    conflicts: List[str] = []
+    def _parse_dt(raw: str):
+        try:
+            return datetime.strptime(raw, "%Y:%m:%d %H:%M:%S")
+        except Exception:
+            return None
+
+    best_dt = _parse_dt(best[0])
+    for value, source, _ in candidates[1:]:
+        dt = _parse_dt(value)
+        if best_dt is not None and dt is not None and abs((best_dt - dt).total_seconds()) > 12 * 3600:
+            conflicts.append(f"{source} differs materially from the selected anchor ({best[1]}).")
+    confidence, verdict = evaluate_timestamp_confidence(best[0], best[1])
+    if conflicts:
+        verdict += " Conflicts were also observed across weaker time candidates, so external corroboration is recommended."
+    return {
+        "timestamp": best[0],
+        "source": best[1],
+        "confidence": confidence,
+        "verdict": verdict,
+        "candidates": [f"{source}: {value}" for value, source, _ in candidates],
+        "conflicts": conflicts,
+    }
 
 
 def get_tag(exif: Dict[str, str], *names: str, default: str = "N/A") -> str:

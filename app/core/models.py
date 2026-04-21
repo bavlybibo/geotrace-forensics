@@ -19,16 +19,24 @@ class EvidenceRecord:
     imported_at: str
     exif: Dict[str, str] = field(default_factory=dict)
     raw_exif: Dict[str, str] = field(default_factory=dict)
+    exif_warning: str = ""
     timestamp: str = "Unknown"
     timestamp_source: str = "Unavailable"
     timestamp_confidence: int = 0
     timestamp_verdict: str = "No trusted time anchor recovered yet."
-    created_time: str = "Unknown"
+    created_time: str = "Unavailable"
+    created_time_note: str = "Birth/creation time is not available yet."
     modified_time: str = "Unknown"
     device_model: str = "Unknown"
     camera_make: str = "Unknown"
     software: str = "N/A"
     source_type: str = "Unknown"
+    source_profile_confidence: int = 0
+    environment_profile: str = "Unknown"
+    app_detected: str = "Unknown"
+    scene_group: str = ""
+    similarity_score: int = 0
+    similarity_note: str = "No peer-similarity reading generated yet."
     format_name: str = "Unknown"
     color_mode: str = "Unknown"
     has_alpha: bool = False
@@ -48,13 +56,22 @@ class EvidenceRecord:
     gps_source: str = "Unavailable"
     gps_confidence: int = 0
     gps_verification: str = "No native GPS recovered."
+    derived_latitude: Optional[float] = None
+    derived_longitude: Optional[float] = None
+    derived_geo_display: str = "Unavailable"
+    derived_geo_source: str = "Unavailable"
+    derived_geo_confidence: int = 0
+    derived_geo_note: str = "No screenshot-derived geolocation clue recovered."
+    geo_status: str = "No native GPS recovered."
     anomaly_reasons: List[str] = field(default_factory=list)
     anomaly_contributors: List[str] = field(default_factory=list)
+    manipulation_flags: List[str] = field(default_factory=list)
     osint_leads: List[str] = field(default_factory=list)
     suspicion_score: int = 0
     confidence_score: int = 0
     risk_level: str = "Low"
-    integrity_status: str = "Verified"
+    integrity_status: str = "Pending Review"
+    integrity_note: str = "Structural verification has not been finalized yet."
     note: str = ""
     tags: str = ""
     bookmarked: bool = False
@@ -81,11 +98,22 @@ class EvidenceRecord:
     technical_score: int = 0
     score_breakdown: List[str] = field(default_factory=list)
     extracted_strings: List[str] = field(default_factory=list)
+    visible_text_lines: List[str] = field(default_factory=list)
+    visible_urls: List[str] = field(default_factory=list)
+    visible_time_strings: List[str] = field(default_factory=list)
+    visible_location_strings: List[str] = field(default_factory=list)
+    visible_text_excerpt: str = ""
     hidden_code_indicators: List[str] = field(default_factory=list)
     hidden_finding_types: List[str] = field(default_factory=list)
     hidden_code_summary: str = "No embedded code-like content detected."
     hidden_content_overview: str = "No embedded text payloads or code-like markers detected."
+    hidden_context_summary: str = "No visible or embedded text context was retained."
+    hidden_suspicious_embeds: List[str] = field(default_factory=list)
+    hidden_payload_markers: List[str] = field(default_factory=list)
+    stego_suspicion: str = "No strong steganography or appended-payload indicator was detected."
     urls_found: List[str] = field(default_factory=list)
+    time_candidates: List[str] = field(default_factory=list)
+    time_conflicts: List[str] = field(default_factory=list)
     custody_event_summary: List[str] = field(default_factory=list)
 
     @property
@@ -98,6 +126,100 @@ class EvidenceRecord:
             return f"{self.width} x {self.height}"
         return "Unknown"
 
+    @property
+    def evidentiary_value(self) -> int:
+        value = 0
+        if self.timestamp_confidence >= 90:
+            value += 28
+        elif self.timestamp_confidence >= 70:
+            value += 20
+        elif self.timestamp_confidence > 0:
+            value += 12
+
+        if self.gps_confidence >= 80:
+            value += 26
+        elif self.has_gps:
+            value += 18
+        elif self.derived_geo_confidence >= 60:
+            value += 14
+        elif self.derived_geo_confidence > 0:
+            value += 8
+
+        if self.integrity_status == "Verified":
+            value += 16
+        elif self.integrity_status == "Partial":
+            value += 10
+
+        if self.device_model not in {"Unknown", "N/A", ""}:
+            value += 6
+        if self.visible_text_excerpt:
+            value += 6
+        if self.duplicate_group:
+            value += 5
+        if self.hidden_code_indicators or self.hidden_suspicious_embeds:
+            value += 7
+        if self.signature_status == "Mismatch" or self.parser_status != "Valid":
+            value = max(8, value - 10)
+        return max(0, min(100, value))
+
+    @property
+    def evidentiary_label(self) -> str:
+        value = self.evidentiary_value
+        if value >= 72:
+            return "High"
+        if value >= 45:
+            return "Medium"
+        return "Low"
+
+    @property
+    def courtroom_strength(self) -> int:
+        strength = 0
+        if self.timestamp_confidence >= 90:
+            strength += 28
+        elif self.timestamp_confidence >= 70:
+            strength += 18
+        elif self.timestamp_confidence > 0:
+            strength += 8
+
+        if self.gps_confidence >= 80:
+            strength += 22
+        elif self.has_gps:
+            strength += 14
+        elif self.derived_geo_confidence >= 60:
+            strength += 10
+        elif self.derived_geo_confidence > 0:
+            strength += 5
+
+        if self.integrity_status == "Verified":
+            strength += 20
+        elif self.integrity_status == "Partial":
+            strength += 12
+
+        if self.signature_status in {"Matched", "Compatible"}:
+            strength += 8
+        if self.parser_status == "Valid":
+            strength += 6
+        if self.device_model not in {"Unknown", "N/A", ""}:
+            strength += 5
+        if self.visible_text_excerpt:
+            strength += 4
+        if self.time_conflicts:
+            strength -= 10
+        if self.hidden_code_indicators:
+            strength -= 8
+        if self.parser_status != "Valid" or self.signature_status == "Mismatch":
+            strength -= 14
+        return max(0, min(100, strength))
+
+    @property
+    def courtroom_label(self) -> str:
+        value = self.courtroom_strength
+        if value >= 68:
+            return "High"
+        if value >= 40:
+            return "Medium"
+        return "Low"
+
 
 @dataclass
 class CaseStats:
@@ -106,7 +228,7 @@ class CaseStats:
     anomaly_count: int = 0
     device_count: int = 0
     timeline_span: str = "N/A"
-    integrity_summary: str = "0/0 Verified"
+    integrity_summary: str = "0/0 Checked"
     screenshots_count: int = 0
     duplicates_count: int = 0
     avg_score: int = 0

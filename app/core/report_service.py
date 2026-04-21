@@ -3,6 +3,9 @@ from __future__ import annotations
 import csv
 import html
 import json
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -11,16 +14,80 @@ from typing import Iterable, List
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image as RLImage, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from .anomalies import parse_timestamp
 from .models import EvidenceRecord
 from app.config import APP_COPYRIGHT, APP_NAME, APP_VERSION, APP_BUILD_CHANNEL
+from PIL import Image, ImageSequence
 
 
 class ReportService:
     def __init__(self, export_dir: Path) -> None:
         self.export_dir = export_dir
         self.export_dir.mkdir(parents=True, exist_ok=True)
+
+    def _prepare_preview_asset(self, record: EvidenceRecord, max_size: tuple[int, int] = (900, 540)) -> Path | None:
+        assets_dir = self.export_dir / "report_assets"
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = "".join(ch if ch.isalnum() or ch in {'-', '_'} else '_' for ch in record.file_name)[:80]
+        output = assets_dir / f"{record.evidence_id}_{safe_name}.png"
+        if output.exists():
+            return output
+        try:
+            with Image.open(record.file_path) as image:
+                frame = next(iter(ImageSequence.Iterator(image))).copy() if getattr(image, "is_animated", False) else image.copy()
+                preview = frame.convert("RGB")
+                preview.thumbnail(max_size)
+                preview.save(output, format="PNG")
+                return output
+        except Exception:
+            return None
+
+    def _corroboration_checklist_lines(self, record: EvidenceRecord) -> list[str]:
+        lines = [f"Preserve original path and hashes for {record.evidence_id} before sharing or re-exporting."]
+        lines.append(f"Validate the selected time anchor ({record.timestamp_source}) against uploads, chats, logs, or witness accounts.")
+        if record.has_gps:
+            lines.append(f"Verify native GPS coordinates externally around {record.gps_display} before making courtroom location claims.")
+        elif record.derived_geo_display != "Unavailable":
+            lines.append(f"Treat derived geo ({record.derived_geo_display}) as contextual only until browser/app history confirms it.")
+        else:
+            lines.append("Use timeline, source profile, and surrounding case context because no GPS anchor was recovered.")
+        if record.visible_text_excerpt:
+            lines.append("Cross-check OCR clues with the source application, browser history, or visible conversation context.")
+        return lines[:4]
+
+    def _build_static_map_chart(self, records: list[EvidenceRecord]) -> Path | None:
+        gps_records = [r for r in records if r.has_gps or (r.derived_latitude is not None and r.derived_longitude is not None)]
+        if not gps_records:
+            return None
+        output = self.export_dir / "chart_map.png"
+        ordered = sorted(gps_records, key=lambda item: (parse_timestamp(item.timestamp) is None, parse_timestamp(item.timestamp) or item.timestamp, item.evidence_id))
+        lats = [r.gps_latitude if r.gps_latitude is not None else r.derived_latitude for r in ordered]
+        lons = [r.gps_longitude if r.gps_longitude is not None else r.derived_longitude for r in ordered]
+        plt.close('all')
+        fig, ax = plt.subplots(figsize=(8.8, 3.9), dpi=180)
+        fig.patch.set_facecolor('#04101b')
+        ax.set_facecolor('#04101b')
+        ax.plot(lons, lats, linewidth=1.6, alpha=0.65, color='#21d0ff')
+        for idx, record in enumerate(ordered, start=1):
+            lon = record.gps_longitude if record.gps_longitude is not None else record.derived_longitude
+            lat = record.gps_latitude if record.gps_latitude is not None else record.derived_latitude
+            color = '#67ecff' if record.has_gps else '#ffd166'
+            ax.scatter([lon], [lat], s=150, color=color, edgecolors='#e9f7ff', linewidths=0.8, zorder=5)
+            ax.text(lon, lat, f'  #{idx:02d} {record.evidence_id}', color='#eef8ff', fontsize=8, va='bottom')
+        ax.set_title('Map intelligence snapshot', color='#f3fbff', fontsize=12, pad=10, weight='bold')
+        ax.set_xlabel('Longitude', color='#9ccae6')
+        ax.set_ylabel('Latitude', color='#9ccae6')
+        ax.tick_params(axis='x', colors='#dcefff', labelsize=8)
+        ax.tick_params(axis='y', colors='#dcefff', labelsize=8)
+        ax.grid(alpha=0.12, color='#7ecfff')
+        for spine in ax.spines.values():
+            spine.set_color('#2f5c8e')
+        fig.tight_layout(pad=1.4)
+        fig.savefig(output, facecolor=fig.get_facecolor(), bbox_inches='tight')
+        plt.close(fig)
+        return output
 
     def _case_metrics(self, records: List[EvidenceRecord]) -> dict:
         total = len(records)
@@ -30,7 +97,7 @@ class ReportService:
         avg_score = round(sum(r.suspicion_score for r in records) / total) if total else 0
         dominant_source = Counter([record.source_type for record in records]).most_common(1)[0][0] if total else "Unknown"
         parser_issue_count = sum(1 for record in records if record.parser_status != "Valid" or record.signature_status == "Mismatch")
-        hidden_count = sum(1 for record in records if record.hidden_code_indicators or record.extracted_strings)
+        hidden_count = sum(1 for record in records if record.hidden_code_indicators)
         return {
             "total": total,
             "gps_count": gps_count,
@@ -60,6 +127,7 @@ class ReportService:
                     "GPS Confidence",
                     "Score",
                     "Confidence",
+                    "Evidentiary Value",
                     "Risk",
                     "Integrity",
                     "SHA-256",
@@ -80,6 +148,8 @@ class ReportService:
                         record.gps_confidence,
                         record.suspicion_score,
                         record.confidence_score,
+                        record.evidentiary_value,
+                        record.courtroom_strength,
                         record.risk_level,
                         record.integrity_status,
                         record.sha256,
@@ -99,6 +169,12 @@ class ReportService:
                     "file_name": record.file_name,
                     "file_path": str(record.file_path),
                     "source_type": record.source_type,
+                    "source_profile_confidence": record.source_profile_confidence,
+                    "environment_profile": record.environment_profile,
+                    "app_detected": record.app_detected,
+                    "scene_group": record.scene_group,
+                    "similarity_score": record.similarity_score,
+                    "similarity_note": record.similarity_note,
                     "timestamp": record.timestamp,
                     "timestamp_source": record.timestamp_source,
                     "timestamp_confidence": record.timestamp_confidence,
@@ -117,6 +193,15 @@ class ReportService:
                         "source": record.gps_source,
                         "confidence": record.gps_confidence,
                         "verification": record.gps_verification,
+                        "derived": {
+                            "display": record.derived_geo_display,
+                            "latitude": record.derived_latitude,
+                            "longitude": record.derived_longitude,
+                            "source": record.derived_geo_source,
+                            "confidence": record.derived_geo_confidence,
+                            "note": record.derived_geo_note,
+                        },
+                        "status": record.geo_status,
                     },
                     "anomaly_reasons": record.anomaly_reasons,
                     "anomaly_contributors": record.anomaly_contributors,
@@ -126,12 +211,33 @@ class ReportService:
                     "hidden": {
                         "summary": record.hidden_code_summary,
                         "overview": record.hidden_content_overview,
+                        "context_summary": record.hidden_context_summary,
                         "types": record.hidden_finding_types,
                         "indicators": record.hidden_code_indicators,
+                        "suspicious_embeds": record.hidden_suspicious_embeds,
+                        "payload_markers": record.hidden_payload_markers,
+                        "readable_strings": record.extracted_strings,
                         "urls": record.urls_found,
+                        "stego_suspicion": record.stego_suspicion,
                     },
+                    "visible_text": {
+                        "excerpt": record.visible_text_excerpt,
+                        "lines": record.visible_text_lines,
+                        "urls": record.visible_urls,
+                        "times": record.visible_time_strings,
+                        "locations": record.visible_location_strings,
+                    },
+                    "time_candidates": record.time_candidates,
+                    "time_conflicts": record.time_conflicts,
+                    "integrity_note": record.integrity_note,
+                    "exif_warning": record.exif_warning,
+                    "created_time_note": record.created_time_note,
                     "suspicion_score": record.suspicion_score,
                     "confidence_score": record.confidence_score,
+                    "evidentiary_value": record.evidentiary_value,
+                    "evidentiary_label": record.evidentiary_label,
+                    "courtroom_strength": record.courtroom_strength,
+                    "courtroom_label": record.courtroom_label,
                     "risk_level": record.risk_level,
                     "tags": record.tags,
                     "bookmarked": record.bookmarked,
@@ -155,6 +261,7 @@ class ReportService:
             "",
             f"Total evidence items: {metrics['total']}",
             f"Native GPS items: {metrics['gps_count']}",
+            f"Derived geo clues: {sum(1 for r in records if r.derived_geo_display != 'Unavailable')}",
             f"Review items (non-low risk): {metrics['anomaly_count']}",
             f"Parser/signature issues: {metrics['parser_issue_count']}",
             f"Hidden/code hits: {metrics['hidden_count']}",
@@ -164,12 +271,12 @@ class ReportService:
             "",
             "Top priority evidence:",
         ]
-        for record in sorted(records, key=lambda r: (-r.suspicion_score, -r.confidence_score, r.evidence_id))[:5]:
+        for record in sorted(records, key=lambda r: (-r.evidentiary_value, -r.suspicion_score, -r.confidence_score, r.evidence_id))[:5]:
             lines.extend(
                 [
-                    f"- {record.evidence_id} | {record.file_name} | {record.risk_level} | Score {record.suspicion_score} | Confidence {record.confidence_score}%",
+                    f"- {record.evidence_id} | {record.file_name} | {record.risk_level} | Score {record.suspicion_score} | Confidence {record.confidence_score}% | Value {record.evidentiary_value}% | Courtroom {record.courtroom_strength}%",
                     f"  Time: {record.timestamp} ({record.timestamp_source}, {record.timestamp_confidence}%)",
-                    f"  GPS: {record.gps_display} ({record.gps_confidence}%)",
+                    f"  GPS: {record.gps_display} ({record.gps_confidence}%) | Derived: {record.derived_geo_display} ({record.derived_geo_confidence}%)",
                     f"  Why it matters: {record.analyst_verdict}",
                 ]
             )
@@ -193,11 +300,14 @@ class ReportService:
             f"Parser-success count: {parser_valid}/{total}",
             f"Strong time anchors: {native_time}/{total}",
             f"Strong GPS anchors: {native_gps}/{total}",
+            f"Derived geo clues: {sum(1 for record in records if record.derived_geo_display != 'Unavailable')}",
             f"Hidden/code detections: {hidden_hits}",
+            f"Courtroom-ready posture (>=60%): {sum(1 for record in records if record.courtroom_strength >= 60)}/{total}",
             "",
             "Interpretation:",
             "- Strong time anchors = Native EXIF Original or equivalent embedded source.",
             "- Strong GPS anchors = valid native GPS coordinates recovered from EXIF tags.",
+            "- Derived geo clues = location leads parsed from visible screenshot/browser/map content rather than native EXIF.",
             "- Parser-success count = files rendered successfully by Pillow in the current workflow.",
             "- Hidden/code detections are heuristic findings and still require analyst review.",
         ]
@@ -233,9 +343,9 @@ class ReportService:
         for record in ordered[:5]:
             lines.extend(
                 [
-                    f"{record.evidence_id} | {record.file_name} | {record.risk_level} | Score {record.suspicion_score}",
+                    f"{record.evidence_id} | {record.file_name} | {record.risk_level} | Score {record.suspicion_score} | Value {record.evidentiary_value}% | Courtroom {record.courtroom_strength}%",
                     f"  Time: {record.timestamp} ({record.timestamp_source}, {record.timestamp_confidence}%)",
-                    f"  GPS: {record.gps_display} ({record.gps_confidence}%)",
+                    f"  GPS: {record.gps_display} ({record.gps_confidence}%) | Derived: {record.derived_geo_display} ({record.derived_geo_confidence}%)",
                     f"  Parser: {record.parser_status} | Signature: {record.signature_status} | Trust: {record.format_trust}",
                     f"  Analyst verdict: {record.analyst_verdict}",
                     f"  Courtroom note: {record.courtroom_notes}",
@@ -261,9 +371,11 @@ class ReportService:
                 <td>{html.escape(record.source_type)}</td>
                 <td>{html.escape(record.timestamp)}<br><span class='muted'>{html.escape(record.timestamp_source)} • {record.timestamp_confidence}%</span></td>
                 <td>{html.escape(record.device_model)}</td>
-                <td>{html.escape(record.gps_display)}<br><span class='muted'>{record.gps_confidence}%</span></td>
+                <td>{html.escape(record.gps_display)}<br><span class='muted'>Native {record.gps_confidence}% • Derived {record.derived_geo_confidence}%</span><br><span class='muted'>{html.escape(record.derived_geo_display)}</span></td>
                 <td>{record.suspicion_score}</td>
                 <td>{record.confidence_score}%</td>
+                <td>{record.evidentiary_value}%</td>
+                <td>{record.courtroom_strength}%</td>
                 <td>{html.escape(record.parser_status)} / {html.escape(record.signature_status)}</td>
                 <td><span class="risk {badge_class(record.risk_level)}">{html.escape(record.risk_level)}</span></td>
             </tr>
@@ -273,30 +385,43 @@ class ReportService:
 
         appendix_blocks = []
         for record in records:
+            preview_asset = self._prepare_preview_asset(record)
+            preview_html = ""
+            if preview_asset is not None:
+                rel_preview = preview_asset.relative_to(self.export_dir).as_posix()
+                preview_html = f"<img class='evidence-preview' src='{html.escape(rel_preview)}' alt='{html.escape(record.file_name)} preview'>"
             appendix_blocks.append(
                 f"""
                 <div class="detail-card">
                     <h3>{html.escape(record.evidence_id)} — {html.escape(record.file_name)}</h3>
+                    {preview_html}
                     <div class="pill-row">
                         <span class="pill">{html.escape(record.source_type)}</span>
                         <span class="pill">{html.escape(record.timestamp_source)} • {record.timestamp_confidence}%</span>
-                        <span class="pill">{html.escape(record.gps_display)} • {record.gps_confidence}%</span>
+                        <span class="pill">Native GPS {html.escape(record.gps_display)} • {record.gps_confidence}%</span>
+                        <span class="pill">Derived Geo {html.escape(record.derived_geo_display)} • {record.derived_geo_confidence}%</span>
                         <span class="pill">Signature {html.escape(record.signature_status)}</span>
                         <span class="pill">Trust {html.escape(record.format_trust)}</span>
                         <span class="pill">Score {record.suspicion_score}</span>
+                        <span class="pill">Value {record.evidentiary_value}%</span>
+                        <span class="pill">Courtroom {record.courtroom_strength}%</span>
                     </div>
                     <p><strong>Why this matters:</strong> {html.escape(record.analyst_verdict)}</p>
                     <p><strong>Courtroom note:</strong> {html.escape(record.courtroom_notes)}</p>
                     <p><strong>GPS verification:</strong> {html.escape(record.gps_verification)}</p>
+                    <p><strong>Derived geo:</strong> {html.escape(record.derived_geo_note)}</p>
                     <p><strong>Hidden/content summary:</strong> {html.escape(record.hidden_code_summary)}</p>
-                    <ul>{''.join(f'<li>{html.escape(lead)}</li>' for lead in record.osint_leads[:4])}</ul>
+                    <p><strong>Corroboration checklist:</strong></p>
+                    <ul>{''.join(f'<li>{html.escape(lead)}</li>' for lead in self._corroboration_checklist_lines(record))}</ul>
                 </div>
                 """
             )
         custody_html = "<br>".join(html.escape(line) for line in custody_log.splitlines()[:50]) if custody_log else "No custody actions logged."
 
+        self._build_static_map_chart(records)
         chart_blocks = []
         for file_name, title in [
+            ("chart_map.png", "Map Intelligence"),
             ("chart_sources.png", "Source Distribution"),
             ("chart_risks.png", "Risk Distribution"),
             ("chart_geo_duplicate.png", "GPS & Duplicate Coverage"),
@@ -326,7 +451,7 @@ class ReportService:
                 .card {{ background:#081525; border:1px solid #173c63; border-radius:22px; padding:24px; margin-bottom:22px; }}
                 .grid-charts {{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }}
                 .chart-card {{ background:#06111d; border:1px solid #143553; border-radius:18px; padding:16px; }}
-                .chart-card img {{ width:100%; border-radius:14px; border:1px solid #1f496f; background:#030b15; }}
+                .chart-card img {{ width:100%; border-radius:14px; border:1px solid #1f496f; background:#030b15; }} .evidence-preview {{ width:100%; margin:10px 0 14px 0; border-radius:14px; border:1px solid #1f496f; background:#030b15; }}
                 table {{ width:100%; border-collapse:collapse; overflow:hidden; border-radius:16px; }}
                 th, td {{ padding:14px 12px; border-bottom:1px solid #153553; vertical-align:top; text-align:left; }}
                 th {{ background:#10243f; color:#84dcff; }}
@@ -346,21 +471,21 @@ class ReportService:
             <section class="hero">
                 <h1>{APP_NAME} — Investigation Report</h1>
                 <p class="muted">Case: {html.escape(case_id)} | {html.escape(case_name)} | Generated: {generated} | Version: {APP_VERSION} ({APP_BUILD_CHANNEL})</p>
-                <p>This report is structured as executive summary, evidence matrix, forensic appendix, and custody review.</p>
+                <p>This report is structured as executive summary, evidence matrix, forensic appendix, custody review, and courtroom-strength posture.</p>
                 <div class="metrics">
                     <div class="metric"><div class="value">{metrics['total']}</div><div>Images</div></div>
                     <div class="metric"><div class="value">{metrics['gps_count']}</div><div>GPS Enabled</div></div>
                     <div class="metric"><div class="value">{metrics['anomaly_count']}</div><div>Review Items</div></div>
                     <div class="metric"><div class="value">{len(metrics['duplicate_groups'])}</div><div>Duplicate Clusters</div></div>
                     <div class="metric"><div class="value">{metrics['avg_score']}</div><div>Average Score</div></div>
-                    <div class="metric"><div class="value">{html.escape(metrics['dominant_source'])}</div><div>Dominant Source</div></div>
+                    <div class="metric"><div class="value">{sum(1 for r in records if r.courtroom_strength >= 60)}</div><div>Courtroom-Ready</div></div>
                 </div>
             </section>
 
             <section class="card">
                 <h2>Executive Summary</h2>
-                <p>The current case contains <strong>{metrics['total']}</strong> evidence item(s). <strong>{metrics['gps_count']}</strong> item(s) contain native GPS, <strong>{len(metrics['duplicate_groups'])}</strong> duplicate cluster(s) were detected, and the dominant profile is <strong>{html.escape(metrics['dominant_source'])}</strong>.</p>
-                <p>Parser/signature alerts: <strong>{metrics['parser_issue_count']}</strong>. Hidden/code alerts: <strong>{metrics['hidden_count']}</strong>. These values highlight where a courtroom-aware analyst should start.</p>
+                <p>The current case contains <strong>{metrics['total']}</strong> evidence item(s). <strong>{metrics['gps_count']}</strong> item(s) contain native GPS, <strong>{sum(1 for r in records if r.derived_geo_display != 'Unavailable')}</strong> item(s) expose screenshot-derived geo clues, <strong>{len(metrics['duplicate_groups'])}</strong> duplicate cluster(s) were detected, and the dominant profile is <strong>{html.escape(metrics['dominant_source'])}</strong>.</p>
+                <p>Parser/signature alerts: <strong>{metrics['parser_issue_count']}</strong>. Hidden/code alerts: <strong>{metrics['hidden_count']}</strong>. Readable strings without code markers are preserved for context but are not counted as hidden-code alerts.</p>
             </section>
 
             <section class="card">
@@ -381,6 +506,8 @@ class ReportService:
                             <th>GPS</th>
                             <th>Score</th>
                             <th>Confidence</th>
+                            <th>Value</th>
+                            <th>Courtroom</th>
                             <th>Parser / Signature</th>
                             <th>Risk</th>
                         </tr>
@@ -392,6 +519,11 @@ class ReportService:
             <section class="card">
                 <h2>Deep Technical Appendix</h2>
                 <div class="detail-grid">{''.join(appendix_blocks)}</div>
+            </section>
+
+            <section class="card">
+                <h2>Corroboration Checklist</h2>
+                <ul>{''.join(f"<li><strong>{html.escape(record.evidence_id)}</strong>: {'; '.join(html.escape(item) for item in self._corroboration_checklist_lines(record))}</li>" for record in records)}</ul>
             </section>
 
             <section class="card">
@@ -417,6 +549,8 @@ class ReportService:
         title = ParagraphStyle("TitleBlue", parent=styles["Title"], textColor=colors.HexColor("#1565c0"), spaceAfter=10)
         heading = ParagraphStyle("HeadingBlue", parent=styles["Heading2"], textColor=colors.HexColor("#1976d2"), spaceAfter=8)
         body = ParagraphStyle("Body", parent=styles["BodyText"], leading=15, spaceAfter=6)
+        timeline_chart = self.export_dir / "chart_timeline.png"
+        map_chart = self._build_static_map_chart(records)
         story = [
             Paragraph(f"{APP_NAME} — Investigation Report", title),
             Paragraph(f"Case: {html.escape(case_id)} — {html.escape(case_name)}", body),
@@ -454,22 +588,48 @@ class ReportService:
         story.append(table)
         story.extend([
             Spacer(1, 10),
-            Paragraph("Methodology & Limits", heading),
+            Paragraph("Visual Overview", heading),
+        ])
+        if map_chart is not None and map_chart.exists():
+            try:
+                story.append(RLImage(str(map_chart), width=470, height=210))
+                story.append(Spacer(1, 8))
+            except Exception:
+                pass
+        if timeline_chart.exists():
+            try:
+                story.append(RLImage(str(timeline_chart), width=470, height=210))
+                story.append(Spacer(1, 8))
+            except Exception:
+                pass
+        story.extend([
+            Paragraph("Validation, Methodology & Limits", heading),
             Paragraph("Workflow: Acquire → Verify → Extract → Correlate → Score → Report. Scores are triage aids and must be confirmed with analyst review.", body),
+            Paragraph(f"Validation posture: parser-clean {sum(1 for r in records if r.parser_status == 'Valid')}/{len(records)} • courtroom-ready {sum(1 for r in records if r.courtroom_strength >= 60)}/{len(records)} • native GPS {sum(1 for r in records if r.gps_confidence >= 80)}/{len(records)}.", body),
             Paragraph("Limits: filesystem times can drift, missing GPS may be normal for exports/screenshots, and parser failures require secondary validation.", body),
             Paragraph(f"Build identity: {APP_NAME} {APP_VERSION} ({APP_BUILD_CHANNEL})", body),
             PageBreak(),
             Paragraph("Deep Technical Appendix", heading),
         ])
         for record in records:
+            preview_asset = self._prepare_preview_asset(record, max_size=(720, 420))
             story.extend([
                 Paragraph(f"{record.evidence_id} — {record.file_name}", styles["Heading3"]),
                 Paragraph(
-                    f"Risk {record.risk_level} / Score {record.suspicion_score} / Parser {record.parser_status} / Signature {record.signature_status}",
+                    f"Risk {record.risk_level} / Score {record.suspicion_score} / Confidence {record.confidence_score}% / Value {record.evidentiary_value}% / Courtroom {record.courtroom_strength}% / Parser {record.parser_status} / Signature {record.signature_status}",
                     body,
                 ),
+            ])
+            if preview_asset is not None and preview_asset.exists():
+                try:
+                    story.append(RLImage(str(preview_asset), width=180, height=110))
+                    story.append(Spacer(1, 6))
+                except Exception:
+                    pass
+            story.extend([
                 Paragraph(html.escape(record.analyst_verdict), body),
                 Paragraph(html.escape(record.courtroom_notes), body),
+                Paragraph("Corroboration checklist: " + html.escape(" | ".join(self._corroboration_checklist_lines(record))), body),
                 Spacer(1, 8),
             ])
 
