@@ -1,22 +1,30 @@
 <p align="center">
-  <img src="assets/app_icon.png" width="112" alt="GeoTrace Forensics X logo">
+  <img src="assets/app_icon.png" width="128" alt="GeoTrace Forensics X logo">
 </p>
 
 <h1 align="center">GeoTrace Forensics X</h1>
 
 <p align="center">
-  <strong>A premium desktop digital-forensics command center for image intelligence, metadata recovery, GPS correlation, duplicate analysis, chain of custody, and analyst-ready reporting.</strong>
+  <strong>A premium desktop digital-forensics command center for image intelligence, metadata recovery, timestamp reconstruction, GPS correlation, duplicate analysis, chain of custody, and analyst-ready reporting.</strong>
 </p>
 
 <p align="center">
-  Acquire → Verify → Extract → Correlate → Score → Report
+  <em>Acquire → Verify → Extract → Correlate → Score → Report</em>
 </p>
 
 <p align="center">
-  <img alt="Python" src="https://img.shields.io/badge/Python-3.x-0b1020?style=for-the-badge&logo=python&logoColor=7dd3fc">
-  <img alt="PyQt5" src="https://img.shields.io/badge/Desktop-PyQt5-0b1020?style=for-the-badge&logo=qt&logoColor=7dd3fc">
-  <img alt="Platform" src="https://img.shields.io/badge/Platform-Windows%20First-0b1020?style=for-the-badge&logo=windows&logoColor=7dd3fc">
-  <img alt="Reports" src="https://img.shields.io/badge/Exports-HTML%20%7C%20PDF%20%7C%20CSV%20%7C%20JSON-0b1020?style=for-the-badge&logo=files&logoColor=7dd3fc">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.x-09111f?style=for-the-badge&logo=python&logoColor=7dd3fc">
+  <img alt="Desktop" src="https://img.shields.io/badge/Desktop-PyQt5-09111f?style=for-the-badge&logo=qt&logoColor=7dd3fc">
+  <img alt="Platform" src="https://img.shields.io/badge/Platform-Windows%20First-09111f?style=for-the-badge&logo=windows&logoColor=7dd3fc">
+  <img alt="Reports" src="https://img.shields.io/badge/Exports-HTML%20%7C%20PDF%20%7C%20CSV%20%7C%20JSON-09111f?style=for-the-badge&logo=files&logoColor=7dd3fc">
+</p>
+
+<p align="center">
+  <a href="#visual-tour">Visual Tour</a> •
+  <a href="#core-capabilities">Capabilities</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#project-structure">Structure</a> •
+  <a href="#demo-flow">Demo Flow</a>
 </p>
 
 <p align="center">
@@ -27,19 +35,45 @@
 
 ## Overview
 
-**GeoTrace Forensics X** is a case-oriented desktop workspace for investigating image-based evidence with a practical digital-forensics workflow.
+**GeoTrace Forensics X** is a case-oriented desktop workspace for investigating image-based evidence with a practical forensic workflow and a presentation-ready interface.
 
-It combines:
+It is designed to help analysts move from raw files to structured conclusions through six clear stages:
 
-- **metadata extraction** for EXIF, device, software, and format signals
-- **timestamp recovery** from EXIF, filenames, and filesystem context
-- **GPS decoding and geo correlation** when location data is present
-- **near-duplicate clustering** using perceptual hashing
-- **context-aware anomaly scoring** with risk and confidence signals
-- **tamper-evident chain-of-custody logging** inside the case workflow
-- **export-ready reporting** for analyst review, class presentations, and documentation
+- **Acquire** evidence into an isolated case
+- **Verify** integrity with hashes and custody events
+- **Extract** metadata, timestamps, and structural clues
+- **Correlate** devices, locations, duplicates, and time signals
+- **Score** findings with contextual risk and confidence
+- **Report** the result in a clean export package
 
-This repository is built to feel less like a basic parser and more like a **forensics command center**.
+Instead of behaving like a simple EXIF viewer, GeoTrace is positioned as a **forensics command center** for image intelligence.
+
+---
+
+## Why This Project Stands Out
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>Context-aware logic</h3>
+      <p>Missing EXIF is not blindly treated as suspicious. Screenshots, edited media, chat exports, and camera photos are interpreted with different expectations.</p>
+    </td>
+    <td width="50%" valign="top">
+      <h3>Risk + confidence together</h3>
+      <p>Each record can be judged not only by risk, but also by how strong the conclusion is, which makes analyst explanations more mature and credible.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>Duplicate intelligence</h3>
+      <p>GeoTrace combines exact hashing and perceptual similarity so repeated or recompressed evidence can still be linked.</p>
+    </td>
+    <td width="50%" valign="top">
+      <h3>Report-first workflow</h3>
+      <p>The application is built to end with a real deliverable: HTML, PDF, CSV, and JSON outputs ready for demos, coursework, and investigation summaries.</p>
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -57,160 +91,132 @@ This repository is built to feel less like a basic parser and more like a **fore
   <img alt="Demo evidence gallery" src="docs/readme/demo-gallery.png" width="100%">
 </p>
 
----
+<p align="center">
+  <img alt="Export package diagram" src="docs/readme/export-package.svg" width="100%">
+</p>
 
-## Why GeoTrace Feels Different
-
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>Context-aware analysis</h3>
-      <p>Missing EXIF is not treated blindly as suspicious. Screenshots, chat exports, edited media, and camera photos are interpreted with different expectations.</p>
-    </td>
-    <td width="50%" valign="top">
-      <h3>Risk + confidence together</h3>
-      <p>Each item is not only scored for risk, but also paired with a confidence signal so the analyst can explain how strong the conclusion is.</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>More than file hashes</h3>
-      <p>GeoTrace uses perceptual hashing to group visually similar media, making duplicate review stronger than simple byte-for-byte matching.</p>
-    </td>
-    <td width="50%" valign="top">
-      <h3>Report-first workflow</h3>
-      <p>HTML, PDF, CSV, JSON, executive summaries, validation summaries, and package manifests help turn raw evidence into a presentable case output.</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>Case isolation and audit trail</h3>
-      <p>Evidence is handled through isolated cases with custody events, notes, hashes, and validation context designed for traceability.</p>
-    </td>
-    <td width="50%" valign="top">
-      <h3>Built for demos and coursework</h3>
-      <p>The app is especially useful for academic digital-forensics demonstrations, project showcases, and structured evidence walk-throughs.</p>
-    </td>
-  </tr>
-</table>
+> Recommended: replace the gallery later with real in-app screenshots from your final build for an even stronger GitHub first impression.
 
 ---
 
 ## Core Capabilities
 
-### Metadata Intelligence
+### 1) Metadata Intelligence
 
 GeoTrace extracts and correlates a broad range of evidence signals, including:
 
 - EXIF camera and device tags
-- software/editor tags
+- software and editor tags
 - lens, ISO, exposure, focal length
-- color mode, alpha channel, DPI, format
+- format, DPI, alpha channel, and color mode
 - filesystem timestamps
-- filename-based timestamp recovery
+- filename-based time recovery
 - GPS coordinates and altitude when available
-- visible text and screenshot clues when OCR support is available
+- structural and source hints for screenshots and exports
 
-### Timestamp Recovery
+### 2) Timestamp Recovery
 
-Instead of relying on a single timestamp source, the tool builds time context from multiple candidates:
+The tool does not rely on one timestamp source only. It can recover time context from multiple candidates such as:
 
-- EXIF date/time fields
+- EXIF date and time fields
 - filename patterns
 - filesystem timestamps
-- export-style naming conventions
-- screenshot-oriented time hints when recoverable
+- exported-media naming styles
+- screenshot-oriented hints when recoverable
 
-This makes the workflow more practical for evidence that has been **forwarded, stripped, exported, or edited**.
+This makes the workflow more useful for evidence that has been forwarded, renamed, stripped, exported, or edited.
 
-### Duplicate & Similarity Analysis
+### 3) GPS Correlation
 
-GeoTrace supports duplicate review using both:
+When location data exists, GeoTrace helps the analyst review:
+
+- latitude and longitude
+- altitude
+- map-oriented context
+- geo investigation leads
+- consistency between location-related clues
+
+### 4) Duplicate and Similarity Analysis
+
+GeoTrace supports two complementary approaches:
 
 - **cryptographic hashing** for exact integrity checks
 - **perceptual hashing** for visually similar or recompressed copies
 
-This is useful when the same evidence appears in multiple forms across a case.
+This makes duplicate review stronger than plain byte-for-byte matching.
 
-### Hidden / Structural Review
+### 5) Chain of Custody
 
-The hidden-content workflow is designed to reduce false positives:
+The case workflow includes integrity-oriented event logging with a visible audit trail, helping document:
 
-- readable strings are preserved as analyst context
-- stronger code-like markers are surfaced as more meaningful findings
-- structural warnings help flag files that deserve extra manual review
+- intake events
+- analyst notes
+- evidence actions
+- hash-linked traceability
+- validation during reporting
 
-### Chain of Custody
+### 6) Analyst-Ready Reporting
 
-The case audit trail includes a simple hash-chained structure:
-
-- each event stores `prev_hash`
-- each event stores `event_hash`
-- the chain can be validated during reporting
-
-This is stronger than a plain event log and adds visible integrity reasoning to the workflow.
-
----
-
-## Command Center Modules
-
-| Module | What it gives the analyst |
-|---|---|
-| **Dashboard** | Case health, evidence counts, GPS coverage, duplicate coverage, and investigation KPIs |
-| **Review** | Preview-first evidence triage and record-by-record analysis |
-| **Metadata** | EXIF, device, format, editor, and filesystem context |
-| **Timeline** | Recovered time candidates, chronology, and timestamp conflict support |
-| **Geo / OSINT Leads** | GPS, map clues, coordinates, and location-oriented follow-up |
-| **Compare** | Side-by-side review of related or near-duplicate evidence |
-| **Audit** | Chain of custody, event history, and analyst notes |
-| **Insights** | Charts for source types, risk distribution, GPS coverage, and duplicate clusters |
-
----
-
-## Export Package
-
-<p align="center">
-  <img alt="Export package diagram" src="docs/readme/export-package.svg" width="100%">
-</p>
-
-A single case can generate a multi-file reporting package that may include:
+A single case can generate a reporting package that may include:
 
 - HTML report
 - PDF report
 - CSV evidence summary
 - JSON evidence summary
-- courtroom summary
-- executive summary
-- validation summary
-- export manifest
+- executive-style summary outputs
+- validation-oriented package manifests
 
-This makes the project suitable not only for internal review, but also for **course submissions, demos, technical presentations, and investigation walkthroughs**.
+---
+
+## Command Center Modules
+
+| Module | What the analyst gets |
+|---|---|
+| **Dashboard** | Case health, evidence counts, GPS coverage, duplicate coverage, and high-level investigation KPIs |
+| **Review** | Preview-first evidence triage and record-by-record inspection |
+| **Metadata** | EXIF, device, editor, format, and filesystem context |
+| **Timeline** | Recovered time candidates, chronology support, and timestamp conflict review |
+| **Geo / OSINT Leads** | GPS signals, map clues, coordinates, and follow-up location leads |
+| **Compare** | Side-by-side review of related or near-duplicate items |
+| **Audit** | Chain of custody, event history, and analyst notes |
+| **Insights** | Charts for source types, risk distribution, GPS coverage, and duplicate clusters |
 
 ---
 
 ## Investigation Methodology
 
-GeoTrace is structured around a practical forensic pipeline:
+GeoTrace follows a practical digital-forensics process:
 
-1. **Acquire** — import one image or a full evidence folder into an isolated case.
-2. **Verify** — compute hashes and register intake events.
-3. **Extract** — recover metadata, timestamps, filesystem context, and visible clues.
-4. **Correlate** — connect source type, timeline hints, GPS, and duplicate relationships.
-5. **Score** — assign context-aware risk and confidence indicators.
-6. **Report** — export a presentation-ready package for analyst review.
+### Acquire
+Import one image or a full folder into an isolated case.
+
+### Verify
+Compute hashes and register intake events.
+
+### Extract
+Recover metadata, timestamps, filesystem context, and structural clues.
+
+### Correlate
+Connect time signals, source type, GPS, and duplicate relationships.
+
+### Score
+Assign context-aware risk and confidence indicators.
+
+### Report
+Export a presentation-ready package for analyst review.
 
 ---
 
-## Suggested Demo Flow
+## Demo Flow
 
-For a strong live demo or graduation-project presentation:
+For a strong live demo, project presentation, or judging session:
 
-1. Import a small folder from `demo_evidence/`
-2. Show the dashboard and case coverage metrics
-3. Open one screenshot and explain why missing EXIF is not always suspicious
+1. Import a folder from `demo_evidence/`
+2. Show the dashboard and explain coverage metrics
+3. Open a screenshot and explain why missing EXIF is not always suspicious
 4. Open a camera-style image and walk through the metadata panel
 5. Show the timeline view and recovered time candidates
-6. Show duplicate clustering with a repeated screenshot pair
+6. Show duplicate clustering with a repeated or recompressed image pair
 7. Open the geo lead when GPS or map clues exist
 8. Generate the export package and open the final reports
 
@@ -240,8 +246,6 @@ build_windows_exe.bat
 ---
 
 ## Supported Formats
-
-GeoTrace currently supports the following media formats:
 
 - JPG / JPEG
 - PNG
@@ -308,58 +312,58 @@ GeoTrace Forensics X/
 
 ## Windows Notes
 
-- `run_windows.bat` and `setup_windows.bat` create a project-local temporary directory to avoid the common Windows TEMP/TMP issue.
-- OCR support is optional. `pytesseract` is listed in `requirements.txt`, but full OCR functionality also requires **Tesseract OCR** to be installed and available on system PATH.
-- If OCR is unavailable, the application still runs and reports that OCR support is missing instead of failing silently.
+- `setup_windows.bat` and `run_windows.bat` are used for streamlined local setup.
+- OCR support is optional. If your build depends on it, install **Tesseract OCR** and make sure it is available on system PATH.
+- If OCR is unavailable, the application should still degrade gracefully instead of failing silently.
 
-### If Windows still reports a TEMP / TMP problem
-
-Run:
+If Windows reports a TEMP or TMP issue, run:
 
 ```powershell
 fix_windows_temp.bat
 ```
 
-Then open a **new terminal** and run setup again.
+Then open a new terminal and run setup again.
 
 ---
 
-## Design Notes
+## Design Philosophy
 
 This project intentionally separates **structural validation** from **origin certainty**.
 
 That means:
 
 - **Verified** does not automatically prove legal authenticity or provenance
-- **Partial** can still be useful evidence with limited parser or metadata support
-- **Review Required** signals that the analyst should manually inspect or corroborate the record
+- **Partial** can still be useful evidence with limited parser support
+- **Review Required** means the analyst should inspect and corroborate the record manually
 
-This makes the tool more realistic for teaching and investigation workflows.
+This makes the project more realistic for digital-forensics teaching, demos, and case workflows.
 
 ---
 
-## Roadmap Ideas
+## Roadmap
 
-Some strong next-step upgrades for the project:
+Strong next upgrades for the repository could include:
 
-- real UI screenshots inside the README gallery
-- richer map intelligence and external geospatial enrichment
-- stronger evidence-comparison workspace
-- clearer explainability cards for scoring decisions
+- real UI screenshots in the README gallery
+- richer geo intelligence and stronger map enrichment
+- a deeper evidence comparison workspace
+- explainability cards for scoring decisions
 - case templates for different investigation scenarios
 - plugin-style import and export extensions
 
 ---
 
-## Status
+## Ideal Use Cases
 
-This repository currently contains:
+GeoTrace Forensics X is well-suited for:
 
-- the desktop application source
-- demo evidence for walkthroughs
-- tests for core workflows
-- batch files for Windows setup and run
-- PyInstaller packaging support
+- digital forensics coursework
+- graduation project demonstrations
+- media evidence review
+- timestamp reconstruction exercises
+- duplicate discovery workflows
+- GPS-based media correlation
+- analyst report generation
 
 ---
 
