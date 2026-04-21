@@ -63,14 +63,17 @@ def extract_file_times(file_path: Path) -> Tuple[str, str]:
     return human_datetime(created_ts) if created_ts else "Unknown", human_datetime(modified_ts) if modified_ts else "Unknown"
 
 
-def extract_basic_image_info(file_path: Path) -> Dict[str, str | int | bool]:
-    info: Dict[str, str | int | bool] = {
+def extract_basic_image_info(file_path: Path) -> Dict[str, str | int | bool | float]:
+    info: Dict[str, str | int | bool | float] = {
         "width": 0,
         "height": 0,
         "format_name": "Unknown",
         "color_mode": "Unknown",
         "has_alpha": False,
         "dpi": "N/A",
+        "megapixels": 0.0,
+        "aspect_ratio": "Unknown",
+        "brightness_mean": 0.0,
     }
     try:
         with Image.open(file_path) as image:
@@ -79,6 +82,12 @@ def extract_basic_image_info(file_path: Path) -> Dict[str, str | int | bool]:
             info["format_name"] = image.format or file_path.suffix.upper().replace(".", "")
             info["color_mode"] = image.mode
             info["has_alpha"] = "A" in image.mode
+            info["megapixels"] = round((image.width * image.height) / 1_000_000, 2) if image.width and image.height else 0.0
+            if image.width and image.height:
+                info["aspect_ratio"] = f"{image.width}:{image.height}"
+            grayscale = image.convert("L")
+            stat = ImageStat.Stat(grayscale)
+            info["brightness_mean"] = round(float(stat.mean[0]), 2) if stat.mean else 0.0
             dpi = image.info.get("dpi")
             if isinstance(dpi, tuple) and len(dpi) >= 2:
                 info["dpi"] = f"{int(dpi[0])} x {int(dpi[1])}"

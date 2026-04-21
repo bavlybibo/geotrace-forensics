@@ -49,7 +49,11 @@ class EvidenceRecord:
     note: str = ""
     width: int = 0
     height: int = 0
+    megapixels: float = 0.0
+    aspect_ratio: str = "Unknown"
+    brightness_mean: float = 0.0
     duplicate_group: str = ""
+    analyst_verdict: str = ""
 
     @property
     def has_gps(self) -> bool:

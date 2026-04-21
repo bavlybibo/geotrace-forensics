@@ -51,6 +51,7 @@ class CaseManager:
             record.confidence_score = confidence
             record.risk_level = level
             record.anomaly_reasons = reasons
+            record.analyst_verdict = self._derive_analyst_verdict(record)
             if not record.osint_leads:
                 record.osint_leads = build_osint_leads(
                     record.file_path,
@@ -82,7 +83,13 @@ class CaseManager:
         imported_at = datetime.utcnow().isoformat(timespec="seconds")
         created_time, modified_time = extract_file_times(file_path)
         metadata = build_metadata_summary(exif)
-        source_type = classify_source(file_path, {k: v for k, v in exif.items() if k != "__raw_tags__"}, software, int(basic["width"]), int(basic["height"]))
+        source_type = classify_source(
+            file_path,
+            {k: v for k, v in exif.items() if k != "__raw_tags__"},
+            software,
+            int(basic["width"]),
+            int(basic["height"]),
+        )
         record = EvidenceRecord(
             evidence_id=evidence_id,
             file_path=file_path,
@@ -119,6 +126,9 @@ class CaseManager:
             gps_display=gps_display,
             width=int(basic["width"]),
             height=int(basic["height"]),
+            megapixels=float(basic["megapixels"]),
+            aspect_ratio=str(basic["aspect_ratio"]),
+            brightness_mean=float(basic["brightness_mean"]),
         )
         record.osint_leads = build_osint_leads(
             file_path,
@@ -133,6 +143,43 @@ class CaseManager:
         )
         self.db.log_action(record.evidence_id, "IMPORT", f"Imported {record.file_name}")
         return record
+
+    def _derive_analyst_verdict(self, record: EvidenceRecord) -> str:
+        verdict_bits: list[str] = []
+        if record.source_type in {"Screenshot", "Messaging Export", "Screenshot / Export"}:
+            verdict_bits.append("The file profile is consistent with a screenshot or exported chat artifact rather than a camera-original photo.")
+        elif record.source_type == "Camera Photo":
+            verdict_bits.append("The file retains characteristics of a camera-origin image with richer acquisition metadata.")
+        elif record.source_type == "Edited / Exported":
+            verdict_bits.append("The metadata profile suggests the media likely passed through an editing or export workflow.")
+        else:
+            verdict_bits.append("The source profile is mixed, so the file should be treated as a derivative image until corroborated.")
+
+        if record.timestamp_source == "Embedded EXIF":
+            verdict_bits.append("Timestamp confidence is stronger because the time came from embedded EXIF tags.")
+        elif record.timestamp_source == "Filename Pattern":
+            verdict_bits.append("Timestamp was recovered from filename structure, so it is useful for triage but should be corroborated externally.")
+        elif record.timestamp_source.startswith("Filesystem"):
+            verdict_bits.append("Time values rely on filesystem metadata, which can drift after copying or export operations.")
+        else:
+            verdict_bits.append("No reliable native timestamp was recovered.")
+
+        if record.has_gps:
+            verdict_bits.append("Location intelligence is available and should be correlated with maps, venues, and surrounding evidence.")
+        else:
+            verdict_bits.append("No GPS coordinates were present, so timeline and source correlation become the primary investigative anchors.")
+
+        if record.duplicate_group:
+            verdict_bits.append(f"Visual fingerprinting links this file to {record.duplicate_group}, which may indicate reposting, versioning, or duplicate capture.")
+
+        if record.risk_level == "High":
+            verdict_bits.append("Priority review is recommended because metadata anomalies materially affect source confidence.")
+        elif record.risk_level == "Medium":
+            verdict_bits.append("Moderate review is recommended to verify whether the observed gaps are benign or workflow-driven.")
+        else:
+            verdict_bits.append("Current metadata signals do not point to aggressive manipulation, but provenance still requires case context.")
+
+        return " ".join(verdict_bits)
 
     def build_stats(self) -> CaseStats:
         stats = CaseStats()
@@ -193,6 +240,7 @@ class CaseManager:
                     "anomaly_reasons": record.anomaly_reasons,
                     "osint_leads": record.osint_leads,
                     "duplicate_group": record.duplicate_group,
+                    "analyst_verdict": record.analyst_verdict,
                     "note": record.note,
                 }
             )
