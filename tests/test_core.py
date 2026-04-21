@@ -4,7 +4,7 @@ from pathlib import Path
 
 from app.core.anomalies import assign_duplicate_groups, parse_timestamp
 from app.core.case_manager import CaseManager
-from app.core.exif_service import extract_basic_image_info, infer_timestamp_from_filename
+from app.core.exif_service import extract_basic_image_info, extract_embedded_text_hints, infer_timestamp_from_filename
 from app.core.gps_utils import dms_to_decimal, format_coordinates
 from app.core.models import EvidenceRecord
 from app.core.report_service import ReportService
@@ -36,6 +36,16 @@ def test_parser_failure_handling_for_broken_gif():
     assert info["signature_status"] in {"Matched", "Compatible", "Unknown", "Mismatch"}
     assert info["format_trust"] in {"Header-only", "Weak", "Conflict", "Verified"}
 
+
+
+
+def test_hidden_content_scan_detects_code_marker(tmp_path: Path):
+    sample = tmp_path / "payload.png"
+    sample.write_bytes(b"\x89PNG\r\n\x1a\n" + b"dummy-image-data<script>alert(1)</script> token=ABC123 https://example.com/test")
+    result = extract_embedded_text_hints(sample, "PNG")
+    assert result["code_indicators"]
+    assert any("script" in item.lower() or "token" in item.lower() for item in result["code_indicators"])
+    assert result["urls"]
 
 def test_duplicate_grouping():
     base = EvidenceRecord(case_id="CASE-1", case_name="Case 1", evidence_id="IMG-001", file_path=Path("a.jpg"), file_name="a.jpg", sha256="a", md5="a", perceptual_hash="abcd", file_size=1, imported_at="now")
