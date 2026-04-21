@@ -1,0 +1,10 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+*.log
+case_data/geotrace_case.db
+case_data/*/case_snapshot.json
+case_data/*/exports/
+logs/

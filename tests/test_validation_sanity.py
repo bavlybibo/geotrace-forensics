@@ -19,6 +19,8 @@ def test_validation_summary_mentions_core_metrics(tmp_path: Path):
     summary = manager.validation_summary()
     assert "GPS strong anchors" in summary
     assert "Parser clean" in summary
+    assert "Custody chain" in summary
+    assert "Integrity checked" in summary
 
 
 def test_timestamp_confidence_prefers_native_exif():

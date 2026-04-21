@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.core.anomalies import assign_duplicate_groups, parse_timestamp
+from app.core.anomalies import assign_duplicate_groups, assign_scene_groups, parse_timestamp
 from app.core.case_manager import CaseManager
-from app.core.exif_service import extract_basic_image_info, extract_embedded_text_hints, infer_timestamp_from_filename
+from app.core.exif_service import build_time_assessment, extract_basic_image_info, extract_embedded_text_hints, extract_file_times, infer_timestamp_from_filename
 from app.core.gps_utils import dms_to_decimal, format_coordinates
 from app.core.models import EvidenceRecord
+from app.core.visual_clues import parse_derived_geo, profile_source_details
 from app.core.report_service import ReportService
 
 
@@ -37,8 +38,6 @@ def test_parser_failure_handling_for_broken_gif():
     assert info["format_trust"] in {"Header-only", "Weak", "Conflict", "Verified"}
 
 
-
-
 def test_hidden_content_scan_detects_code_marker(tmp_path: Path):
     sample = tmp_path / "payload.png"
     sample.write_bytes(b"\x89PNG\r\n\x1a\n" + b"dummy-image-data<script>alert(1)</script> token=ABC123 https://example.com/test")
@@ -47,12 +46,22 @@ def test_hidden_content_scan_detects_code_marker(tmp_path: Path):
     assert any("script" in item.lower() or "token" in item.lower() for item in result["code_indicators"])
     assert result["urls"]
 
-def test_duplicate_grouping():
-    base = EvidenceRecord(case_id="CASE-1", case_name="Case 1", evidence_id="IMG-001", file_path=Path("a.jpg"), file_name="a.jpg", sha256="a", md5="a", perceptual_hash="abcd", file_size=1, imported_at="now")
-    peer = EvidenceRecord(case_id="CASE-1", case_name="Case 1", evidence_id="IMG-002", file_path=Path("b.jpg"), file_name="b.jpg", sha256="b", md5="b", perceptual_hash="abcd", file_size=1, imported_at="now")
+
+def test_duplicate_grouping_near_match():
+    base = EvidenceRecord(case_id="CASE-1", case_name="Case 1", evidence_id="IMG-001", file_path=Path("a.jpg"), file_name="a.jpg", sha256="a", md5="a", perceptual_hash="abcd000000000000", file_size=1, imported_at="now")
+    peer = EvidenceRecord(case_id="CASE-1", case_name="Case 1", evidence_id="IMG-002", file_path=Path("b.jpg"), file_name="b.jpg", sha256="b", md5="b", perceptual_hash="abcd000000000001", file_size=1, imported_at="now")
     assign_duplicate_groups([base, peer])
     assert base.duplicate_group.startswith("Cluster-")
     assert base.duplicate_group == peer.duplicate_group
+
+
+def test_file_times_return_note(tmp_path: Path):
+    sample = tmp_path / "sample.txt"
+    sample.write_text("x", encoding="utf-8")
+    created, modified, note = extract_file_times(sample)
+    assert modified != "Unknown"
+    assert isinstance(note, str) and note
+    assert created in {"Unavailable"} or created.startswith("20")
 
 
 def test_custody_isolation_between_cases(tmp_path: Path):
@@ -94,4 +103,53 @@ def test_case_manager_smoke_run(tmp_path: Path):
     manager.new_case("Smoke")
     records = manager.load_images([root / "demo_evidence"])
     assert len(records) >= 1
-    assert manager.build_stats().total_images == len(records)
+    stats = manager.build_stats()
+    assert stats.total_images == len(records)
+    assert stats.integrity_summary.endswith("Checked")
+
+
+def test_derived_geo_parser_from_google_maps_url():
+    result = parse_derived_geo(["google.com/maps/@30.1265458,31.2895761,13z"], ["https://google.com/maps/@30.1265458,31.2895761,13z"], source_type="Screenshot")
+    assert result["display"] == "30.126546, 31.289576"
+    assert result["confidence"] >= 60
+
+
+def test_time_assessment_prefers_filename_but_tracks_conflicts(tmp_path: Path):
+    sample = tmp_path / "Screenshot 2026-04-16 113759.png"
+    sample.write_bytes(b"123")
+    assessment = build_time_assessment({}, sample, ["2026-04-17 10:00:00"])
+    assert assessment["timestamp"] == "2026:04:16 11:37:59"
+    assert assessment["source"] == "Filename Pattern"
+    assert assessment["conflicts"]
+
+
+def test_profile_source_details_detects_map_screenshot():
+    label, confidence = profile_source_details(
+        Path("Screenshot.png"),
+        source_type="Screenshot",
+        width=1906,
+        height=1065,
+        has_exif=False,
+        software="N/A",
+        visible_urls=["https://google.com/maps/@30.1265458,31.2895761,13z"],
+        app_detected="Google Maps",
+    )
+    assert label == "Map Screenshot"
+    assert confidence >= 80
+
+
+
+def test_hidden_content_scan_detects_trailing_payload(tmp_path: Path):
+    sample = tmp_path / "payload.png"
+    sample.write_bytes(b"\x89PNG\r\n\x1a\n" + b"abc" + b"IEND\xaeB`\x82EXTRA-DATA-TRAILER-1234567890")
+    result = extract_embedded_text_hints(sample, "PNG")
+    assert result["suspicious_embeds"]
+    assert "Trailing bytes" in result["suspicious_embeds"][0]
+
+
+def test_scene_grouping_links_related_items():
+    a = EvidenceRecord(case_id="CASE-1", case_name="Case 1", evidence_id="IMG-001", file_path=Path("a.png"), file_name="a.png", sha256="a", md5="a", perceptual_hash="abcd000000000000", file_size=1, imported_at="now", timestamp="2026:04:16 10:00:00", source_type="Screenshot", app_detected="Google Maps")
+    b = EvidenceRecord(case_id="CASE-1", case_name="Case 1", evidence_id="IMG-002", file_path=Path("b.png"), file_name="b.png", sha256="b", md5="b", perceptual_hash="abcd000000000001", file_size=1, imported_at="now", timestamp="2026:04:16 11:00:00", source_type="Screenshot", app_detected="Google Maps")
+    assign_duplicate_groups([a, b])
+    assign_scene_groups([a, b])
+    assert a.scene_group and a.scene_group == b.scene_group

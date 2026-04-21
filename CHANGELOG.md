@@ -1,5 +1,24 @@
 # Changelog
 
+## 12.3.0-clarity
+- Improved preview stage, report hub, and decision rail clarity
+- Added evidentiary value as a separate metric from analytic confidence
+- Fixed timeline narrative generation
+- Upgraded map output and report visuals
+- Reduced hidden-string noise and improved presentation polish
+
+# Changelog
+
+## 12.2.0-polish — presentation and workflow polish
+- Fixed the startup mismatch where an active case could show analyzed evidence counts before the left evidence rail was populated.
+- Reduced top-bar clutter by keeping only core actions visible and moving secondary actions into a compact More menu.
+- Reworked the preview stage with shorter controls, larger canvas space, calmer empty states, and cleaner badge wording.
+- Hid meaningless zero-state decision widgets until an evidence item is selected.
+- Added a confidence explanation panel that surfaces anomaly contributors and score-breakdown details.
+- Tightened spacing, borders, tab widths, button widths, and scroll behavior to reduce clipping and overflow.
+- Added screenshot previews to exported HTML and PDF reports through generated report assets.
+- Cleaned project packaging by targeting a leaner handoff build with caches and obsolete implementation notes removed.
+
 ## 11.0.0-rc1 — Review rebuild and forensic-depth pass
 - Fixed review-state inconsistencies so cases with evidence always auto-select a visible item after filtering.
 - Removed auto-navigation side effects from clear/reset flows.
