@@ -336,7 +336,7 @@ class CompareDialog(QDialog):
                 f'Parser: {record.parser_status}',
                 f'Signature: {record.signature_status} ({record.format_signature})',
                 f'Trust: {record.format_trust}',
-                f'Hidden markers: {len(record.hidden_code_indicators)} code / {len(record.extracted_strings)} string',
+                f'Hidden markers: {len(record.hidden_code_indicators)} code / {len(record.extracted_strings)} context string',
                 f'Duplicate Group: {record.duplicate_group or "None"}',
                 '',
                 'Analyst Verdict:',

@@ -39,8 +39,10 @@ from PyQt5.QtWidgets import (
     QStyle,
     QTabWidget,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
+    QMenu,
 )
 
 from PIL import Image, ImageSequence
@@ -172,13 +174,17 @@ class GeoTraceMainWindow(QMainWindow):
         self._setup_shortcuts()
         self._apply_startup_settings()
         self._refresh_case_badges()
+        self.populate_table(self.filtered_records)
         self.refresh_dashboard()
         self.update_charts()
         self.populate_timeline()
         self.populate_custody_log()
         self._refresh_batch_queue_view()
         self._refresh_cases_page()
-        self.clear_details(reason="This case has no evidence yet. Import files or a folder to begin the review.")
+        if self.filtered_records:
+            self._auto_select_visible_record()
+        else:
+            self.clear_details(reason=self._inventory_status_message([]))
         QTimer.singleShot(120, self._show_onboarding_if_needed)
 
     def _build_logger(self) -> logging.Logger:
@@ -342,16 +348,14 @@ class GeoTraceMainWindow(QMainWindow):
         frame = QFrame()
         frame.setObjectName("HeaderFrame")
         layout = QHBoxLayout(frame)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(16)
+        layout.setContentsMargins(18, 14, 18, 14)
+        layout.setSpacing(14)
 
         left = QVBoxLayout()
-        left.setSpacing(6)
+        left.setSpacing(4)
         title = QLabel("GeoTrace Forensics X")
         title.setObjectName("TitleLabel")
-        subtitle = QLabel(
-            "Case-based forensic workspace with preview-first review, cleaner page separation, and isolated custody by design."
-        )
+        subtitle = QLabel("Forensic image triage for metadata, GPS, timeline, and custody.")
         subtitle.setObjectName("SubtitleLabel")
         subtitle.setWordWrap(True)
 
@@ -359,9 +363,9 @@ class GeoTraceMainWindow(QMainWindow):
         badge_row.setSpacing(8)
         self.case_badge = QLabel()
         self.case_badge.setObjectName("BadgeLabel")
-        self.mode_badge = QLabel("Preview-first review")
+        self.mode_badge = QLabel("Review mode")
         self.mode_badge.setObjectName("BadgeLabel")
-        self.export_badge = QLabel("Export hub idle")
+        self.export_badge = QLabel("Import → Review → Report")
         self.export_badge.setObjectName("BadgeLabel")
         for badge in [self.case_badge, self.mode_badge, self.export_badge]:
             badge_row.addWidget(badge)
@@ -373,18 +377,18 @@ class GeoTraceMainWindow(QMainWindow):
 
         right = QGridLayout()
         right.setHorizontalSpacing(10)
-        right.setVerticalSpacing(10)
+        right.setVerticalSpacing(8)
         self.case_label = self._info_badge("Case ID", "—")
         self.status_label = self._info_badge("Status", "Awaiting evidence")
-        self.integrity_label = self._info_badge("Case Integrity", "0/0 Verified")
-        self.method_label = self._info_badge("Workflow", "Page-based investigation")
+        self.integrity_label = self._info_badge("Integrity", "0/0 Verified")
+        self.method_label = self._info_badge("Workflow", "Case-based")
         right.addWidget(self.case_label, 0, 0)
         right.addWidget(self.status_label, 0, 1)
         right.addWidget(self.integrity_label, 1, 0)
         right.addWidget(self.method_label, 1, 1)
 
-        layout.addLayout(left, 6)
-        layout.addLayout(right, 4)
+        layout.addLayout(left, 7)
+        layout.addLayout(right, 5)
         return frame
 
     def _build_command_bar(self) -> QWidget:
@@ -404,10 +408,12 @@ class GeoTraceMainWindow(QMainWindow):
         self.btn_new_case.clicked.connect(self.start_new_case)
 
         self.btn_load_images = QPushButton("Files")
+        self.btn_load_images.setObjectName("ActionFilesButton")
         self.btn_load_images.clicked.connect(self.import_images)
         self.btn_load_images.setIcon(self.style().standardIcon(QStyle.SP_DialogOpenButton))
 
         self.btn_load_folder = QPushButton("Folder")
+        self.btn_load_folder.setObjectName("ActionFolderButton")
         self.btn_load_folder.clicked.connect(self.import_folder)
         self.btn_load_folder.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
 
@@ -416,30 +422,48 @@ class GeoTraceMainWindow(QMainWindow):
         self.btn_cancel_analysis.setEnabled(False)
 
         self.btn_generate_report = QPushButton("Report")
+        self.btn_generate_report.setObjectName("ActionReportButton")
+        self.btn_generate_report.setIcon(self.style().standardIcon(QStyle.SP_FileDialogDetailedView))
         self.btn_generate_report.clicked.connect(self.generate_reports)
         self.btn_generate_report.setEnabled(False)
+
+        self.btn_open_map = QPushButton("Map")
+        self.btn_open_map.setObjectName("ActionMapButton")
+        self.btn_open_map.setIcon(self.style().standardIcon(QStyle.SP_DriveNetIcon))
+        self.btn_open_map.clicked.connect(self.open_map)
+        self.btn_open_map.setEnabled(False)
+
+        self.btn_compare = QPushButton("Compare")
+        self.btn_compare.setObjectName("ActionCompareButton")
+        self.btn_compare.setIcon(self.style().standardIcon(QStyle.SP_FileDialogContentsView))
+        self.btn_compare.clicked.connect(self.open_compare_mode)
+        self.btn_compare.setEnabled(False)
+
+        self.btn_open_exports = QPushButton("Exports")
+        self.btn_open_exports.clicked.connect(lambda: self._set_workspace_page("Reports"))
+        self.btn_open_exports.setObjectName("GhostButton")
 
         self.btn_courtroom = QPushButton("Courtroom")
         self.btn_courtroom.clicked.connect(self.generate_reports)
         self.btn_courtroom.setEnabled(False)
 
-        self.btn_open_map = QPushButton("Map")
-        self.btn_open_map.clicked.connect(self.open_map)
-        self.btn_open_map.setEnabled(False)
-        self.btn_open_map.setObjectName("GhostButton")
-
-        self.btn_open_exports = QPushButton("Exports")
-        self.btn_open_exports.clicked.connect(lambda: self._set_workspace_page("Reports"))
-
-        self.btn_compare = QPushButton("Compare")
-        self.btn_compare.clicked.connect(self.open_compare_mode)
-        self.btn_compare.setEnabled(False)
-
-        self.btn_recent_cases = QPushButton("Recent")
+        self.btn_recent_cases = QPushButton("Recent Cases")
         self.btn_recent_cases.clicked.connect(self.open_recent_cases_dialog)
 
-        self.btn_settings = QPushButton("Prefs")
+        self.btn_settings = QPushButton("Preferences")
         self.btn_settings.clicked.connect(self.open_settings)
+
+        self.more_actions_button = QToolButton()
+        self.more_actions_button.setText("More")
+        self.more_actions_button.setObjectName("ActionMoreButton")
+        self.more_actions_button.setIcon(self.style().standardIcon(QStyle.SP_TitleBarUnshadeButton))
+        self.more_actions_button.setPopupMode(QToolButton.InstantPopup)
+        more_menu = QMenu(self.more_actions_button)
+        more_menu.addAction("Open Exports", lambda: self._set_workspace_page("Reports"))
+        more_menu.addAction("Courtroom Summary", self.generate_reports)
+        more_menu.addAction("Recent Cases", self.open_recent_cases_dialog)
+        more_menu.addAction("Preferences", self.open_settings)
+        self.more_actions_button.setMenu(more_menu)
 
         self.command_progress = QLabel("Ready")
         self.command_progress.setObjectName("PreviewStateBadge")
@@ -452,26 +476,23 @@ class GeoTraceMainWindow(QMainWindow):
             self.btn_new_case,
             self.btn_load_images,
             self.btn_load_folder,
-            self.btn_cancel_analysis,
             self.btn_generate_report,
-            self.btn_courtroom,
             self.btn_open_map,
-            self.btn_open_exports,
             self.btn_compare,
-            self.btn_recent_cases,
-            self.btn_settings,
+            self.more_actions_button,
         ]:
             row_top.addWidget(btn)
         row_top.addStretch(1)
+        row_top.addWidget(self.btn_cancel_analysis)
 
-        switch_label = QLabel("Case Switcher")
+        switch_label = QLabel("Active case")
         switch_label.setObjectName("MutedLabel")
-        self.command_hint = QLabel("Ctrl+2 Review • Ctrl+Shift+C Compare • Ctrl+R Report")
+        self.command_hint = QLabel("Import, review, then export.")
         self.command_hint.setObjectName("MutedLabel")
         row_bottom.addWidget(switch_label)
         row_bottom.addWidget(self.case_switch_combo, 1)
-        row_bottom.addStretch(1)
         row_bottom.addWidget(self.command_hint)
+        row_bottom.addStretch(1)
         row_bottom.addWidget(self.command_progress)
 
         outer.addLayout(row_top)
@@ -492,9 +513,8 @@ class GeoTraceMainWindow(QMainWindow):
             layout.addWidget(btn)
             self.page_buttons[key] = btn
         layout.addStretch(1)
-        hint = QLabel(f"{APP_NAME} {APP_VERSION} • page-based investigation")
+        hint = QLabel(f"{APP_NAME} {APP_VERSION} • active workspace")
         hint.setObjectName("MutedLabel")
-        layout.addWidget(hint)
         return frame
 
     def _info_badge(self, title: str, value: str) -> QLabel:
@@ -506,7 +526,7 @@ class GeoTraceMainWindow(QMainWindow):
     def _build_content_pages(self) -> QWidget:
         self.workspace_stack = QStackedWidget()
         self.dashboard_page = self._wrap_page(self._build_dashboard_page(), scrollable=True)
-        self.review_page = self._build_review_page()
+        self.review_page = self._wrap_page(self._build_review_page(), scrollable=True)
         self.geo_page = self._wrap_page(self._build_geo_page(), scrollable=True)
         self.timeline_page = self._wrap_page(self._build_timeline_page(), scrollable=True)
         self.custody_page = self._wrap_page(self._build_custody_page(), scrollable=True)
@@ -616,32 +636,42 @@ class GeoTraceMainWindow(QMainWindow):
         return frame
 
     def _build_review_page(self) -> QWidget:
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
         splitter = QSplitter(Qt.Horizontal)
         splitter.setChildrenCollapsible(False)
         splitter.setOpaqueResize(False)
         splitter.addWidget(self._build_inventory_panel())
         splitter.addWidget(self._build_review_center())
         splitter.addWidget(self._build_review_sidebar())
-        splitter.setSizes([350, 1050, 300])
-        return splitter
+        splitter.setSizes([300, 1160, 420])
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setStretchFactor(2, 0)
+        layout.addWidget(splitter)
+        return container
 
     def _build_inventory_panel(self) -> QWidget:
         frame = QFrame()
         frame.setObjectName("PanelFrame")
+        frame.setMinimumWidth(300)
+        frame.setMaximumWidth(360)
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(10)
 
-        title = QLabel("Evidence")
+        title = QLabel("Evidence Queue")
         title.setObjectName("SectionLabel")
-        meta = QLabel("Compact triage list with premium cards, one vertical scroll, and no giant table wall.")
+        meta = QLabel("Compact evidence cards with one calm scroll lane.")
         meta.setObjectName("SectionMetaLabel")
 
         self.inventory_meta = QLabel("No evidence loaded in the current case.")
         self.inventory_meta.setObjectName("MutedLabel")
 
         self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("Search all fields… try gps:yes risk:high parser:failed hidden:yes url:yes tag:foo note:bar")
+        self.search_box.setPlaceholderText("Search evidence • gps:yes • risk:high")
         self.search_box.textChanged.connect(self.apply_filters)
 
         filter_row = QHBoxLayout()
@@ -676,6 +706,8 @@ class GeoTraceMainWindow(QMainWindow):
         self.inventory_list.setObjectName("EvidenceList")
         self.inventory_list.setSpacing(8)
         self.inventory_list.setSelectionMode(QListWidget.SingleSelection)
+        self.inventory_list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
+        self.inventory_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.inventory_list.currentItemChanged.connect(self.populate_details)
 
         layout.addWidget(title)
@@ -690,6 +722,10 @@ class GeoTraceMainWindow(QMainWindow):
     def _build_review_center(self) -> QWidget:
         self.review_tabs = QTabWidget()
         self.review_tabs.setObjectName("ReviewTabs")
+        self.review_tabs.setUsesScrollButtons(True)
+        self.review_tabs.setDocumentMode(True)
+        self.review_tabs.tabBar().setElideMode(Qt.ElideNone)
+        self.review_tabs.tabBar().setExpanding(False)
 
         self.review_tab_preview = self._build_preview_shell()
         self.review_tab_overview = self._build_overview_tab()
@@ -723,8 +759,12 @@ class GeoTraceMainWindow(QMainWindow):
         top_grid.addWidget(self.review_profile_shell, 1, 1)
         layout.addLayout(top_grid)
 
-        self.metadata_overview = AutoHeightNarrativeView("Metadata overview will appear here.", max_auto_height=340)
+        self.metadata_overview = AutoHeightNarrativeView("Metadata overview will appear here.", max_auto_height=300)
+        self.confidence_tree_view = AutoHeightNarrativeView("Select one evidence item to explain what raised or lowered confidence.", max_auto_height=300)
         layout.addWidget(self._shell("Metadata Overview", self.metadata_overview, "Readable summary first. Technical dumps stay hidden until requested."))
+        self.acquisition_view = AutoHeightNarrativeView("Acquisition and custody posture will appear here.", max_auto_height=260)
+        layout.addWidget(self._shell("Acquisition & Custody", self.acquisition_view, "Original path, import posture, hashes, and courtroom-strength posture for the selected item."))
+        layout.addWidget(self._shell("Confidence / Value / Courtroom Tree", self.confidence_tree_view, "Shows why analytic confidence, evidentiary value, and courtroom strength are not the same metric."))
 
         quick = QHBoxLayout()
         quick.setSpacing(8)
@@ -737,7 +777,7 @@ class GeoTraceMainWindow(QMainWindow):
         quick.addWidget(self.btn_review_export)
         quick.addWidget(self.btn_review_compare)
         quick.addStretch(1)
-        self.review_hint_label = QLabel("Quick actions: F fullscreen • +/- zoom • Ctrl+S save note")
+        self.review_hint_label = QLabel("Quick actions: F fullscreen • +/- zoom")
         self.review_hint_label.setObjectName("MutedLabel")
         quick.addWidget(self.review_hint_label)
         layout.addLayout(quick)
@@ -785,9 +825,9 @@ class GeoTraceMainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
         self.hidden_overview_view = AutoHeightNarrativeView("Hidden-content scan results will appear here.", max_auto_height=220)
-        self.hidden_code_view = TerminalView("Code-like markers, URLs, and embedded strings will appear here when detected.")
-        layout.addWidget(self._shell("Embedded Text & Code Scan", self.hidden_overview_view, "Byte-level heuristics look for readable strings, URLs, and obvious script or credential markers hidden inside the container."))
-        layout.addWidget(self._shell("Recovered Markers", self.hidden_code_view, "Heuristic view only: readable payloads do not automatically prove exploitability."), 1)
+        self.hidden_code_view = TerminalView("Code-like markers, URLs, and context strings will appear here when detected.")
+        layout.addWidget(self._shell("Embedded Text & Code Scan", self.hidden_overview_view, "Byte-level heuristics look for readable strings, URLs, and obvious script or credential markers hidden inside the container. Readable strings without code markers stay contextual only."))
+        layout.addWidget(self._shell("Recovered Markers", self.hidden_code_view, "Heuristic view only: code-like markers are higher priority than plain readable strings."), 1)
         return widget
 
     def _build_review_audit_tab(self) -> QWidget:
@@ -801,6 +841,8 @@ class GeoTraceMainWindow(QMainWindow):
 
     def _build_review_sidebar(self) -> QWidget:
         widget = QWidget()
+        widget.setMinimumWidth(400)
+        widget.setMaximumWidth(460)
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
@@ -808,56 +850,84 @@ class GeoTraceMainWindow(QMainWindow):
         verdict = QFrame()
         verdict.setObjectName("VerdictPanel")
         verdict_layout = QVBoxLayout(verdict)
-        verdict_layout.setContentsMargins(14, 14, 14, 14)
-        verdict_layout.setSpacing(10)
+        verdict_layout.setContentsMargins(16, 16, 16, 16)
+        verdict_layout.setSpacing(12)
         top_title = QLabel("Decision Rail")
         top_title.setObjectName("SectionLabel")
-        top_meta = QLabel("Score, confidence, four priority facts, one verdict block, then concise next steps.")
+        top_meta = QLabel("Triage score, value, and the next move for the selected item.")
         top_meta.setObjectName("SectionMetaLabel")
-        self.score_ring = ScoreRing(104)
+
+        self.decision_empty_hint = QLabel("Choose one item to load score, value, integrity, and next actions.")
+        self.decision_empty_hint.setObjectName("MutedLabel")
+        self.decision_empty_hint.setWordWrap(True)
+
+        self.score_ring = ScoreRing(118)
         self.confidence_bar = QProgressBar()
         self.confidence_bar.setObjectName("ConfidenceBar")
         self.confidence_bar.setRange(0, 100)
         self.confidence_bar.setTextVisible(False)
-        self.confidence_bar_label = QLabel("0% analyst confidence")
+        self.confidence_bar_label = QLabel("Analytic confidence appears after selection")
         self.confidence_bar_label.setObjectName("MutedLabel")
+        self.evidence_value_label = QLabel("Evidentiary value appears after selection")
+        self.evidence_value_label.setObjectName("MutedLabel")
+        self.courtroom_strength_label = QLabel("Courtroom strength appears after selection")
+        self.courtroom_strength_label.setObjectName("MutedLabel")
 
-        facts = QGridLayout()
+        self.decision_score_shell = QWidget()
+        decision_score_layout = QVBoxLayout(self.decision_score_shell)
+        decision_score_layout.setContentsMargins(0, 0, 0, 0)
+        decision_score_layout.setSpacing(10)
+        decision_score_layout.addWidget(self.score_ring, alignment=Qt.AlignHCenter)
+        ring_gap = QLabel("")
+        ring_gap.setFixedHeight(4)
+        decision_score_layout.addWidget(ring_gap)
+        decision_score_layout.addWidget(self.confidence_bar)
+        decision_score_layout.addWidget(self.confidence_bar_label)
+        decision_score_layout.addWidget(self.evidence_value_label)
+        decision_score_layout.addWidget(self.courtroom_strength_label)
+
+        self.decision_facts_shell = QWidget()
+        facts = QGridLayout(self.decision_facts_shell)
+        facts.setContentsMargins(0, 0, 0, 0)
         facts.setHorizontalSpacing(8)
         facts.setVerticalSpacing(8)
-        self.badge_parser = self._micro_badge("Parser / Trust: —")
-        self.badge_time = self._micro_badge("Time Anchor: —")
-        self.badge_source = self._micro_badge("Source Profile: —")
-        self.badge_gps = self._micro_badge("GPS: —")
+        self.badge_parser = self._micro_badge("Parser / Trust", semantic="parser")
+        self.badge_time = self._micro_badge("Time Anchor", semantic="time")
+        self.badge_source = self._micro_badge("Source Profile", semantic="source")
+        self.badge_gps = self._micro_badge("GPS", semantic="gps")
         for idx, badge in enumerate([self.badge_parser, self.badge_time, self.badge_source, self.badge_gps]):
             facts.addWidget(badge, idx // 2, idx % 2)
 
-        self.badge_signature = self._micro_badge("Signature: —")
-        self.badge_trust = self._micro_badge("Trust: —")
-        self.badge_risk = self._risk_badge("Risk: —", "Low")
-        self.badge_format = self._micro_badge("Format: —")
+        self.badge_signature = self._micro_badge("Signature")
+        self.badge_trust = self._micro_badge("Trust")
+        self.badge_risk = self._risk_badge("Risk", "Low")
+        self.badge_format = self._micro_badge("Format")
 
-        self.score_auth_badge = QLabel("Authenticity 0")
-        self.score_auth_badge.setObjectName("ScoreBreakdownBadge")
-        self.score_meta_badge = QLabel("Metadata 0")
-        self.score_meta_badge.setObjectName("ScoreBreakdownBadge")
-        self.score_tech_badge = QLabel("Technical 0")
-        self.score_tech_badge.setObjectName("ScoreBreakdownBadge")
-        scores_row = QHBoxLayout()
+        self.decision_breakdown_shell = QWidget()
+        scores_row = QHBoxLayout(self.decision_breakdown_shell)
+        scores_row.setContentsMargins(0, 0, 0, 0)
         scores_row.setSpacing(8)
+        self.score_auth_badge = QLabel("Authenticity")
+        self.score_auth_badge.setObjectName("ScoreBreakdownBadge")
+        self.score_auth_badge.setProperty("role", "auth")
+        self.score_meta_badge = QLabel("Metadata")
+        self.score_meta_badge.setObjectName("ScoreBreakdownBadge")
+        self.score_meta_badge.setProperty("role", "meta")
+        self.score_tech_badge = QLabel("Technical")
+        self.score_tech_badge.setObjectName("ScoreBreakdownBadge")
+        self.score_tech_badge.setProperty("role", "tech")
         scores_row.addWidget(self.score_auth_badge)
         scores_row.addWidget(self.score_meta_badge)
         scores_row.addWidget(self.score_tech_badge)
 
-        self.selection_verdict_view = AutoHeightNarrativeView("Select an item to load a focused verdict summary.", max_auto_height=150)
-        self.review_pivots_text = AutoHeightNarrativeView("Select evidence to load next-step pivots.", max_auto_height=170)
+        self.selection_verdict_view = AutoHeightNarrativeView("Select an item to load a focused verdict summary.", max_auto_height=360)
+        self.review_pivots_text = AutoHeightNarrativeView("Select evidence to load next-step pivots.", max_auto_height=300)
         verdict_layout.addWidget(top_title)
         verdict_layout.addWidget(top_meta)
-        verdict_layout.addWidget(self.score_ring, alignment=Qt.AlignHCenter)
-        verdict_layout.addWidget(self.confidence_bar)
-        verdict_layout.addWidget(self.confidence_bar_label)
-        verdict_layout.addLayout(facts)
-        verdict_layout.addLayout(scores_row)
+        verdict_layout.addWidget(self.decision_empty_hint)
+        verdict_layout.addWidget(self.decision_score_shell)
+        verdict_layout.addWidget(self.decision_facts_shell)
+        verdict_layout.addWidget(self.decision_breakdown_shell)
         verdict_layout.addWidget(self._shell("Analyst Verdict", self.selection_verdict_view, "Observed posture first, then what still needs confirmation."))
         verdict_layout.addWidget(self._shell("Next Steps", self.review_pivots_text, "Concise pivots only — no repeated narrative blocks."))
 
@@ -872,28 +942,35 @@ class GeoTraceMainWindow(QMainWindow):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
+        hero_row = QHBoxLayout()
+        hero_row.setSpacing(8)
         title = QLabel("Evidence Stage")
         title.setObjectName("SectionLabel")
-        subtitle = QLabel("Preview-first review. Controls are grouped to avoid clipping while keeping the file itself in front.")
+        subtitle = QLabel("Preview first. Deeper detail stays in secondary tabs.")
         subtitle.setObjectName("SectionMetaLabel")
-        layout.addWidget(title)
-        layout.addWidget(subtitle)
+        subtitle.setWordWrap(True)
+        hero_row.addWidget(title)
+        hero_row.addStretch(1)
+        hero_row.addWidget(subtitle, 0, Qt.AlignRight)
+        layout.addLayout(hero_row)
 
         control_row_top = QHBoxLayout()
         control_row_top.setSpacing(8)
         self.preview_zoom_pill = QLabel("Zoom 100%")
         self.preview_zoom_pill.setObjectName("PreviewZoomPill")
         control_row_top.addWidget(self.preview_zoom_pill)
-        self.btn_zoom_out = QPushButton("Zoom −")
+        self.btn_zoom_out = QPushButton("−")
         self.btn_zoom_out.setObjectName("SmallGhostButton")
+        self.btn_zoom_out.setToolTip("Zoom out")
         self.btn_zoom_out.clicked.connect(self._zoom_preview_out)
-        self.btn_zoom_in = QPushButton("Zoom +")
+        self.btn_zoom_in = QPushButton("+")
         self.btn_zoom_in.setObjectName("SmallGhostButton")
+        self.btn_zoom_in.setToolTip("Zoom in")
         self.btn_zoom_in.clicked.connect(self._zoom_preview_in)
-        self.btn_zoom_fit = QPushButton("Fit View")
+        self.btn_zoom_fit = QPushButton("Fit")
         self.btn_zoom_fit.setObjectName("SmallGhostButton")
         self.btn_zoom_fit.clicked.connect(self._zoom_preview_fit)
-        self.btn_zoom_reset = QPushButton("Reset 100%")
+        self.btn_zoom_reset = QPushButton("100%")
         self.btn_zoom_reset.setObjectName("SmallGhostButton")
         self.btn_zoom_reset.clicked.connect(self._zoom_preview_reset)
         for btn in [self.btn_zoom_out, self.btn_zoom_in, self.btn_zoom_fit, self.btn_zoom_reset]:
@@ -902,21 +979,21 @@ class GeoTraceMainWindow(QMainWindow):
 
         control_row_bottom = QHBoxLayout()
         control_row_bottom.setSpacing(8)
-        self.btn_prev_frame = QPushButton("Prev Frame")
+        self.btn_prev_frame = QPushButton("Prev")
         self.btn_prev_frame.setObjectName("SmallGhostButton")
         self.btn_prev_frame.clicked.connect(self._show_previous_frame)
-        self.btn_next_frame = QPushButton("Next Frame")
+        self.btn_next_frame = QPushButton("Next")
         self.btn_next_frame.setObjectName("SmallGhostButton")
         self.btn_next_frame.clicked.connect(self._show_next_frame)
         self.frame_index_badge = QLabel("Frame 0/0")
         self.frame_index_badge.setObjectName("PreviewZoomPill")
-        self.btn_fullscreen_preview = QPushButton("Fullscreen")
+        self.btn_fullscreen_preview = QPushButton("Full")
         self.btn_fullscreen_preview.setObjectName("SmallGhostButton")
         self.btn_fullscreen_preview.clicked.connect(self._open_preview_fullscreen)
-        self.btn_open_external = QPushButton("Open Original")
+        self.btn_open_external = QPushButton("Original")
         self.btn_open_external.setObjectName("SmallGhostButton")
         self.btn_open_external.clicked.connect(self.open_selected_file)
-        self.btn_export_from_review = QPushButton("Export Package")
+        self.btn_export_from_review = QPushButton("Export")
         self.btn_export_from_review.setObjectName("SmallGhostButton")
         self.btn_export_from_review.clicked.connect(self.generate_reports)
         for btn in [self.btn_prev_frame, self.btn_next_frame]:
@@ -929,26 +1006,26 @@ class GeoTraceMainWindow(QMainWindow):
         state_row = QGridLayout()
         state_row.setHorizontalSpacing(8)
         state_row.setVerticalSpacing(8)
-        self.preview_state_badge = QLabel("Preview State: No item selected")
+        self.preview_state_badge = QLabel("Preview State: Awaiting selection")
         self.preview_state_badge.setObjectName("PreviewStateBadge")
-        self.preview_parser_badge = QLabel("Parser: —")
+        self.preview_parser_badge = QLabel("Parser: Awaiting selection")
         self.preview_parser_badge.setObjectName("PreviewStateBadge")
-        self.preview_signature_badge = QLabel("Signature: —")
+        self.preview_signature_badge = QLabel("Signature: Awaiting selection")
         self.preview_signature_badge.setObjectName("PreviewStateBadge")
-        self.preview_trust_badge = QLabel("Trust: —")
+        self.preview_trust_badge = QLabel("Trust: Awaiting selection")
         self.preview_trust_badge.setObjectName("PreviewStateBadge")
-        for idx, badge in enumerate([self.preview_state_badge, self.preview_parser_badge, self.preview_signature_badge, self.preview_trust_badge]):
+        for idx, badge in enumerate([self.preview_parser_badge, self.preview_signature_badge, self.preview_trust_badge]):
             state_row.addWidget(badge, 0, idx)
 
-        hint = QLabel("Keyboard: Ctrl+2 review • F fullscreen • +/- zoom • Ctrl+Shift+C compare")
+        hint = QLabel("F fullscreen • +/- zoom")
         hint.setObjectName("MutedLabel")
 
         preview_frame = QFrame()
         preview_frame.setObjectName("PreviewCanvasFrame")
         preview_frame_layout = QVBoxLayout(preview_frame)
-        preview_frame_layout.setContentsMargins(10, 10, 10, 10)
-        self.image_preview = ResizableImageLabel("Choose one evidence item to start review. The preview stays central while other tabs hold the deep forensic detail.", min_height=620)
-        self.image_preview.setMinimumHeight(620)
+        preview_frame_layout.setContentsMargins(6, 6, 6, 6)
+        self.image_preview = ResizableImageLabel("Choose one evidence item to start review. The hero stage stays large and calm while deep details live in the tabs.", min_height=980)
+        self.image_preview.setMinimumHeight(980)
         preview_frame_layout.addWidget(self.image_preview, 1)
 
         meta_grid = QGridLayout()
@@ -958,6 +1035,10 @@ class GeoTraceMainWindow(QMainWindow):
         self.preview_source_meta = self._preview_meta_block("Source Profile", "—")
         self.preview_time_meta = self._preview_meta_block("Recovered Time", "—")
         self.preview_geo_meta = self._preview_meta_block("GPS / Geo", "—")
+        self.preview_hash_meta = self._preview_meta_block("SHA-256", "—")
+        self.preview_hash_aux_meta = self._preview_meta_block("MD5 / pHash", "—")
+        self.preview_hash_meta.hide()
+        self.preview_hash_aux_meta.hide()
         meta_grid.addWidget(self.preview_file_meta, 0, 0, 1, 2)
         meta_grid.addWidget(self.preview_source_meta, 1, 0)
         meta_grid.addWidget(self.preview_time_meta, 1, 1)
@@ -966,7 +1047,6 @@ class GeoTraceMainWindow(QMainWindow):
         layout.addLayout(control_row_top)
         layout.addLayout(control_row_bottom)
         layout.addLayout(state_row)
-        layout.addWidget(hint)
         layout.addWidget(preview_frame, 1)
         layout.addLayout(meta_grid)
         return preview_shell
@@ -1051,10 +1131,16 @@ class GeoTraceMainWindow(QMainWindow):
             badge_row.addWidget(badge, 0, idx)
         layout.addLayout(badge_row)
 
-        self.geo_text = AutoHeightNarrativeView("No GPS evidence selected yet.", max_auto_height=240)
-        self.geo_leads_text = AutoHeightNarrativeView("Location pivots and next-step suggestions will appear here.", max_auto_height=240)
-        layout.addWidget(self._shell("Geo Intelligence", self.geo_text, "Native coordinates when available, or a strong explanation when GPS is absent."))
-        layout.addWidget(self._shell("Next Pivots", self.geo_leads_text, "Timestamp, source workflow, upload context, and venue reasoning when native GPS is missing."))
+        self.geo_text = AutoHeightNarrativeView("No GPS evidence selected yet.", max_auto_height=180)
+        self.geo_reasoning_text = AutoHeightNarrativeView("Geo reasoning will appear here.", max_auto_height=180)
+        self.geo_leads_text = AutoHeightNarrativeView("Location pivots and next-step suggestions will appear here.", max_auto_height=190)
+        geo_cards = QGridLayout()
+        geo_cards.setHorizontalSpacing(12)
+        geo_cards.setVerticalSpacing(12)
+        geo_cards.addWidget(self._shell("Geo Status", self.geo_text, "Native vs derived coordinates, altitude, and acquisition posture at a glance."), 0, 0)
+        geo_cards.addWidget(self._shell("Geo Reasoning", self.geo_reasoning_text, "Explain whether missing GPS is normal, weak, or suspicious for this workflow."), 0, 1)
+        geo_cards.addWidget(self._shell("Next Pivots", self.geo_leads_text, "Timestamp, source workflow, upload context, and venue reasoning when native GPS is missing."), 1, 0, 1, 2)
+        layout.addLayout(geo_cards)
         layout.addStretch(1)
         return widget
 
@@ -1089,8 +1175,8 @@ class GeoTraceMainWindow(QMainWindow):
         layout.addLayout(badge_row)
 
         self.timeline_chart = ChartCard("Timeline Reconstruction", "Single-item cases use a compact evidence anchor instead of a giant empty plot.")
-        self.timeline_narrative = AutoHeightNarrativeView("Timeline narrative generation will appear here after evidence is loaded.", max_auto_height=220)
-        self.timeline_text = AutoHeightNarrativeView("Timeline analysis will appear here after evidence is loaded.", max_auto_height=240)
+        self.timeline_narrative = AutoHeightNarrativeView("Timeline narrative generation will appear here after evidence is loaded.", max_auto_height=200)
+        self.timeline_text = AutoHeightNarrativeView("Timeline analysis will appear here after evidence is loaded.", max_auto_height=220)
         layout.addWidget(self.timeline_chart, 1)
         layout.addWidget(self._shell("Timeline Narrative", self.timeline_narrative, "Readable chronological story generated from the available anchors and parser context."))
         layout.addWidget(self._shell("Timeline Analyst Notes", self.timeline_text, "Chronological interpretation with parser, signature, and trust context."))
@@ -1142,22 +1228,86 @@ class GeoTraceMainWindow(QMainWindow):
         hero_layout.setSpacing(8)
         title = QLabel("Reports & Export Hub")
         title.setObjectName("SectionLabel")
-        meta = QLabel("One dedicated page for packages, courtroom output, and generated files instead of squeezing export state into the review rail.")
+        meta = QLabel("Generated outputs live here as reusable report cards.")
         meta.setObjectName("SectionMetaLabel")
         hero_layout.addWidget(title)
         hero_layout.addWidget(meta)
         layout.addWidget(hero)
 
-        self.export_summary = AutoHeightNarrativeView("No export package generated for the current case yet.", max_auto_height=260)
-        self.report_notes_view = AutoHeightNarrativeView("Generate reports to populate courtroom-ready output notes here.", max_auto_height=220)
-        self.batch_queue_view = AutoHeightNarrativeView("No active or queued import batches.", max_auto_height=240)
+        self.export_summary = AutoHeightNarrativeView("No export package generated for the current case yet.", max_auto_height=220)
+        self.report_notes_view = AutoHeightNarrativeView("Generate reports to populate courtroom-ready output notes here.", max_auto_height=190)
+        self.batch_queue_view = AutoHeightNarrativeView("No active or queued import batches.", max_auto_height=180)
         self.error_log_view = TerminalView("Graceful error logs will appear here for user-visible troubleshooting.")
-        layout.addWidget(self._shell("Package Status", self.export_summary, "HTML, PDF, CSV, JSON, and courtroom summary are generated here."))
-        layout.addWidget(self._shell("Batch Queue & Intake Progress", self.batch_queue_view, "Drag-and-drop or import multiple sets; queued batches start automatically."))
+        artifacts_frame = QFrame()
+        artifacts_frame.setObjectName("CompactPanel")
+        artifacts_layout = QGridLayout(artifacts_frame)
+        artifacts_layout.setContentsMargins(10, 10, 10, 10)
+        artifacts_layout.setHorizontalSpacing(12)
+        artifacts_layout.setVerticalSpacing(12)
+        self.report_artifact_labels = {}
+        self.report_artifact_buttons = {}
+        for idx, (key, title_text, hint_text) in enumerate([
+            ("html", "HTML Report", "Best for interactive reading"),
+            ("pdf", "PDF Package", "Shareable export"),
+            ("courtroom", "Courtroom Notes", "Quick legal-facing readout"),
+            ("validation", "Validation Summary", "Ground-truth and workflow sanity"),
+        ]):
+            card, label, button = self._build_artifact_card(title_text, hint_text, key)
+            self.report_artifact_labels[key] = label
+            self.report_artifact_buttons[key] = button
+            artifacts_layout.addWidget(card, idx // 2, idx % 2)
+        layout.addWidget(self._shell("Artifact Cards", artifacts_frame, "Open generated report artifacts directly instead of hunting through folders."))
+        layout.addWidget(self._shell("Package Status", self.export_summary, "HTML, PDF, CSV, JSON, validation, and courtroom outputs are summarized here."))
         layout.addWidget(self._shell("Courtroom Output Notes", self.report_notes_view, "Use this page as the document hub after generation."))
+        layout.addWidget(self._shell("Batch Queue & Intake Progress", self.batch_queue_view, "Drag-and-drop or import multiple sets; queued batches start automatically."))
         layout.addWidget(self._shell("Graceful Error Log", self.error_log_view, "User-visible runtime issues are stored here and mirrored to logs/app_errors.log."))
         layout.addStretch(1)
         return widget
+
+    def _build_artifact_card(self, title: str, subtitle: str, artifact: str):
+        frame = QFrame()
+        frame.setObjectName("SecondaryPanel")
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(6)
+        title_label = QLabel(title)
+        title_label.setObjectName("CardTitle")
+        subtitle_label = QLabel(subtitle)
+        subtitle_label.setObjectName("CardSubtext")
+        subtitle_label.setWordWrap(True)
+        status_label = QLabel("Not generated yet")
+        status_label.setObjectName("PreviewMetaValue")
+        status_label.setWordWrap(True)
+        open_button = QPushButton("Open")
+        open_button.setObjectName("SmallGhostButton")
+        open_button.clicked.connect(lambda _=False, key=artifact: self._open_export_artifact(key))
+        open_button.setEnabled(False)
+        layout.addWidget(title_label)
+        layout.addWidget(subtitle_label)
+        layout.addWidget(status_label)
+        layout.addStretch(1)
+        layout.addWidget(open_button, alignment=Qt.AlignLeft)
+        return frame, status_label, open_button
+
+    def _refresh_report_artifact_cards(self) -> None:
+        labels = getattr(self, "report_artifact_labels", {})
+        buttons = getattr(self, "report_artifact_buttons", {})
+        payload = self.last_export_payload or {}
+        for key, label in labels.items():
+            path = payload.get(key, "")
+            if path:
+                label.setText(Path(path).name)
+            else:
+                label.setText("Not generated yet")
+        for key, button in buttons.items():
+            button.setEnabled(bool(payload.get(key)))
+
+    def _open_export_artifact(self, artifact: str) -> None:
+        path = self.last_export_payload.get(artifact)
+        if not path:
+            self.show_info("Not Generated", f"No {artifact} artifact is available for the active case yet.")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def _build_cases_page(self) -> QWidget:
         widget = QWidget()
@@ -1286,10 +1436,12 @@ class GeoTraceMainWindow(QMainWindow):
         lbl.setWordWrap(True)
         return lbl
 
-    def _micro_badge(self, text: str) -> QLabel:
+    def _micro_badge(self, text: str, semantic: str = "") -> QLabel:
         lbl = QLabel(text)
         lbl.setObjectName("MicroBadge")
         lbl.setWordWrap(True)
+        if semantic:
+            lbl.setProperty("semantic", semantic)
         return lbl
 
     def _risk_badge(self, text: str, level: str) -> QLabel:
@@ -1335,13 +1487,17 @@ class GeoTraceMainWindow(QMainWindow):
         self.clear_details()
         self.populate_custody_log()
         self.export_summary.setPlainText(f"Active case changed to {case.case_id}. Previous case logs remain isolated.")
+        self.last_export_payload = {}
+        self._refresh_report_artifact_cards()
         self._refresh_cases_page()
         self._show_toast("New case created", case.case_id, tone="success")
 
     def _refresh_case_badges(self) -> None:
+        count = len(self.records)
         self.case_badge.setText(f"{self.case_manager.active_case_id} — {self.case_manager.active_case_name}")
+        self.export_badge.setText("Import → Review → Export" if not count else f"{count} item(s) ready for review")
         self._set_info_badge(self.case_label, "Case ID", self.case_manager.active_case_id)
-        self._set_info_badge(self.status_label, "Status", "Awaiting evidence" if not self.records else f"{len(self.records)} evidence item(s) analyzed")
+        self._set_info_badge(self.status_label, "Status", "Awaiting evidence" if not count else f"{count} evidence item(s) analyzed")
 
     def import_images(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(
@@ -1411,8 +1567,8 @@ class GeoTraceMainWindow(QMainWindow):
         self.populate_timeline()
         self.populate_custody_log()
         self.progress_bar.setValue(100)
-        self.progress_bar.setFormat("Analysis complete")
-        self.command_progress.setText("Analysis complete")
+        self.progress_bar.setFormat("Analysis finished")
+        self.command_progress.setText("Analysis finished")
         self.inventory_meta.setText(f"Loaded {len(self.records)} evidence item(s) into {self.case_manager.active_case_id}.")
         self._set_info_badge(self.status_label, "Status", f"{len(self.records)} evidence item(s) analyzed")
         self.btn_open_map.setEnabled(self.current_map_path is not None)
@@ -1425,7 +1581,7 @@ class GeoTraceMainWindow(QMainWindow):
             self.clear_details(reason=self._inventory_status_message([]))
         self._refresh_batch_queue_view()
         self._refresh_cases_page()
-        self._show_toast("Analysis complete", f"Processed {len(self.records)} evidence item(s).", tone="success")
+        self._show_toast("Analysis finished", f"Processed {len(self.records)} evidence item(s).", tone="success")
 
     def _on_analysis_error(self, message: str) -> None:
         self.progress_bar.setFormat("Analysis failed")
@@ -1460,19 +1616,18 @@ class GeoTraceMainWindow(QMainWindow):
         for record in records:
             item = QListWidgetItem()
             item.setData(Qt.UserRole, record.evidence_id)
-            item.setSizeHint(QSize(0, 102))
+            item.setSizeHint(QSize(0, 118))
             card = EvidenceListCard()
             badge_bits = [
-                record.risk_level,
-                f"Parser {record.parser_status}",
-                f"GPS {'Yes' if record.has_gps else 'No'}",
-                f"Hidden {'Yes' if record.hidden_code_indicators else 'No'}",
+                f"● {record.risk_level}",
+                f"● {'GPS' if record.has_gps else 'No GPS'}",
+                f"● {record.source_type}",
             ]
             if record.duplicate_group:
                 badge_bits.append(record.duplicate_group)
             if record.bookmarked:
                 badge_bits.append('★ bookmarked')
-            support = f"Time {record.timestamp_source} ({record.timestamp_confidence}%) • Geo {record.gps_confidence}% • Trust {record.format_trust}"
+            support = f"{record.timestamp_source} {record.timestamp_confidence}% • Value {record.evidentiary_value}% • Courtroom {record.courtroom_strength}%"
             card.set_content(
                 self._thumbnail_for_record(record),
                 f"{record.evidence_id} — {record.file_name}",
@@ -1481,6 +1636,8 @@ class GeoTraceMainWindow(QMainWindow):
                 risk=record.risk_level,
                 support=support,
                 score=record.suspicion_score,
+                evidentiary_value=record.evidentiary_value,
+                evidentiary_label=record.evidentiary_label,
             )
             self.inventory_list.addItem(item)
             self.inventory_list.setItemWidget(item, card)
@@ -1706,8 +1863,10 @@ class GeoTraceMainWindow(QMainWindow):
         self.image_preview.clear_source(message)
         self.metadata_overview.setPlainText("Select one evidence item to load its normalized metadata overview, verification posture, and anomaly explanation.")
         self.hidden_overview_view.setPlainText("Hidden-content scan results will appear here after you select an item.")
-        self.hidden_code_view.setPlainText("Code-like markers, URLs, and embedded strings will appear here when detected. No item is selected yet.")
+        self.hidden_code_view.setPlainText("Code-like markers, URLs, and context strings will appear here when detected. No item is selected yet.")
         self.review_audit_view.setPlainText("Select an evidence item to load its case-scoped audit activity.")
+        if hasattr(self, "confidence_tree_view"):
+            self.confidence_tree_view.setPlainText("Select one evidence item to explain what raised or lowered confidence.")
         self.metadata_view.clear()
         self.raw_exif_view.clear()
         self.normalized_shell.hide()
@@ -1718,10 +1877,12 @@ class GeoTraceMainWindow(QMainWindow):
         self.tags_editor.clear()
         self.bookmark_checkbox.setChecked(False)
         self.geo_text.setPlainText("No GPS selected yet. When an item is chosen, this page explains whether missing GPS is normal for its workflow.")
+        if hasattr(self, "geo_reasoning_text"):
+            self.geo_reasoning_text.setPlainText("Geo reasoning will appear here.")
         self.geo_leads_text.setPlainText("Location pivots and next-step suggestions will appear here.")
         self.timeline_text.setPlainText("Timeline analysis will appear here after you select evidence or load a case timeline.")
         if hasattr(self, "timeline_narrative"):
-            self.timeline_narrative.setPlainText("Timeline narrative generation will appear here after evidence is loaded and ordered.")
+            self.timeline_narrative.setPlainText("Timeline narrative will appear here after the case produces at least one anchored item.")
         self.selection_verdict_view.setPlainText("Select an item to load a focused verdict narrative with courtroom-aware caveats.")
         self.review_pivots_text.setPlainText("Choose evidence to see next pivots, compare candidates, and confirmation steps.")
         if hasattr(self, "review_tabs"):
@@ -1730,23 +1891,33 @@ class GeoTraceMainWindow(QMainWindow):
         self.preview_source_meta.value_label.setText("—")  # type: ignore[attr-defined]
         self.preview_time_meta.value_label.setText("—")  # type: ignore[attr-defined]
         self.preview_geo_meta.value_label.setText("—")  # type: ignore[attr-defined]
+        if hasattr(self, "preview_hash_meta"):
+            self.preview_hash_meta.value_label.setText("—")  # type: ignore[attr-defined]
+        if hasattr(self, "preview_hash_aux_meta"):
+            self.preview_hash_aux_meta.value_label.setText("—")  # type: ignore[attr-defined]
+        if hasattr(self, "preview_stage_caption"):
+            self.preview_stage_caption.setText(message)
         self.review_time_shell.value_label.setText("—")  # type: ignore[attr-defined]
         self.review_file_shell.value_label.setText("—")  # type: ignore[attr-defined]
         self.review_profile_shell.value_label.setText("—")  # type: ignore[attr-defined]
         self.score_ring.set_value(0)
         self.score_ring.set_caption("Evidence Score", "Awaiting selection")
         self.confidence_bar.setValue(0)
-        self.confidence_bar_label.setText("0% analyst confidence")
+        self.confidence_bar_label.setText("Analytic confidence appears after selection")
+        self.evidence_value_label.setText("Evidentiary value appears after selection")
+        if hasattr(self, "courtroom_strength_label"):
+            self.courtroom_strength_label.setText("Courtroom strength appears after selection")
         self.preview_zoom_pill.setText("Zoom 100%")
         self.frame_index_badge.setText("Frame 0/0")
-        self.preview_state_badge.setText("Preview State: No item selected")
-        self.preview_parser_badge.setText("Parser: —")
-        self.preview_signature_badge.setText("Signature: —")
-        self.preview_trust_badge.setText("Trust: —")
+        self.preview_state_badge.setText("Preview State: Awaiting selection")
+        self.preview_parser_badge.setText("Parser: Awaiting selection")
+        self.preview_signature_badge.setText("Signature: Awaiting selection")
+        self.preview_trust_badge.setText("Trust: Awaiting selection")
         self._set_badge_defaults()
         self._set_geo_defaults()
         self._set_timeline_defaults()
         self._set_preview_controls(False)
+        self._set_decision_selection_state(False)
         if hasattr(self, "summary_text"):
             self.summary_text.setPlainText(self._build_case_assessment_text())
         if hasattr(self, "dashboard_priority_text"):
@@ -1759,6 +1930,12 @@ class GeoTraceMainWindow(QMainWindow):
         animated = enabled and len(self.current_frames) > 1
         self.btn_prev_frame.setEnabled(animated)
         self.btn_next_frame.setEnabled(animated)
+
+    def _set_decision_selection_state(self, has_selection: bool) -> None:
+        self.decision_empty_hint.setVisible(not has_selection)
+        self.decision_score_shell.setVisible(has_selection)
+        self.decision_facts_shell.setVisible(has_selection)
+        self.decision_breakdown_shell.setVisible(has_selection)
 
     def _set_badge_defaults(self) -> None:
         self.badge_source.setText("Source Profile: —")
@@ -1807,42 +1984,55 @@ class GeoTraceMainWindow(QMainWindow):
             self._set_preview_controls(False)
 
         self.preview_file_meta.value_label.setText(f"{record.evidence_id} — {record.file_name}")  # type: ignore[attr-defined]
-        self.preview_source_meta.value_label.setText(f"{record.source_type} • {record.risk_level} • Score {record.suspicion_score}")  # type: ignore[attr-defined]
+        self.preview_source_meta.value_label.setText(f"{record.source_type} • Value {record.evidentiary_label} {record.evidentiary_value} • Courtroom {record.courtroom_label} {record.courtroom_strength}")  # type: ignore[attr-defined]
         self.preview_time_meta.value_label.setText(f"{record.timestamp} ({record.timestamp_source}, {record.timestamp_confidence}%)")  # type: ignore[attr-defined]
-        self.preview_geo_meta.value_label.setText(f"{record.gps_display} • {record.gps_source} • {record.gps_confidence}%")  # type: ignore[attr-defined]
+        self.preview_geo_meta.value_label.setText(f"Native {record.gps_display} • {record.gps_confidence}% | Derived {record.derived_geo_display} • {record.derived_geo_confidence}%")  # type: ignore[attr-defined]
+        if hasattr(self, "preview_hash_meta"):
+            self.preview_hash_meta.value_label.setText(self._short_hash(record.sha256, 16))  # type: ignore[attr-defined]
+        if hasattr(self, "preview_hash_aux_meta"):
+            self.preview_hash_aux_meta.value_label.setText(f"MD5 {self._short_hash(record.md5, 8)} • pHash {record.perceptual_hash}")  # type: ignore[attr-defined]
+        if hasattr(self, "preview_stage_caption"):
+            self.preview_stage_caption.setText(f"{record.file_name} • {record.dimensions} • {record.format_name} • parser {record.parser_status} • value {record.evidentiary_value}")
         self.review_time_shell.value_label.setText(f"{record.timestamp} ({record.timestamp_source}, {record.timestamp_confidence}% confidence)")  # type: ignore[attr-defined]
         self.review_file_shell.value_label.setText(f"{record.evidence_id} — {record.file_name}")  # type: ignore[attr-defined]
-        self.review_profile_shell.value_label.setText(f"{record.source_type} • {record.risk_level} • Score {record.suspicion_score}")  # type: ignore[attr-defined]
+        self.review_profile_shell.value_label.setText(f"{record.source_type} • Triage {record.risk_level} {record.suspicion_score} • Courtroom {record.courtroom_label} {record.courtroom_strength}")  # type: ignore[attr-defined]
         self.preview_state_badge.setText(f"Preview State: {record.preview_status}")
         self.preview_parser_badge.setText(f"Parser: {record.parser_status}")
         self.preview_signature_badge.setText(f"Signature: {record.signature_status} • {record.format_signature}")
         self.preview_trust_badge.setText(f"Trust: {record.format_trust}")
         self.frame_index_badge.setText(f"Frame {self.current_frame_index + 1}/{max(1, len(self.current_frames))}")
-        self.badge_source.setText(f"Source Profile: {record.source_type}")
+        self.badge_source.setText(f"Source Profile: {record.source_type} • {record.source_profile_confidence}%")
         self.badge_time.setText(f"Time Anchor: {record.timestamp_source} • {record.timestamp_confidence}%")
         self.badge_parser.setText(f"Parser / Trust: {record.parser_status} • {record.format_trust}")
         self.badge_signature.setText(f"Signature: {record.signature_status}")
         self.badge_trust.setText(f"Trust: {record.format_trust}")
-        self.badge_gps.setText(f"GPS: {'Recovered' if record.has_gps else 'Unavailable'} • {record.gps_confidence}%")
+        self.badge_gps.setText(f"Native GPS: {'Recovered' if record.has_gps else 'Unavailable'} • {record.gps_confidence}% | Derived {record.derived_geo_confidence}%")
         self.badge_risk.setText(f"Risk: {record.risk_level} / Score {record.suspicion_score}")
         self.badge_format.setText(f"Format: {record.format_name} • {record.dimensions}")
         self.confidence_bar.setValue(record.confidence_score)
-        self.confidence_bar_label.setText(f"{record.confidence_score}% analyst confidence")
+        self.confidence_bar_label.setText(f"Analytic confidence {record.confidence_score}%")
+        self.evidence_value_label.setText(f"Evidentiary value {record.evidentiary_value}% • {record.evidentiary_label}")
+        if hasattr(self, "courtroom_strength_label"):
+            self.courtroom_strength_label.setText(f"Courtroom strength {record.courtroom_strength}% • {record.courtroom_label}")
         self.score_auth_badge.setText(f"Authenticity {record.authenticity_score}")
         self.score_meta_badge.setText(f"Metadata {record.metadata_score}")
         self.score_tech_badge.setText(f"Technical {record.technical_score}")
         self._apply_risk_badge_style(self.badge_risk, record.risk_level)
-        self.geo_badge_status.setText(f"GPS State: {'Recovered' if record.has_gps else 'Unavailable'} • {record.gps_confidence}%")
-        self.geo_badge_coords.setText(f"Coordinates: {record.gps_display}")
+        self.geo_badge_status.setText(f"Geo State: {record.geo_status}")
+        self.geo_badge_coords.setText(f"Native: {record.gps_display} | Derived: {record.derived_geo_display}")
         self.geo_badge_altitude.setText(f"Altitude: {f'{record.gps_altitude:.2f} m' if record.gps_altitude is not None else 'Unavailable'}")
         self.geo_badge_map.setText(f"Map Package: {'Ready' if self.current_map_path else 'Unavailable'}")
         self.score_ring.set_value(record.suspicion_score)
-        self.score_ring.set_caption("Evidence Score", record.risk_level)
+        self.score_ring.set_caption("Triage Score", record.risk_level)
         self.preview_zoom_pill.setText(f"Zoom {self.image_preview.zoom_percent()}%")
         self.summary_text.setPlainText(self._build_case_assessment_text())
         self.dashboard_priority_text.setPlainText(self._build_priority_text())
         self.review_pivots_text.setPlainText(self._build_summary_text(record))
         self.metadata_overview.setPlainText(self._build_metadata_overview_text(record))
+        if hasattr(self, "acquisition_view"):
+            self.acquisition_view.setPlainText(self._build_acquisition_text(record))
+        if hasattr(self, "confidence_tree_view"):
+            self.confidence_tree_view.setPlainText(self._build_confidence_tree_text(record))
         self.metadata_view.setPlainText(self._build_metadata_text(record))
         self.raw_exif_view.setPlainText(self._build_raw_exif_text(record))
         self.hidden_overview_view.setPlainText(self._build_hidden_content_text(record))
@@ -1850,9 +2040,12 @@ class GeoTraceMainWindow(QMainWindow):
         record.custody_event_summary = self.case_manager.db.summarize_evidence_events(record.case_id, record.evidence_id)
         self.review_audit_view.setPlainText(self._build_review_audit_text(record))
         self.geo_text.setPlainText(self._build_geo_text(record))
+        if hasattr(self, "geo_reasoning_text"):
+            self.geo_reasoning_text.setPlainText(self._build_geo_reasoning_text(record))
         self.geo_leads_text.setPlainText(self._build_geo_leads_text(record))
         self.selection_verdict_view.setPlainText(self._build_verdict_panel_text(record))
         self.review_pivots_text.setPlainText(self._build_summary_text(record))
+        self._set_decision_selection_state(True)
         self._select_default_tab(record)
         self._highlight_selected_inventory_card()
 
@@ -1982,7 +2175,6 @@ class GeoTraceMainWindow(QMainWindow):
         hint = QLabel("Esc close • +/- zoom • F fit")
         hint.setObjectName("MutedLabel")
         layout.addLayout(toolbar)
-        layout.addWidget(hint)
         layout.addWidget(viewer, 1)
 
         QShortcut(QKeySequence(Qt.Key_Escape), dialog, activated=dialog.reject)
@@ -2039,48 +2231,99 @@ class GeoTraceMainWindow(QMainWindow):
                 widget.style().polish(widget)
                 widget.update()
 
-    def _build_metadata_overview_text(self, record: EvidenceRecord) -> str:
+    def _short_hash(self, value: str, width: int = 14) -> str:
+        value = value or ""
+        if len(value) <= width * 2:
+            return value
+        return f"{value[:width]}…{value[-width:]}"
+
+    def _build_acquisition_text(self, record: EvidenceRecord) -> str:
         lines = [
-            f"{record.evidence_id} — {record.file_name}",
+            f"Imported: {record.imported_at}",
+            f"Origin: {Path(record.file_path).name}",
+            f"SHA-256: {self._short_hash(record.sha256, 16)}",
+            f"MD5 / pHash: {self._short_hash(record.md5, 8)} • {record.perceptual_hash}",
+            f"Parser / Trust: {record.parser_status} / {record.format_trust}",
+            f"Courtroom strength: {record.courtroom_strength}% ({record.courtroom_label})",
+        ]
+        if record.custody_event_summary:
+            lines.extend(["", "Recent events:"])
+            lines.extend(f"- {item}" for item in record.custody_event_summary[:3])
+        return "\n".join(lines)
+
+    def _build_geo_reasoning_text(self, record: EvidenceRecord) -> str:
+        lines = [
+            f"Geo posture: {record.geo_status}",
+            f"Native: {record.gps_display} ({record.gps_confidence}%)",
+            f"Derived: {record.derived_geo_display} ({record.derived_geo_confidence}%)",
+        ]
+        if record.has_gps:
+            lines.extend(["", "Direct map anchor is available.", "Validate place claims against venue context and the time anchor."])
+        elif record.derived_geo_display != "Unavailable":
+            lines.extend(["", "Only screenshot-derived geo clues were found.", "Treat them as weak leads until OCR, URLs, or map labels corroborate them."])
+        else:
+            lines.extend(["", "No native or derived geo clue was recovered.", "Use timeline, source profile, filename, and custody context instead."])
+        return "\n".join(lines)
+
+    def _build_confidence_tree_text(self, record: EvidenceRecord) -> str:
+        lines = [
+            f"Triage score: {record.suspicion_score} • Risk: {record.risk_level}",
+            f"├─ Analytic confidence: {record.confidence_score}%",
+            f"├─ Evidentiary value: {record.evidentiary_value}% ({record.evidentiary_label})",
+            f"└─ Courtroom strength: {record.courtroom_strength}% ({record.courtroom_label})",
             "",
-            f"Format: {record.format_name} • Signature {record.signature_status} ({record.format_signature}) • Trust {record.format_trust}",
-            f"Parser: {record.parser_status} • Structure: {record.structure_status} • Preview: {record.preview_status}",
-            f"Dimensions: {record.dimensions} • Frames: {record.frame_count} • Animated: {'Yes' if record.is_animated else 'No'}",
-            f"Timestamp: {record.timestamp} ({record.timestamp_source})",
-            f"Source profile: {record.source_type}",
-            f"Device / software: {record.device_model} / {record.software}",
-            f"GPS: {record.gps_display}",
-            f"Hidden-content scan: {len(record.hidden_code_indicators)} code marker(s) / {len(record.extracted_strings)} string(s)",
+            "Top contributors:",
+        ]
+        contributors = record.anomaly_contributors[:4] if record.anomaly_contributors else []
+        if contributors:
+            lines.extend(f"• {item}" for item in contributors)
+        else:
+            lines.append("• No strong anomaly contributor was recorded.")
+        lines.extend([
             "",
-            "Why this matters:",
-            record.analyst_verdict or "No analyst verdict is available.",
+            "Reading guide:",
+            "• Confidence = stability of the analytic reading.",
+            "• Value = usefulness for time, place, origin, or linkage.",
+            "• Courtroom = how conservative the posture should remain.",
+        ])
+        return "\n".join(lines)
+
+    def _build_metadata_overview_text(self, record: EvidenceRecord) -> str:
+        ocr_line = record.visible_text_excerpt or "No strong OCR clue recovered."
+        lines = [
+            f"Parser: {record.parser_status} • Trust: {record.format_trust}",
+            f"Dimensions: {record.dimensions} • Frames: {record.frame_count}",
+            f"Time: {record.timestamp} ({record.timestamp_source})",
+            f"Source: {record.source_type} ({record.source_profile_confidence}%) • App {record.app_detected}",
+            f"Native GPS: {record.gps_display} • Derived: {record.derived_geo_display}",
+            f"Confidence {record.confidence_score}% • Value {record.evidentiary_value}% • Courtroom {record.courtroom_strength}%",
+            f"OCR clue: {ocr_line}",
+            f"Hashes: SHA-256 {self._short_hash(record.sha256, 14)} • MD5 {self._short_hash(record.md5, 8)}",
         ]
         return "\n".join(lines)
 
     def _build_summary_text(self, record: EvidenceRecord) -> str:
         if record.parser_status != "Valid":
             return (
-                f"{record.evidence_id} requires a forensic fallback workflow because the decoder did not render the file safely.\n\n"
-                f"No GPS: {'Yes' if not record.has_gps else 'No'} — next pivot is {record.timestamp_source.lower()} and surrounding chat/upload context.\n\n"
-                f"Primary lead: {record.anomaly_reasons[0] if record.anomaly_reasons else 'Parser review is required.'}\n\n"
-                "Next steps: confirm header signature, preserve original hashes, and use an external parser before making content claims."
+                f"{record.evidence_id} needs a fallback workflow.\n\n"
+                f"Lead: {record.parse_error or 'Parser review required.'}\n\n"
+                "Next actions: preserve hashes, validate the signature with a second parser, and avoid content claims until structure is confirmed."
             )
         if record.has_gps:
             return (
-                f"{record.evidence_id} carries native GPS and should move immediately into map correlation.\n\n"
-                f"Recovered coordinate: {record.gps_display}. Timestamp anchor: {record.timestamp} via {record.timestamp_source}.\n\n"
-                "Next steps: verify venue, route logic, and timeline continuity across nearby evidence."
+                f"{record.evidence_id} has native GPS and strong map value.\n\n"
+                f"Anchor: {record.timestamp} via {record.timestamp_source}. Coordinate: {record.gps_display}.\n\n"
+                "Next actions: verify the place externally, compare nearby evidence, and confirm the time with logs or witnesses."
             )
         if record.duplicate_group:
             return (
-                f"{record.evidence_id} belongs to {record.duplicate_group}, so review should compare it against peer items before treating it as unique evidence.\n\n"
-                f"No visual reuse? {'No — duplicate peer found.' if record.duplicate_group else 'Yes'}\n\n"
-                "Next steps: compare timestamps, dimensions, and source workflow to distinguish original from derivative media."
+                f"{record.evidence_id} sits inside {record.duplicate_group}.\n\n"
+                "Next actions: compare dimensions, timestamps, and software/device tags to separate original from derivative media."
             )
         return (
-            f"{record.evidence_id} is a standalone item with {record.risk_level.lower()} review posture.\n\n"
-            f"No GPS → explain with source profile: {record.source_type}. Timestamp anchor: {record.timestamp_source}.\n\n"
-            "Next steps: validate time anchor, preserve custody notes, and compare it against surrounding case context."
+            f"{record.evidence_id} is mainly a timeline/source anchor.\n\n"
+            f"Value: {record.evidentiary_label} {record.evidentiary_value}% • Confidence: {record.confidence_score}%.\n\n"
+            "Next actions: validate the time anchor, preserve custody notes, and correlate the item with adjacent case events."
         )
 
     def _build_metadata_text(self, record: EvidenceRecord) -> str:
@@ -2107,21 +2350,30 @@ class GeoTraceMainWindow(QMainWindow):
             f"DPI                    : {record.dpi}",
             f"Timestamp              : {record.timestamp}",
             f"Timestamp Source       : {record.timestamp_source}",
-            f"Filesystem Created     : {record.created_time}",
+            f"Filesystem Birth/Created: {record.created_time}",
+            f"Birth-Time Note        : {record.created_time_note}",
             f"Filesystem Modified    : {record.modified_time}",
             f"Source Type            : {record.source_type}",
+            f"Source Confidence      : {record.source_profile_confidence}%",
+            f"Environment Profile    : {record.environment_profile}",
+            f"Application Detected   : {record.app_detected}",
             f"Camera / Device        : {record.device_model}",
             f"Camera Make            : {record.camera_make}",
             f"Software               : {record.software}",
-            f"GPS                    : {record.gps_display}",
+            f"Native GPS             : {record.gps_display}",
+            f"Derived Geo            : {record.derived_geo_display}",
+            f"Derived Geo Source     : {record.derived_geo_source}",
             f"GPS Altitude           : {f'{record.gps_altitude:.2f} m' if record.gps_altitude is not None else 'Unavailable'}",
             f"SHA-256                : {record.sha256}",
             f"MD5                    : {record.md5}",
             f"Perceptual Hash        : {record.perceptual_hash}",
             f"Duplicate Cluster      : {record.duplicate_group or 'None'}",
+            f"Scene Group            : {record.scene_group or 'None'}",
+            f"Similarity Note        : {record.similarity_note}",
             f"Frames / Animation     : {record.frame_count} / {'Animated' if record.is_animated else 'Static'}",
             f"Animation Duration     : {record.animation_duration_ms if record.animation_duration_ms else 'N/A'}",
             f"Integrity              : {record.integrity_status}",
+            f"Integrity Note         : {record.integrity_note}",
             f"Tags                   : {record.tags or 'None'}",
             f"Bookmarked             : {'Yes' if record.bookmarked else 'No'}",
             "",
@@ -2147,9 +2399,12 @@ class GeoTraceMainWindow(QMainWindow):
             "[ GEO INTELLIGENCE ]",
             "=" * 96,
             f"Evidence ID           : {record.evidence_id}",
-            f"Coordinates           : {record.gps_display}",
+            f"Native Coordinates    : {record.gps_display}",
             f"GPS Source            : {record.gps_source}",
             f"GPS Confidence        : {record.gps_confidence}%",
+            f"Derived Geo           : {record.derived_geo_display}",
+            f"Derived Geo Source    : {record.derived_geo_source}",
+            f"Derived Geo Confidence: {record.derived_geo_confidence}%",
             f"Altitude              : {f'{record.gps_altitude:.2f} m' if record.gps_altitude is not None else 'Unavailable'}",
             f"Map Package           : {'Available' if self.current_map_path else 'Not generated'}",
             f"Time Anchor           : {record.timestamp} ({record.timestamp_source}, {record.timestamp_confidence}%)",
@@ -2162,14 +2417,22 @@ class GeoTraceMainWindow(QMainWindow):
         if record.has_gps:
             lines.extend(
                 [
-                    "GPS is present, so map-based reconstruction should be prioritized.",
+                    "Native GPS is present, so map-based reconstruction should be prioritized.",
                     "Next pivots: validate venue, route plausibility, travel timing, and any nearby corroborating uploads.",
+                ]
+            )
+        elif record.derived_geo_display != "Unavailable":
+            lines.extend(
+                [
+                    "No native GPS was recovered, but screenshot-derived location clues were parsed from visible content.",
+                    "Why this matters: derived geo is weaker than EXIF GPS, but it can still guide map correlation and external validation.",
+                    "Next pivots: preserve visible URLs, browser/app context, timeline anchors, and any saved/shared map links.",
                 ]
             )
         else:
             lines.extend(
                 [
-                    "No GPS was recovered from the file.",
+                    "No native GPS was recovered from the file.",
                     "Why this can still be normal: screenshots, messaging exports, edited graphics, and malformed assets often lack native GPS.",
                     "Next pivots: timeline anchor, source profile, device continuity, filenames, chat context, and custody notes.",
                 ]
@@ -2181,9 +2444,14 @@ class GeoTraceMainWindow(QMainWindow):
     def _build_geo_leads_text(self, record: EvidenceRecord) -> str:
         if record.has_gps:
             leads = record.osint_leads[:]
+        elif record.derived_geo_display != "Unavailable":
+            leads = record.osint_leads[:] + [
+                "Derived geo is present even though native GPS is absent; preserve browser/app origin and any shared map link.",
+                "Explain clearly that the location clue is screenshot-derived, not EXIF-native.",
+            ]
         else:
             leads = record.osint_leads[:] + [
-                "No GPS → explain absence using workflow profile before framing it as suspicious.",
+                "No native GPS → explain absence using workflow profile before framing it as suspicious.",
                 "Correlate timestamp anchor with uploads, messages, or witness timeline.",
             ]
         lines = ["[ NEXT PIVOTS ]", "=" * 96]
@@ -2207,7 +2475,8 @@ class GeoTraceMainWindow(QMainWindow):
                 f"#{idx:02d}  {record.timestamp:<19} | {record.evidence_id:<8} | {record.risk_level:<6} | Score {record.suspicion_score:<3} | {record.source_type}"
             )
             lines.append(f"      File        : {record.file_name}")
-            lines.append(f"      GPS         : {record.gps_display}")
+            lines.append(f"      Native GPS  : {record.gps_display}")
+            lines.append(f"      Derived Geo : {record.derived_geo_display}")
             lines.append(f"      Time Source : {record.timestamp_source}")
             lines.append(f"      Parser      : {record.parser_status} | Signature {record.signature_status} | Trust {record.format_trust}")
             if record.duplicate_group:
@@ -2230,6 +2499,8 @@ class GeoTraceMainWindow(QMainWindow):
             self.timeline_badge_order.setText(f"Ordering: {len(parsed_points)} anchored item(s)")
         else:
             self._set_timeline_defaults()
+        if hasattr(self, "timeline_narrative"):
+            self.timeline_narrative.setPlainText(self._build_timeline_narrative(ordered, parsed_points))
         self._render_timeline_chart(ordered)
 
     def _build_timeline_narrative(self, ordered: List[EvidenceRecord], parsed_points: List[tuple[EvidenceRecord, object]]) -> str:
@@ -2241,14 +2512,15 @@ class GeoTraceMainWindow(QMainWindow):
             if record.hidden_code_indicators:
                 code_hint = " Byte-level scanning also recovered code-like markers that should be reviewed before sharing or executing anything derived from the file."
             elif record.extracted_strings:
-                code_hint = " Embedded readable strings were recovered from the container, so the file should still be treated as content-bearing rather than image-only."
+                code_hint = " Readable strings were recovered from the container for analyst context, but no strong code markers were identified."
             return (
-                f"Single-item case: {record.evidence_id} is the only visible anchor. "
-                f"Recovered time comes from {record.timestamp_source}. "
-                f"Parser state is {record.parser_status} and trust is {record.format_trust}. "
-                f"Source profile is {record.source_type} and GPS is {'present' if record.has_gps else 'absent'}."
+                f"Single-item narrative: {record.evidence_id} is currently the only anchored item in the case. "
+                f"Its strongest chronological lead is {record.timestamp_source} at {record.timestamp_confidence}% confidence. "
+                f"Analytic confidence is {record.confidence_score}%, evidentiary value is {record.evidentiary_value}%, and courtroom strength is {record.courtroom_strength}%. "
+                f"Source profile reads as {record.source_type}, parser state is {record.parser_status}, and trust is {record.format_trust}. "
+                f"Native GPS is {'present' if record.has_gps else 'absent'} while derived geo is {record.derived_geo_display if record.derived_geo_display != 'Unavailable' else 'absent'}."
                 + code_hint +
-                " Use external context such as uploads, chats, witness timelines, or cloud sync history before making chronology claims."
+                " Next move: corroborate the time anchor with uploads, chats, witness timelines, or cloud sync history before making chronology claims."
             )
         first = ordered[0]
         last = ordered[-1]
@@ -2287,7 +2559,7 @@ class GeoTraceMainWindow(QMainWindow):
         ax.plot(x_values, y_values, color="#2ecfff", linewidth=1.8, alpha=0.55, zorder=2)
 
         risk_edge = {"High": "#ff8fa4", "Medium": "#ffd166", "Low": "#61e3a8"}
-        source_fill = {"Native EXIF Original": "#1ca8ff", "Embedded EXIF": "#53c4ff", "Embedded EXIF Digitized": "#53c4ff", "Filename Pattern": "#ffd166", "Filesystem Modified Time": "#f7a35c", "Filesystem Created Time": "#f7a35c", "Unavailable": "#8c6cff"}
+        source_fill = {"Native EXIF Original": "#1ca8ff", "Embedded EXIF": "#53c4ff", "Embedded EXIF Digitized": "#53c4ff", "Filename Pattern": "#ffd166", "Filesystem Modified Time": "#f7a35c", "Filesystem Birth / Creation Time": "#f7a35c", "Unavailable": "#8c6cff"}
         marker_sizes = [68 + (record.confidence_score * 0.55) for record, _ in dated]
         edge_colors = [risk_edge.get(record.risk_level, "#dff8ff") for record, _ in dated]
         face_colors = [source_fill.get(record.timestamp_source, "#6dd3ff") for record, _ in dated]
@@ -2359,10 +2631,12 @@ class GeoTraceMainWindow(QMainWindow):
             if action in category_counts:
                 category_counts[action] += 1
             formatted.append(f"[{action:<7}] {line}")
+        selected = self.selected_record()
         summary = [
             f"Total audit events: {len(log.splitlines()) if log else 0}",
             f"Filtered events shown: {len(lines)}",
             f"Active case: {self.case_manager.active_case_id}",
+            f"Selected evidence slice: {selected.evidence_id if selected else 'none'}",
             f"Badges — CASE {category_counts['CASE']} | IMPORT {category_counts['IMPORT']} | ANALYZE {category_counts['ANALYZE']} | NOTE/TAG {category_counts['NOTE'] + category_counts['TAG']} | EXPORT {category_counts['EXPORT']}",
             "Case-scoped audit trail only; previous sessions remain isolated.",
         ]
@@ -2495,11 +2769,47 @@ class GeoTraceMainWindow(QMainWindow):
         risk_counts = [sum(1 for r in records if r.risk_level == risk) for risk in risk_order]
         self._render_adaptive_chart(self.chart_risks, risk_order, risk_counts, self.export_dir / "chart_risks.png", "risk")
 
-        labels = ["GPS Enabled", "No GPS", "Clustered", "Unique"]
-        values = [sum(1 for r in records if r.has_gps), sum(1 for r in records if not r.has_gps), sum(1 for r in records if r.duplicate_group), sum(1 for r in records if not r.duplicate_group)]
-        self._render_adaptive_chart(self.chart_geo, labels, values, self.export_dir / "chart_geo_duplicate.png", "coverage")
+        self._render_coverage_chart(records)
         self._render_relationship_graph(records)
         self.duplicate_terminal.setPlainText(self._build_duplicate_terminal_text())
+
+    def _render_coverage_chart(self, records: List[EvidenceRecord]) -> None:
+        output_path = self.export_dir / "chart_geo_duplicate.png"
+        gps_yes = sum(1 for r in records if r.has_gps)
+        gps_no = sum(1 for r in records if not r.has_gps)
+        dup_yes = sum(1 for r in records if r.duplicate_group)
+        dup_no = sum(1 for r in records if not r.duplicate_group)
+        if len(records) <= 1:
+            text = (
+                f"Single item only\n\nGPS: {'present' if gps_yes else 'absent'}\n"
+                f"Duplicate status: {'clustered' if dup_yes else 'unique'}\n"
+                "Adaptive mode replaces misleading mixed-category bars."
+            )
+            self.chart_geo.set_chart_pixmap(None, text)
+            return
+        plt.close("all")
+        fig, ax = plt.subplots(figsize=(8.8, 3.9), dpi=180)
+        fig.patch.set_facecolor("#04101b")
+        ax.set_facecolor("#04101b")
+        positions = [0, 1]
+        width = 0.28
+        ax.bar([p - width/2 for p in positions], [gps_yes, dup_yes], width=width, color="#20beff", edgecolor="#dff6ff", linewidth=0.5, label="Present / Clustered")
+        ax.bar([p + width/2 for p in positions], [gps_no, dup_no], width=width, color="#2a86d1", edgecolor="#dff6ff", linewidth=0.5, label="Absent / Unique")
+        ax.set_xticks(positions)
+        ax.set_xticklabels(["GPS status", "Similarity status"], color="#eef8ff", fontsize=9)
+        ax.tick_params(axis="y", colors="#dcefff", labelsize=8)
+        ax.grid(axis="y", alpha=0.12, color="#7ecfff")
+        ax.legend(facecolor="#06111d", edgecolor="#21486d", labelcolor="#eef8ff", fontsize=8)
+        for x, val in zip([p - width/2 for p in positions], [gps_yes, dup_yes]):
+            ax.text(x, val + 0.05, str(val), ha="center", va="bottom", color="#ffffff", fontsize=9, weight="bold")
+        for x, val in zip([p + width/2 for p in positions], [gps_no, dup_no]):
+            ax.text(x, val + 0.05, str(val), ha="center", va="bottom", color="#ffffff", fontsize=9, weight="bold")
+        for spine in ax.spines.values():
+            spine.set_color("#2f5c8e")
+        fig.tight_layout(pad=1.4)
+        fig.savefig(output_path, facecolor=fig.get_facecolor(), bbox_inches="tight")
+        plt.close(fig)
+        self.chart_geo.set_chart_pixmap(QPixmap(str(output_path)), "Coverage chart unavailable")
 
     def _render_adaptive_chart(self, card: ChartCard, labels: List[str], values: List[int], output_path: Path, kind: str) -> None:
         total = sum(values)
@@ -2554,7 +2864,10 @@ class GeoTraceMainWindow(QMainWindow):
                 lines.append(
                     f"Peer: {peer.evidence_id} — {peer.file_name} | dims {peer.dimensions} | time {peer.timestamp} | parser {peer.parser_status} | signature {peer.signature_status}"
                 )
-            lines.append("Interpretation: compare timestamps, workflow profile, and editing/software tags to decide which item is original vs derivative.")
+            similarity_notes = [peer.similarity_note for peer in items if peer.similarity_note]
+            if similarity_notes:
+                lines.append(f"Correlation explanation: {similarity_notes[0]}")
+            lines.append("Interpretation: compare timestamps, workflow profile, perceptual-hash distance, and editing/software tags to decide which item is original vs derivative.")
             lines.append("")
         return "\n".join(lines)
 
@@ -2630,6 +2943,8 @@ class GeoTraceMainWindow(QMainWindow):
         self.report_thread.start()
 
     def _on_report_finished(self, payload: dict) -> None:
+        self.last_export_payload = dict(payload)
+        self._refresh_report_artifact_cards()
         self.export_badge.setText("Report Package Generated")
         self.command_progress.setText("Export package ready")
         self.export_summary.setPlainText(
@@ -2638,10 +2953,19 @@ class GeoTraceMainWindow(QMainWindow):
             f"PDF: {Path(payload['pdf']).name}\n"
             f"CSV: {Path(payload['csv']).name}\n"
             f"JSON: {Path(payload['json']).name}\n"
-            f"Courtroom: {Path(payload['courtroom']).name}\n\n"
+            f"Courtroom: {Path(payload['courtroom']).name}\n"
+            f"Validation: {Path(payload['validation']).name}\n\n"
             f"Export folder: {self.export_dir}"
         )
         self.populate_custody_log()
+        self.report_notes_view.setPlainText(
+            "Corroboration checklist:\n"
+            "- confirm timeline anchors against uploads/chats\n"
+            "- validate GPS externally before courtroom claims\n"
+            "- preserve original hashes and acquisition path\n"
+            "- verify screenshot context with source application or browser logs"
+        )
+
 
     def _on_report_error(self, message: str) -> None:
         self.command_progress.setText("Export failed")
@@ -2700,17 +3024,22 @@ class GeoTraceMainWindow(QMainWindow):
         lines = [
             record.hidden_content_overview,
             "",
+            f"Tier summary: {record.hidden_context_summary}",
             f"Finding types: {', '.join(record.hidden_finding_types) if record.hidden_finding_types else 'None'}",
             f"URLs recovered: {len(record.urls_found)}",
-            f"Readable strings kept for review: {len(record.extracted_strings)}",
+            f"Readable strings kept for context: {len(record.extracted_strings)}",
             f"Code-like indicators: {len(record.hidden_code_indicators)}",
+            f"Structural warnings: {len(record.hidden_suspicious_embeds)}",
+            f"Stego / appended-payload note: {record.stego_suspicion}",
             "",
             "Interpretation:",
         ]
         if record.hidden_code_indicators:
             lines.append("Potential script-like, credential-like, or payload-bearing content was recovered from inside the container. Treat it as a heuristic lead and verify manually before drawing exploit conclusions.")
+        elif record.hidden_suspicious_embeds:
+            lines.append("No direct code payload was confirmed, but the container has structural hidden-content warnings such as encoded blobs or trailing data that justify a deeper review.")
         elif record.extracted_strings:
-            lines.append("Readable strings exist inside the file, but they do not currently look like strong executable payloads. They may still help with provenance, origin tracing, or hidden-message review.")
+            lines.append("Readable strings exist inside the file, but they do not currently look like strong executable payloads. They are preserved as analyst context and may still help with provenance, origin tracing, or hidden-message review.")
         else:
             lines.append("No readable payload strings or code markers were recovered from the file bytes during the lightweight scan.")
         return "\n".join(lines)
@@ -2728,8 +3057,20 @@ class GeoTraceMainWindow(QMainWindow):
             lines.append("Code-like indicators:")
             lines.extend(f"- {item}" for item in record.hidden_code_indicators)
             lines.append("")
+        if record.hidden_suspicious_embeds:
+            lines.append("Structural hidden-content warnings:")
+            lines.extend(f"- {item}" for item in record.hidden_suspicious_embeds)
+            lines.append("")
+        if record.hidden_payload_markers:
+            lines.append("Payload-marker snippets:")
+            lines.extend(f"- {item}" for item in record.hidden_payload_markers)
+            lines.append("")
+        if record.visible_urls or record.visible_text_lines:
+            lines.append("Visible OCR clues:")
+            lines.extend(f"- {item}" for item in (record.visible_urls[:4] + record.visible_text_lines[:6]))
+            lines.append("")
         if record.extracted_strings:
-            lines.append("Readable embedded strings:")
+            lines.append("Readable embedded strings (context only):")
             lines.extend(f"- {item}" for item in record.extracted_strings)
         else:
             lines.append("No readable strings recovered.")
@@ -2748,32 +3089,19 @@ class GeoTraceMainWindow(QMainWindow):
         for row in logs:
             if row["evidence_id"] in {None, record.evidence_id}:
                 label = f"[{row['action']}]"
-                selected.append(f"{row['action_time']} {label:<18} {row['evidence_id'] or 'CASE':<10} {row['details']}")
+                selected.append(f"{row['action_time']} {label:<18} {row['evidence_id'] or 'CASE':<10} {row['details']} | hash={str(row['event_hash'] or 'legacy')[:10]}")
         lines.extend(selected[:40] if selected else ["No case events found for the selected evidence item."])
         return "\n".join(lines)
 
     def _build_verdict_panel_text(self, record: EvidenceRecord) -> str:
-        lines = [
-            f"Record: {record.evidence_id}",
-            f"Likely profile: {record.source_type}",
-            f"Overall posture: {record.risk_level}",
-            f"Confidence: {record.confidence_score}%",
-            f"Timestamp anchor: {record.timestamp_source} ({record.timestamp_confidence}%)",
-            f"Parser health: {record.parser_status}",
-            f"Signature status: {record.signature_status} ({record.format_signature})",
-            f"Container trust: {record.format_trust}",
-            f"Location signal: {'Present' if record.has_gps else 'Missing'} ({record.gps_confidence}%)",
-            f"Duplicate relation: {record.duplicate_group or 'None'}",
-            f"Hidden-content markers: {len(record.hidden_code_indicators)} code / {len(record.extracted_strings)} string",
-            f"Top contributors: {', '.join(record.anomaly_contributors[:4]) if record.anomaly_contributors else 'None'}",
-            "",
-            "Detailed narrative:",
-            record.analyst_verdict or "No analyst verdict is available.",
-            "",
-            "Courtroom-ready note:",
-            record.courtroom_notes or "No courtroom note is available.",
-        ]
-        return "\n".join(lines)
+        top = ", ".join(record.anomaly_contributors[:3]) if record.anomaly_contributors else "No major anomaly contributor"
+        return "\n".join([
+            f"{record.evidence_id} • {record.source_type}",
+            f"Time anchor: {record.timestamp_source} ({record.timestamp_confidence}%)",
+            f"Value {record.evidentiary_value}% • Courtroom {record.courtroom_strength}%",
+            f"Top signal: {top}",
+            record.courtroom_notes or record.analyst_verdict or "No focused verdict is available.",
+        ])
 
     def dragEnterEvent(self, event) -> None:  # type: ignore[override]
         mime = event.mimeData()

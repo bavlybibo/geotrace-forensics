@@ -85,7 +85,7 @@ class SmoothScrollArea(QScrollArea):
         self._animation.setEasingCurve(QEasingCurve.OutCubic)
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.NoFrame)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.verticalScrollBar().setSingleStep(22)
         self.horizontalScrollBar().setSingleStep(22)
@@ -123,7 +123,8 @@ class ResizableImageLabel(QLabel):
         self.setAlignment(Qt.AlignCenter)
         self.setMinimumHeight(min_height)
         self.setWordWrap(True)
-        self.setContentsMargins(8, 8, 8, 8)
+        self.setContentsMargins(10, 10, 10, 10)
+        self.setScaledContents(False)
 
     def set_source_pixmap(self, pixmap: QPixmap | None) -> None:
         self._source_pixmap = pixmap if pixmap and not pixmap.isNull() else None
@@ -190,7 +191,7 @@ class ResizableImageLabel(QLabel):
             height = max(40, int(self._base_pixmap.height() * self._zoom_factor))
             scaled = self._base_pixmap.scaled(width, height, Qt.KeepAspectRatio, Qt.FastTransformation)
         self.setPixmap(scaled)
-        self.resize(scaled.size())
+        self.setMinimumSize(120, 120)
 
 
 class TerminalView(QPlainTextEdit):
@@ -222,7 +223,7 @@ class NarrativeView(QTextEdit):
 
 
 class AutoHeightNarrativeView(NarrativeView):
-    def __init__(self, placeholder: str = "", max_auto_height: int = 220) -> None:
+    def __init__(self, placeholder: str = "", max_auto_height: int = 360) -> None:
         super().__init__(placeholder)
         self._max_auto_height = max_auto_height
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -239,11 +240,12 @@ class AutoHeightNarrativeView(NarrativeView):
         self._sync_height()
 
     def _sync_height(self, *args) -> None:
-        doc_height = int(self.document().size().height()) + 28
-        target = max(112, min(self._max_auto_height, doc_height))
+        doc_height = int(self.document().size().height()) + 32
+        cap = self._max_auto_height if self._max_auto_height and self._max_auto_height > 0 else doc_height
+        target = max(96, min(cap, doc_height))
         self.setMinimumHeight(target)
         self.setMaximumHeight(target)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded if doc_height > self._max_auto_height else Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
 
 class EvidenceListCard(QFrame):
@@ -251,20 +253,20 @@ class EvidenceListCard(QFrame):
         super().__init__()
         self.setObjectName("EvidenceListCard")
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(12)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(10)
 
         self.accent = QFrame()
         self.accent.setObjectName("EvidenceAccent")
-        self.accent.setFixedWidth(4)
+        self.accent.setFixedWidth(5)
 
         self.thumb = QLabel()
         self.thumb.setObjectName("EvidenceThumb")
-        self.thumb.setFixedSize(82, 62)
+        self.thumb.setFixedSize(116, 78)
         self.thumb.setAlignment(Qt.AlignCenter)
 
         body = QVBoxLayout()
-        body.setSpacing(4)
+        body.setSpacing(5)
         title_row = QHBoxLayout()
         title_row.setSpacing(6)
         self.title_label = QLabel("Awaiting evidence")
@@ -282,19 +284,25 @@ class EvidenceListCard(QFrame):
         self.badge_label.setObjectName("EvidenceCardBadges")
         self.badge_label.setWordWrap(True)
         self.supporting_label = QLabel("")
-        self.supporting_label.setObjectName("EvidenceCardMeta")
+        self.supporting_label.setObjectName("EvidenceCardSupport")
         self.supporting_label.setWordWrap(True)
         self.supporting_label.setVisible(False)
+        self.value_label = QLabel("Value Low")
+        self.value_label.setObjectName("EvidenceChip")
+        chips = QHBoxLayout()
+        chips.setSpacing(6)
+        chips.addWidget(self.badge_label, 1)
+        chips.addWidget(self.value_label, alignment=Qt.AlignRight)
         body.addLayout(title_row)
         body.addWidget(self.meta_label)
-        body.addWidget(self.badge_label)
+        body.addLayout(chips)
         body.addWidget(self.supporting_label)
 
         layout.addWidget(self.accent)
         layout.addWidget(self.thumb)
         layout.addLayout(body, 1)
 
-    def set_content(self, pixmap: QPixmap | None, title: str, meta: str, badges: str, *, risk: str = "Low", support: str = "", score: int = 0) -> None:
+    def set_content(self, pixmap: QPixmap | None, title: str, meta: str, badges: str, *, risk: str = "Low", support: str = "", score: int = 0, evidentiary_value: int = 0, evidentiary_label: str = "Low") -> None:
         if pixmap is not None and not pixmap.isNull():
             self.thumb.setPixmap(pixmap.scaled(self.thumb.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
         else:
@@ -302,10 +310,15 @@ class EvidenceListCard(QFrame):
             placeholder.fill(QColor("#081523"))
             self.thumb.setPixmap(placeholder)
         self.title_label.setText(title)
+        self.title_label.setToolTip(title)
         self.meta_label.setText(meta)
+        self.meta_label.setToolTip(meta)
         self.badge_label.setText(badges)
+        self.badge_label.setToolTip(badges)
         self.score_label.setText(f"Score {score}")
+        self.value_label.setText(f"Value {evidentiary_label} {evidentiary_value}%")
         self.supporting_label.setText(support)
+        self.supporting_label.setToolTip(support)
         self.supporting_label.setVisible(bool(support))
         accent_color = {"High": "#ff7f95", "Medium": "#ffd166"}.get(risk, "#61e3a8")
         self.accent.setStyleSheet(f"background:{accent_color}; border:none; border-radius:3px;")
@@ -346,8 +359,8 @@ class ScoreRing(QWidget):
         self._value = 0
         self._caption = "Evidence Score"
         self._subcaption = "Awaiting selection"
-        self.setMinimumSize(diameter, diameter)
-        self.setMaximumSize(diameter, diameter)
+        self.setMinimumSize(diameter, diameter + 22)
+        self.setMaximumSize(diameter, diameter + 22)
 
     def set_value(self, value: int) -> None:
         self._value = max(0, min(100, value))
@@ -361,9 +374,11 @@ class ScoreRing(QWidget):
     def paintEvent(self, event) -> None:  # type: ignore[override]
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        rect = self.rect().adjusted(10, 10, -10, -10)
-        center = rect.center()
-        size = min(rect.width(), rect.height())
+        rect = self.rect().adjusted(10, 8, -10, -8)
+        footer_height = 28
+        ring_area = QRectF(rect.left(), rect.top(), rect.width(), max(10.0, rect.height() - footer_height))
+        center = ring_area.center()
+        size = min(ring_area.width(), ring_area.height())
         ring_rect = QRectF(center.x() - size / 2, center.y() - size / 2, size, size)
         painter.setPen(QPen(QColor("#15324d"), 11))
         painter.setBrush(Qt.NoBrush)
@@ -380,17 +395,16 @@ class ScoreRing(QWidget):
         painter.setPen(value_pen)
         painter.drawArc(ring_rect, 90 * 16, int(-360 * 16 * (self._value / 100.0)))
         painter.setPen(QColor("#ffffff"))
-        painter.setFont(QFont("Segoe UI", 22, QFont.Bold))
-        painter.drawText(ring_rect, Qt.AlignCenter, str(self._value))
+        painter.setFont(QFont("Segoe UI", 24, QFont.Bold))
+        painter.drawText(ring_rect.adjusted(0, -4, 0, -8), Qt.AlignCenter, str(self._value))
+        footer = QRectF(rect.left(), ring_rect.bottom() - 2, rect.width(), footer_height)
         painter.setPen(QColor("#8bb0cb"))
         painter.setFont(QFont("Segoe UI", 8, QFont.Medium))
-        label_rect = QRectF(ring_rect.left(), ring_rect.center().y() + 18, ring_rect.width(), 30)
-        painter.drawText(label_rect, Qt.AlignHCenter | Qt.AlignTop, self._caption)
+        painter.drawText(footer, Qt.AlignHCenter | Qt.AlignTop, self._caption)
         if self._subcaption:
             painter.setPen(QColor("#6f95b4"))
             painter.setFont(QFont("Segoe UI", 7))
-            sub_rect = QRectF(ring_rect.left(), ring_rect.center().y() + 34, ring_rect.width(), 24)
-            painter.drawText(sub_rect, Qt.AlignHCenter | Qt.AlignTop, self._subcaption)
+            painter.drawText(footer.adjusted(0, 12, 0, 0), Qt.AlignHCenter | Qt.AlignTop, self._subcaption)
 
 
 class CaseListCard(QFrame):
@@ -422,7 +436,7 @@ class CustodyTimelineWidget(QFrame):
         super().__init__()
         self.setObjectName("PanelFrame")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(12, 11, 12, 11)
         layout.setSpacing(6)
         self.title = QLabel("Custody Timeline")
         self.title.setObjectName("SectionLabel")

@@ -1,6 +1,6 @@
 APP_NAME = 'GeoTrace Forensics X'
-APP_VERSION = '10.2.0-rc1'
+APP_VERSION = '12.5.0-ui-polish'
 APP_ORGANIZATION = 'Cyber Forensics Team'
 APP_BUILD_CHANNEL = 'Launch Candidate'
-APP_COPYRIGHT = 'GeoTrace Forensics X • Review Workflow RC • Internal Evaluation Build'
+APP_COPYRIGHT = 'GeoTrace Forensics X • UI Polish Build • Internal Evaluation'
 DEFAULT_ANALYST_NAME = 'Lead Analyst'
