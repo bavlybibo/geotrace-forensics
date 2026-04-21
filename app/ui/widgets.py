@@ -254,30 +254,47 @@ class EvidenceListCard(QFrame):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
 
+        self.accent = QFrame()
+        self.accent.setObjectName("EvidenceAccent")
+        self.accent.setFixedWidth(4)
+
         self.thumb = QLabel()
         self.thumb.setObjectName("EvidenceThumb")
-        self.thumb.setFixedSize(72, 56)
+        self.thumb.setFixedSize(82, 62)
         self.thumb.setAlignment(Qt.AlignCenter)
 
         body = QVBoxLayout()
-        body.setSpacing(5)
+        body.setSpacing(4)
+        title_row = QHBoxLayout()
+        title_row.setSpacing(6)
         self.title_label = QLabel("Awaiting evidence")
         self.title_label.setObjectName("EvidenceCardTitle")
         self.title_label.setWordWrap(True)
+        self.score_label = QLabel("Score 0")
+        self.score_label.setObjectName("EvidenceChip")
+        title_row.addWidget(self.title_label, 1)
+        title_row.addWidget(self.score_label, alignment=Qt.AlignTop)
+
         self.meta_label = QLabel("No metadata yet")
         self.meta_label.setObjectName("EvidenceCardMeta")
         self.meta_label.setWordWrap(True)
         self.badge_label = QLabel("—")
         self.badge_label.setObjectName("EvidenceCardBadges")
         self.badge_label.setWordWrap(True)
-        body.addWidget(self.title_label)
+        self.supporting_label = QLabel("")
+        self.supporting_label.setObjectName("EvidenceCardMeta")
+        self.supporting_label.setWordWrap(True)
+        self.supporting_label.setVisible(False)
+        body.addLayout(title_row)
         body.addWidget(self.meta_label)
         body.addWidget(self.badge_label)
+        body.addWidget(self.supporting_label)
 
+        layout.addWidget(self.accent)
         layout.addWidget(self.thumb)
         layout.addLayout(body, 1)
 
-    def set_content(self, pixmap: QPixmap | None, title: str, meta: str, badges: str) -> None:
+    def set_content(self, pixmap: QPixmap | None, title: str, meta: str, badges: str, *, risk: str = "Low", support: str = "", score: int = 0) -> None:
         if pixmap is not None and not pixmap.isNull():
             self.thumb.setPixmap(pixmap.scaled(self.thumb.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
         else:
@@ -287,6 +304,11 @@ class EvidenceListCard(QFrame):
         self.title_label.setText(title)
         self.meta_label.setText(meta)
         self.badge_label.setText(badges)
+        self.score_label.setText(f"Score {score}")
+        self.supporting_label.setText(support)
+        self.supporting_label.setVisible(bool(support))
+        accent_color = {"High": "#ff7f95", "Medium": "#ffd166"}.get(risk, "#61e3a8")
+        self.accent.setStyleSheet(f"background:{accent_color}; border:none; border-radius:3px;")
 
 
 class ChartCard(QFrame):
@@ -346,13 +368,13 @@ class ScoreRing(QWidget):
         painter.setPen(QPen(QColor("#15324d"), 11))
         painter.setBrush(Qt.NoBrush)
         painter.drawEllipse(ring_rect)
-        tone = QColor("#2ed2ff")
+        tone = QColor("#61e3a8")
         if self._value >= 70:
             tone = QColor("#ff7f95")
         elif self._value >= 40:
             tone = QColor("#ffd166")
-        elif self._value > 0:
-            tone = QColor("#61e3a8")
+        elif self._value == 0:
+            tone = QColor("#2ed2ff")
         value_pen = QPen(tone, 11)
         value_pen.setCapStyle(Qt.RoundCap)
         painter.setPen(value_pen)
@@ -393,3 +415,22 @@ class CaseListCard(QFrame):
         self.title_label.setText(title)
         self.meta_label.setText(meta)
         self.badge_label.setText(badges)
+
+
+class CustodyTimelineWidget(QFrame):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("PanelFrame")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(6)
+        self.title = QLabel("Custody Timeline")
+        self.title.setObjectName("SectionLabel")
+        self.body = QLabel("No custody activity yet.")
+        self.body.setObjectName("EvidenceCardMeta")
+        self.body.setWordWrap(True)
+        layout.addWidget(self.title)
+        layout.addWidget(self.body)
+
+    def set_events(self, events: list[str]) -> None:
+        self.body.setText("\n".join(events) if events else "No custody activity yet.")
