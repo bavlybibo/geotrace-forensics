@@ -1,0 +1,6 @@
+PyQt5>=5.15.10
+Pillow>=10.4.0
+exifread>=3.0.0
+folium>=0.16.0
+reportlab>=4.2.2
+piexif>=1.1.3
