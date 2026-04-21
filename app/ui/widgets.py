@@ -302,19 +302,13 @@ class ChartCard(QFrame):
         self.subtitle_label = QLabel(subtitle)
         self.subtitle_label.setObjectName("MutedLabel")
         self.subtitle_label.setWordWrap(True)
-        self.image_label = ResizableImageLabel("Chart will appear after evidence is loaded.", min_height=240)
+        self.image_label = ResizableImageLabel("Chart will appear after evidence is loaded.", min_height=220)
         self.image_label.setObjectName("ChartCanvas")
-        chart_scroll = QScrollArea()
-        chart_scroll.setWidgetResizable(True)
-        chart_scroll.setMinimumHeight(260)
-        chart_scroll.setFrameShape(QFrame.NoFrame)
-        chart_scroll.setWidget(self.image_label)
-        chart_scroll.verticalScrollBar().setSingleStep(22)
-        chart_scroll.horizontalScrollBar().setSingleStep(22)
+        self.image_label.setMinimumHeight(220)
         layout.addWidget(self.title_label)
         if subtitle:
             layout.addWidget(self.subtitle_label)
-        layout.addWidget(chart_scroll, 1)
+        layout.addWidget(self.image_label, 1)
 
     def set_chart_pixmap(self, pixmap: QPixmap | None, placeholder: str = "Chart unavailable") -> None:
         self._pixmap = pixmap if pixmap and not pixmap.isNull() else None
