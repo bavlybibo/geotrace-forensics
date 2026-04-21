@@ -1,3 +1,5 @@
+# GeoTrace Forensics X v4
+
 # GeoTrace Forensics X
 
 A polished desktop digital-forensics tool for **image metadata extraction, timestamp recovery, GPS correlation, evidence hashing, chain-of-custody logging, duplicate clustering, and analyst-ready reporting**.
@@ -70,3 +72,11 @@ This build follows a practical workflow:
 - Each item gets both a **risk score** and a **confidence score** to show analytical maturity.
 - Duplicate clusters are identified using a **perceptual fingerprint**, not only raw file hashes.
 
+
+
+## v4 upgrades
+- cleaner command-center layout with larger terminals and preview panes
+- footer removed to free vertical space
+- deeper terminal-style metadata, geo, timeline, and custody views
+- improved timestamp parsing for WhatsApp-style filenames with AM/PM
+- cleaner chart rendering and scalable chart panels
