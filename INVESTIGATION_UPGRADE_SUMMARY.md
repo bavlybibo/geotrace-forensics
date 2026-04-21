@@ -1,0 +1,41 @@
+# Investigation Upgrade Summary
+
+Implemented in this build:
+
+- Score explainability layer with:
+  - primary issue
+  - why it matters
+  - recommended next step
+  - score summary attached to every evidence item
+- Metadata issue engine with:
+  - dominant metadata issue summary
+  - strengths
+  - recommendations
+  - clearer timestamp and provenance posture
+- GPS verification ladder with separation between:
+  - native EXIF GPS
+  - screenshot/browser-derived coordinates
+  - OCR geo clues
+  - analyst action guidance
+- Hidden payload parsing and carving upgraded with:
+  - PNG/JPEG trailing data review
+  - malformed container findings
+  - inline payload detection for HTML/JS, PDF, ZIP, XML/SVG markers
+  - recoverable carved payload output into case_data/.../carved_payloads
+- Duplicate detection upgraded into multi-layer logic:
+  - exact duplicate via SHA-256
+  - near duplicate via perceptual hash
+  - derivative / related matching via dimensions, size ratio, and text overlap
+  - relation type, method, distance, and closest peers recorded per item
+- Validation dataset and metrics support added with:
+  - linked `validation_ground_truth.json`
+  - per-record validation hits / misses
+  - case-level pass rate summary in reports and UI
+- Reports upgraded to include:
+  - explainability fields
+  - GPS ladder
+  - metadata issue summary
+  - hidden payload findings
+  - validation summary and miss notes
+- Review UI text cleaned so the analyst sees the problem, reason, and action instead of a score-only posture.
+- Source-profile inference tuned to reduce map/OCR overfitting on normal photo-like JPEG assets.

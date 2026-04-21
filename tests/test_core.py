@@ -7,7 +7,7 @@ from app.core.case_manager import CaseManager
 from app.core.exif_service import build_time_assessment, extract_basic_image_info, extract_embedded_text_hints, extract_file_times, infer_timestamp_from_filename
 from app.core.gps_utils import dms_to_decimal, format_coordinates
 from app.core.models import EvidenceRecord
-from app.core.visual_clues import parse_derived_geo, profile_source_details
+from app.core.visual_clues import infer_source_profile, parse_derived_geo, profile_source_details
 from app.core.report_service import ReportService
 
 
@@ -153,3 +153,36 @@ def test_scene_grouping_links_related_items():
     assign_duplicate_groups([a, b])
     assign_scene_groups([a, b])
     assert a.scene_group and a.scene_group == b.scene_group
+
+
+def test_parse_derived_geo_returns_possible_geo_clue_from_labels():
+    result = parse_derived_geo(["Google Maps", "Cairo Tower", "26th of July Corridor"], [], source_type="Screenshot")
+    assert result["display"].startswith("Possible geo clue")
+    assert result["possible_geo_clues"]
+
+
+def test_case_manager_stages_working_copy_and_preserves_original_path(tmp_path: Path):
+    root = project_root()
+    manager = CaseManager(tmp_path)
+    manager.new_case("Staging")
+    record = manager.load_images([root / "demo_evidence" / "no_exif.png"])[0]
+    assert record.original_file_path.name == "no_exif.png"
+    assert record.working_copy_path.exists()
+    assert record.working_copy_path != record.original_file_path
+
+
+def test_infer_source_profile_for_chat_screenshot():
+    profile = infer_source_profile(
+        Path("Chat Export.png"),
+        source_type="Screenshot",
+        width=1664,
+        height=909,
+        has_exif=False,
+        software="N/A",
+        visible_urls=["https://google.com/maps/@30.0444,31.2357,16z"],
+        app_detected="WhatsApp",
+        visible_lines=["WhatsApp", "@bibo_fox", "Cairo Tower"],
+        map_labels=["Cairo Tower"],
+    )
+    assert profile["subtype"] in {"Map Screenshot", "Chat Screenshot"}
+    assert profile["reasons"]

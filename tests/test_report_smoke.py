@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from pathlib import Path
 
 from app.core.case_manager import CaseManager
@@ -28,3 +30,5 @@ def test_extended_report_package_outputs(tmp_path: Path):
     manifest = report_service.export_package_manifest(payload)
     for path in list(payload.values()) + [str(manifest)]:
         assert Path(path).exists()
+    summary = json.loads(Path(payload["json"]).read_text(encoding="utf-8"))
+    assert summary and "ocr" in summary[0] and "acquisition" in summary[0]

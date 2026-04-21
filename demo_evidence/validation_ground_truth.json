@@ -1,0 +1,83 @@
+{
+  "_dataset": "GeoTrace demo corpus v12.7 validation set",
+  "Chat Export @bibo_fox 2026-04-14 091500.png": {
+    "source_type_contains": "Screenshot",
+    "native_gps": false,
+    "derived_geo": true,
+    "metadata_stripped": true,
+    "duplicate_expected": false
+  },
+  "IMG_20260413_170405_hidden_payload.png": {
+    "source_type_contains": "Asset",
+    "native_gps": false,
+    "hidden_payload": true,
+    "parser_failure": true,
+    "metadata_stripped": true
+  },
+  "Screenshot 2026-04-12 143207.png": {
+    "source_type_contains": "Screenshot",
+    "native_gps": false,
+    "derived_geo": true,
+    "duplicate_expected": true,
+    "metadata_stripped": true
+  },
+  "Screenshot 2026-04-12 143207_duplicate.png": {
+    "source_type_contains": "Screenshot",
+    "native_gps": false,
+    "derived_geo": true,
+    "duplicate_expected": true,
+    "duplicate_relation": "duplicate",
+    "metadata_stripped": true
+  },
+  "Screenshot 2026-04-14 120501_Map_Cairo.png": {
+    "source_type_contains": "Screenshot",
+    "native_gps": false,
+    "derived_geo": true,
+    "metadata_stripped": true
+  },
+  "broken_animation.gif": {
+    "source_type_contains": "Asset",
+    "native_gps": false,
+    "parser_failure": true,
+    "hidden_payload": false
+  },
+  "cairo_scene.jpg": {
+    "native_gps": false,
+    "metadata_stripped": true,
+    "duplicate_expected": false
+  },
+  "edited_scene.jpg": {
+    "native_gps": false,
+    "metadata_stripped": true,
+    "duplicate_expected": false
+  },
+  "giza_scene.jpg": {
+    "native_gps": false,
+    "metadata_stripped": true,
+    "duplicate_expected": false
+  },
+  "no_exif.png": {
+    "source_type_contains": "Screenshot",
+    "native_gps": false,
+    "metadata_stripped": true,
+    "duplicate_expected": true
+  },
+  "no_exif_duplicate.png": {
+    "source_type_contains": "Screenshot",
+    "native_gps": false,
+    "metadata_stripped": true,
+    "duplicate_expected": true
+  },
+  "stripped_copy.png": {
+    "native_gps": false,
+    "metadata_stripped": true,
+    "duplicate_expected": true
+  },
+  "timeline_conflict_copy_2026-04-17_103000.png": {
+    "source_type_contains": "Screenshot",
+    "native_gps": false,
+    "derived_geo": true,
+    "time_conflict": true,
+    "metadata_stripped": true
+  }
+}
