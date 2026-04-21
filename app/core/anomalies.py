@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
+import re
 from typing import Iterable, List, Tuple
 
 from .models import EvidenceRecord
@@ -36,59 +37,134 @@ def _phash_distance(left: str, right: str) -> int:
         return 64
 
 
+def _record_tokens(record: EvidenceRecord) -> set[str]:
+    tokens: set[str] = set()
+    for bucket in [record.ocr_map_labels, record.ocr_location_entities, record.ocr_username_entities, record.visible_urls, record.visible_text_lines[:4]]:
+        for item in bucket:
+            for token in re.findall(r"[A-Za-z0-9_@.-]{3,}", item.lower()):
+                if token.startswith("http"):
+                    continue
+                tokens.add(token)
+    return tokens
+
+
+def _relation_details(left: EvidenceRecord, right: EvidenceRecord, *, max_distance: int) -> tuple[str, int, int, str] | None:
+    if left.sha256 and right.sha256 and left.sha256 == right.sha256:
+        return "Exact duplicate", 100, 0, "sha256"
+
+    distance = _phash_distance(left.perceptual_hash, right.perceptual_hash)
+    same_dimensions = bool(left.width and right.width and left.width == right.width and left.height == right.height)
+    size_ratio = 0.0
+    if left.file_size and right.file_size:
+        size_ratio = min(left.file_size, right.file_size) / max(left.file_size, right.file_size)
+    token_overlap = len(_record_tokens(left) & _record_tokens(right))
+
+    if distance <= max_distance:
+        score = max(70, min(99, 100 - (distance * 8)))
+        method = "phash + dimensions" if same_dimensions else "phash"
+        return "Near duplicate", score, distance, method
+
+    if distance <= max_distance + 6 and (same_dimensions or size_ratio >= 0.82 or token_overlap >= 2):
+        score = max(48, min(88, 92 - (distance * 4)))
+        method_bits = []
+        if same_dimensions:
+            method_bits.append("dimensions")
+        if size_ratio >= 0.82:
+            method_bits.append("size")
+        if token_overlap >= 2:
+            method_bits.append("text overlap")
+        return "Derivative / related", score, distance, " + ".join(method_bits) or "heuristic"
+
+    return None
+
+
 def assign_duplicate_groups(records: List[EvidenceRecord], *, max_distance: int = 6) -> None:
-    valid_indices = [
-        idx for idx, record in enumerate(records)
-        if record.perceptual_hash and record.perceptual_hash != "0" * len(record.perceptual_hash)
-    ]
     for record in records:
         record.duplicate_group = ""
+        record.duplicate_relation = ""
+        record.duplicate_method = ""
+        record.duplicate_peers = []
+        record.duplicate_distance = 0
         record.similarity_score = 0
         record.similarity_note = "No near-duplicate peer was identified."
+
+    relations: dict[tuple[int, int], tuple[str, int, int, str]] = {}
+    adjacency: dict[int, set[int]] = {idx: set() for idx in range(len(records))}
+    for left_idx in range(len(records)):
+        for right_idx in range(left_idx + 1, len(records)):
+            relation = _relation_details(records[left_idx], records[right_idx], max_distance=max_distance)
+            if relation is None:
+                continue
+            relations[(left_idx, right_idx)] = relation
+            adjacency[left_idx].add(right_idx)
+            adjacency[right_idx].add(left_idx)
+
     group_index = 1
     visited: set[int] = set()
-    for start in valid_indices:
-        if start in visited:
+    for start in range(len(records)):
+        if start in visited or not adjacency[start]:
             continue
-        cluster = {start}
-        queue = [start]
-        while queue:
-            current = queue.pop(0)
+        stack = [start]
+        cluster: list[int] = []
+        while stack:
+            current = stack.pop()
             if current in visited:
                 continue
             visited.add(current)
-            current_hash = records[current].perceptual_hash
-            for peer in valid_indices:
-                if peer == current or peer in cluster:
-                    continue
-                if _phash_distance(current_hash, records[peer].perceptual_hash) <= max_distance:
-                    cluster.add(peer)
-                    queue.append(peer)
-        if len(cluster) > 1:
-            group = f"Cluster-{group_index:02d}"
-            members = sorted(cluster)
-            for idx in members:
-                record = records[idx]
-                distances = [_phash_distance(record.perceptual_hash, records[peer].perceptual_hash) for peer in members if peer != idx]
-                best_distance = min(distances) if distances else 0
-                record.duplicate_group = group
-                record.similarity_score = max(42, min(99, 100 - (best_distance * 8)))
-                record.similarity_note = f"Near-duplicate similarity score {record.similarity_score}% within {group}."
-            group_index += 1
-    for idx in valid_indices:
-        if records[idx].duplicate_group:
+            cluster.append(current)
+            stack.extend(sorted(adjacency[current] - visited))
+        if len(cluster) <= 1:
             continue
-        distances = []
-        for peer in valid_indices:
-            if peer == idx:
+        label = f"Cluster-{group_index:02d}"
+        group_index += 1
+        for idx in cluster:
+            record = records[idx]
+            peers = [peer for peer in cluster if peer != idx]
+            peer_details = []
+            for peer in peers:
+                pair = (min(idx, peer), max(idx, peer))
+                detail = relations.get(pair)
+                if detail is None:
+                    continue
+                peer_details.append((peer, detail))
+            if not peer_details:
                 continue
-            dist = _phash_distance(records[idx].perceptual_hash, records[peer].perceptual_hash)
-            if dist < 64:
-                distances.append(dist)
-        if distances:
-            best_distance = min(distances)
-            records[idx].similarity_score = max(0, 100 - (best_distance * 8))
-            records[idx].similarity_note = f"Closest visual peer distance {best_distance} (approx. {records[idx].similarity_score}% similarity)."
+            peer_details.sort(key=lambda item: (-item[1][1], item[1][2], records[item[0]].evidence_id))
+            best_peer, best = peer_details[0]
+            relation_type, score, distance, method = best
+            record.duplicate_group = label
+            record.duplicate_relation = relation_type
+            record.duplicate_method = method
+            record.duplicate_distance = distance
+            record.duplicate_peers = [records[peer].evidence_id for peer, _ in peer_details[:4]]
+            record.similarity_score = score
+            if relation_type == "Exact duplicate":
+                record.similarity_note = f"Exact duplicate linkage in {label} via identical SHA-256 hash."
+            elif relation_type == "Near duplicate":
+                record.similarity_note = f"Near-duplicate similarity score {score}% within {label} (distance {distance}, method {method})."
+            else:
+                record.similarity_note = f"Derivative/related match {score}% within {label} (distance {distance}, method {method})."
+
+    for idx, record in enumerate(records):
+        if record.duplicate_group:
+            continue
+        peer_details = []
+        for other_idx in range(len(records)):
+            if other_idx == idx:
+                continue
+            relation = _relation_details(record, records[other_idx], max_distance=max_distance)
+            if relation is not None:
+                peer_details.append((other_idx, relation))
+        if peer_details:
+            peer_details.sort(key=lambda item: (-item[1][1], item[1][2], records[item[0]].evidence_id))
+            best_peer, best = peer_details[0]
+            relation_type, score, distance, method = best
+            record.similarity_score = score
+            record.duplicate_distance = distance
+            record.duplicate_relation = relation_type
+            record.duplicate_method = method
+            record.duplicate_peers = [records[best_peer].evidence_id]
+            record.similarity_note = f"Closest visual peer is {records[best_peer].evidence_id}: {relation_type.lower()} ({score}%, method {method})."
 
 
 def assign_scene_groups(records: List[EvidenceRecord], *, hours_window: int = 6) -> None:

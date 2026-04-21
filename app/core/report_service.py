@@ -18,6 +18,7 @@ from reportlab.platypus import Image as RLImage, PageBreak, Paragraph, SimpleDoc
 
 from .anomalies import parse_timestamp
 from .models import EvidenceRecord
+from .validation_service import build_validation_metrics
 from app.config import APP_COPYRIGHT, APP_NAME, APP_VERSION, APP_BUILD_CHANNEL
 from PIL import Image, ImageSequence
 
@@ -97,7 +98,8 @@ class ReportService:
         avg_score = round(sum(r.suspicion_score for r in records) / total) if total else 0
         dominant_source = Counter([record.source_type for record in records]).most_common(1)[0][0] if total else "Unknown"
         parser_issue_count = sum(1 for record in records if record.parser_status != "Valid" or record.signature_status == "Mismatch")
-        hidden_count = sum(1 for record in records if record.hidden_code_indicators)
+        hidden_count = sum(1 for record in records if record.hidden_code_indicators or record.hidden_suspicious_embeds)
+        validation = build_validation_metrics(records)
         return {
             "total": total,
             "gps_count": gps_count,
@@ -107,6 +109,8 @@ class ReportService:
             "dominant_source": dominant_source,
             "parser_issue_count": parser_issue_count,
             "hidden_count": hidden_count,
+            "validation_summary": validation.get("summary", "No linked validation dataset was found."),
+            "validation_pass_rate": validation.get("pass_rate", 0.0),
         }
 
     def export_csv(self, records: Iterable[EvidenceRecord]) -> Path:
@@ -128,6 +132,7 @@ class ReportService:
                     "Score",
                     "Confidence",
                     "Evidentiary Value",
+                    "Courtroom Strength",
                     "Risk",
                     "Integrity",
                     "SHA-256",
@@ -168,8 +173,12 @@ class ReportService:
                     "evidence_id": record.evidence_id,
                     "file_name": record.file_name,
                     "file_path": str(record.file_path),
+                    "original_file_path": str(record.original_file_path),
+                    "working_copy_path": str(record.working_copy_path),
                     "source_type": record.source_type,
+                    "source_subtype": record.source_subtype,
                     "source_profile_confidence": record.source_profile_confidence,
+                    "source_profile_reasons": record.source_profile_reasons,
                     "environment_profile": record.environment_profile,
                     "app_detected": record.app_detected,
                     "scene_group": record.scene_group,
@@ -227,6 +236,25 @@ class ReportService:
                         "times": record.visible_time_strings,
                         "locations": record.visible_location_strings,
                     },
+                    "ocr": {
+                        "raw_text": record.ocr_raw_text,
+                        "confidence": record.ocr_confidence,
+                        "analyst_relevance": record.ocr_analyst_relevance,
+                        "entities": {
+                            "app_names": record.ocr_app_names,
+                            "locations": record.ocr_location_entities,
+                            "times": record.ocr_time_entities,
+                            "urls": record.ocr_url_entities,
+                            "usernames": record.ocr_username_entities,
+                            "map_labels": record.ocr_map_labels,
+                        },
+                    },
+                    "acquisition": {
+                        "imported_at": record.imported_at,
+                        "original_path": str(record.original_file_path),
+                        "working_copy_path": str(record.working_copy_path),
+                        "custody_events_slice": record.custody_event_summary,
+                    },
                     "time_candidates": record.time_candidates,
                     "time_conflicts": record.time_conflicts,
                     "integrity_note": record.integrity_note,
@@ -244,6 +272,29 @@ class ReportService:
                     "sha256": record.sha256,
                     "md5": record.md5,
                     "perceptual_hash": record.perceptual_hash,
+                    "metadata_issues": record.metadata_issues,
+                    "metadata_strengths": record.metadata_strengths,
+                    "metadata_recommendations": record.metadata_recommendations,
+                    "metadata_issue_summary": record.metadata_issue_summary,
+                    "gps_ladder": record.gps_ladder,
+                    "gps_primary_issue": record.gps_primary_issue,
+                    "duplicate": {
+                        "group": record.duplicate_group,
+                        "relation": record.duplicate_relation,
+                        "method": record.duplicate_method,
+                        "peers": record.duplicate_peers,
+                        "distance": record.duplicate_distance,
+                    },
+                    "score_explainability": {
+                        "primary_issue": record.score_primary_issue,
+                        "reason": record.score_reason,
+                        "next_step": record.score_next_step,
+                        "summary": record.score_summary,
+                    },
+                    "validation": {
+                        "hits": record.validation_hits,
+                        "misses": record.validation_misses,
+                    },
                 }
             )
         output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -268,6 +319,7 @@ class ReportService:
             f"Duplicate clusters: {len(metrics['duplicate_groups'])}",
             f"Average suspicion score: {metrics['avg_score']}",
             f"Dominant source profile: {metrics['dominant_source']}",
+            f"Validation dataset: {metrics['validation_summary']}",
             "",
             "Top priority evidence:",
         ]
@@ -277,7 +329,9 @@ class ReportService:
                     f"- {record.evidence_id} | {record.file_name} | {record.risk_level} | Score {record.suspicion_score} | Confidence {record.confidence_score}% | Value {record.evidentiary_value}% | Courtroom {record.courtroom_strength}%",
                     f"  Time: {record.timestamp} ({record.timestamp_source}, {record.timestamp_confidence}%)",
                     f"  GPS: {record.gps_display} ({record.gps_confidence}%) | Derived: {record.derived_geo_display} ({record.derived_geo_confidence}%)",
-                    f"  Why it matters: {record.analyst_verdict}",
+                    f"  Primary issue: {record.score_primary_issue}",
+                    f"  Why it matters: {record.score_reason}",
+                    f"  Next step: {record.score_next_step}",
                 ]
             )
         output.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
@@ -290,6 +344,7 @@ class ReportService:
         native_time = sum(1 for record in records if record.timestamp_confidence >= 80)
         native_gps = sum(1 for record in records if record.gps_confidence >= 80)
         hidden_hits = sum(1 for record in records if record.hidden_code_indicators)
+        validation = build_validation_metrics(records)
         lines = [
             f"{APP_NAME} — Validation Summary",
             f"Case ID: {case_id}",
@@ -300,17 +355,27 @@ class ReportService:
             f"Parser-success count: {parser_valid}/{total}",
             f"Strong time anchors: {native_time}/{total}",
             f"Strong GPS anchors: {native_gps}/{total}",
-            f"Derived geo clues: {sum(1 for record in records if record.derived_geo_display != 'Unavailable')}",
+            f"Derived geo clues: {sum(1 for record in records if record.derived_geo_display != 'Unavailable' or record.possible_geo_clues)}",
             f"Hidden/code detections: {hidden_hits}",
             f"Courtroom-ready posture (>=60%): {sum(1 for record in records if record.courtroom_strength >= 60)}/{total}",
+            f"OCR/entity-rich items: {sum(1 for record in records if (record.ocr_location_entities or record.ocr_time_entities or record.ocr_url_entities or record.ocr_username_entities))}/{total}",
+            f"Validation dataset summary: {validation.get('summary', 'No linked validation dataset was found.')}",
             "",
             "Interpretation:",
             "- Strong time anchors = Native EXIF Original or equivalent embedded source.",
             "- Strong GPS anchors = valid native GPS coordinates recovered from EXIF tags.",
             "- Derived geo clues = location leads parsed from visible screenshot/browser/map content rather than native EXIF.",
             "- Parser-success count = files rendered successfully by Pillow in the current workflow.",
+            "- OCR/entity-rich items = screenshots or captures where OCR recovered apps, locations, URLs, times, usernames, or map labels.",
             "- Hidden/code detections are heuristic findings and still require analyst review.",
         ]
+        if validation.get('ground_truth_loaded'):
+            lines.extend(["", "Per-file validation checks:"])
+            for record in records:
+                if record.validation_hits or record.validation_misses:
+                    lines.append(f"- {record.file_name}: hits={len(record.validation_hits)} misses={len(record.validation_misses)}")
+                    if record.validation_misses:
+                        lines.extend([f"    miss: {item}" for item in record.validation_misses[:3]])
         output.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
         return output
 
@@ -347,8 +412,10 @@ class ReportService:
                     f"  Time: {record.timestamp} ({record.timestamp_source}, {record.timestamp_confidence}%)",
                     f"  GPS: {record.gps_display} ({record.gps_confidence}%) | Derived: {record.derived_geo_display} ({record.derived_geo_confidence}%)",
                     f"  Parser: {record.parser_status} | Signature: {record.signature_status} | Trust: {record.format_trust}",
-                    f"  Analyst verdict: {record.analyst_verdict}",
+                    f"  Primary issue: {record.score_primary_issue}",
+                    f"  Why it matters: {record.score_reason}",
                     f"  Courtroom note: {record.courtroom_notes}",
+                    f"  Next step: {record.score_next_step}",
                     "",
                 ]
             )
@@ -367,7 +434,7 @@ class ReportService:
             f"""
             <tr>
                 <td>{html.escape(record.evidence_id)}</td>
-                <td><strong>{html.escape(record.file_name)}</strong><br><span class='muted'>{html.escape(str(record.file_path))}</span></td>
+                <td><strong>{html.escape(record.file_name)}</strong><br><span class='muted'>{html.escape(str(record.original_file_path))}</span></td>
                 <td>{html.escape(record.source_type)}</td>
                 <td>{html.escape(record.timestamp)}<br><span class='muted'>{html.escape(record.timestamp_source)} • {record.timestamp_confidence}%</span></td>
                 <td>{html.escape(record.device_model)}</td>
@@ -411,6 +478,9 @@ class ReportService:
                     <p><strong>GPS verification:</strong> {html.escape(record.gps_verification)}</p>
                     <p><strong>Derived geo:</strong> {html.escape(record.derived_geo_note)}</p>
                     <p><strong>Hidden/content summary:</strong> {html.escape(record.hidden_code_summary)}</p>
+                    <p><strong>OCR analyst relevance:</strong> {html.escape(record.ocr_analyst_relevance)}</p>
+                    <p><strong>OCR entities:</strong> Apps {html.escape(', '.join(record.ocr_app_names) if record.ocr_app_names else 'None')} • Locations {html.escape(', '.join(record.ocr_location_entities[:3]) if record.ocr_location_entities else 'None')} • Times {html.escape(', '.join(record.ocr_time_entities[:3]) if record.ocr_time_entities else 'None')} • URLs {html.escape(', '.join(record.ocr_url_entities[:2]) if record.ocr_url_entities else 'None')} • Usernames {html.escape(', '.join(record.ocr_username_entities[:3]) if record.ocr_username_entities else 'None')}</p>
+                    <p><strong>Acquisition:</strong> Original path {html.escape(str(record.original_file_path))} • Working copy {html.escape(str(record.working_copy_path))} • Imported {html.escape(record.imported_at)}</p>
                     <p><strong>Corroboration checklist:</strong></p>
                     <ul>{''.join(f'<li>{html.escape(lead)}</li>' for lead in self._corroboration_checklist_lines(record))}</ul>
                 </div>
@@ -471,7 +541,7 @@ class ReportService:
             <section class="hero">
                 <h1>{APP_NAME} — Investigation Report</h1>
                 <p class="muted">Case: {html.escape(case_id)} | {html.escape(case_name)} | Generated: {generated} | Version: {APP_VERSION} ({APP_BUILD_CHANNEL})</p>
-                <p>This report is structured as executive summary, evidence matrix, forensic appendix, custody review, and courtroom-strength posture.</p>
+                <p>This report is structured as executive summary, evidence matrix, OCR/entity findings, forensic appendix, custody review, and courtroom-strength posture.</p>
                 <div class="metrics">
                     <div class="metric"><div class="value">{metrics['total']}</div><div>Images</div></div>
                     <div class="metric"><div class="value">{metrics['gps_count']}</div><div>GPS Enabled</div></div>
@@ -485,7 +555,8 @@ class ReportService:
             <section class="card">
                 <h2>Executive Summary</h2>
                 <p>The current case contains <strong>{metrics['total']}</strong> evidence item(s). <strong>{metrics['gps_count']}</strong> item(s) contain native GPS, <strong>{sum(1 for r in records if r.derived_geo_display != 'Unavailable')}</strong> item(s) expose screenshot-derived geo clues, <strong>{len(metrics['duplicate_groups'])}</strong> duplicate cluster(s) were detected, and the dominant profile is <strong>{html.escape(metrics['dominant_source'])}</strong>.</p>
-                <p>Parser/signature alerts: <strong>{metrics['parser_issue_count']}</strong>. Hidden/code alerts: <strong>{metrics['hidden_count']}</strong>. Readable strings without code markers are preserved for context but are not counted as hidden-code alerts.</p>
+                <p>Parser/signature alerts: <strong>{metrics['parser_issue_count']}</strong>. Hidden/code alerts: <strong>{metrics['hidden_count']}</strong>. OCR/entity recovery is preserved separately from raw strings so that map labels, usernames, URLs, and visible times remain analyst-friendly.</p>
+                <p><strong>Validation:</strong> {html.escape(str(metrics['validation_summary']))}</p>
             </section>
 
             <section class="card">
@@ -533,6 +604,7 @@ class ReportService:
             <section class="card">
                 <h2>Methodology, Limits & Report Identity</h2>
                 <p><strong>Workflow:</strong> Acquire → Verify → Extract → Correlate → Score → Report. Scores combine authenticity, metadata, and technical checks; they do not replace human validation.</p>
+                <p><strong>Explainability model:</strong> every reviewed item now carries a primary issue, why-it-matters rationale, GPS verification ladder, and recommended next step so the score is not presented as a blind number.</p>
                 <p><strong>Known limits:</strong> Filesystem timestamps may drift after copy/export operations. Missing GPS can be entirely normal for screenshots, graphics, or messaging exports. Parser failures require secondary validation before courtroom reliance.</p>
                 <p class="muted">Generated by {APP_NAME} {APP_VERSION} ({APP_BUILD_CHANNEL}) • {APP_COPYRIGHT}</p>
             </section>
@@ -558,7 +630,7 @@ class ReportService:
             Spacer(1, 10),
             Paragraph("Executive Summary", heading),
             Paragraph(
-                f"Total evidence items: {len(records)}. This PDF mirrors the executive summary, evidence matrix, and courtroom-ready notes used in the HTML report.",
+                f"Total evidence items: {len(records)}. This PDF mirrors the executive summary, evidence matrix, OCR/entity findings, and courtroom-ready notes used in the HTML report.",
                 body,
             ),
             Spacer(1, 10),
@@ -627,7 +699,9 @@ class ReportService:
                 except Exception:
                     pass
             story.extend([
-                Paragraph(html.escape(record.analyst_verdict), body),
+                Paragraph(f"Primary issue: {html.escape(record.score_primary_issue)}", body),
+                Paragraph(f"Why it matters: {html.escape(record.score_reason)}", body),
+                Paragraph(f"Next step: {html.escape(record.score_next_step)}", body),
                 Paragraph(html.escape(record.courtroom_notes), body),
                 Paragraph("Corroboration checklist: " + html.escape(" | ".join(self._corroboration_checklist_lines(record))), body),
                 Spacer(1, 8),

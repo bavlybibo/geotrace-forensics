@@ -11,7 +11,8 @@ try:
     import exifread
 except Exception:  # pragma: no cover
     exifread = None
-from PIL import Image, ImageSequence, ImageStat, UnidentifiedImageError
+
+from PIL import ExifTags, Image, ImageSequence, ImageStat, UnidentifiedImageError
 
 try:
     from pillow_heif import register_heif_opener  # type: ignore
@@ -69,6 +70,18 @@ EXTENSION_FAMILY = {
     ".heic": "HEIC",
     ".heif": "HEIF",
 }
+
+PIL_TAGS = {int(tag): name for tag, name in ExifTags.TAGS.items()}
+GPS_TAGS = {int(tag): name for tag, name in ExifTags.GPSTAGS.items()}
+
+
+TIMESTAMP_PATTERNS = [
+    r"(20\d{2})-(\d{2})-(\d{2})\s+at\s+(\d{1,2})\.(\d{2})\.(\d{2})\s*([AP]M)?",
+    r"(20\d{2})-(\d{2})-(\d{2})[ _-](\d{2})(\d{2})(\d{2})",
+    r"(20\d{2})(\d{2})(\d{2})[ _-]?(\d{2})(\d{2})(\d{2})",
+    r"(20\d{2})[._-](\d{2})[._-](\d{2})[ T_-](\d{2})[.:_-](\d{2})[.:_-](\d{2})",
+    r"(20\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{1,2})[-_](\d{2})[-_](\d{2})\s*([AP]M)?",
+]
 
 
 def is_supported_image(file_path: Path) -> bool:
@@ -183,7 +196,7 @@ def extract_basic_image_info(file_path: Path) -> Dict[str, str | int | bool | fl
             info["parser_status"] = "Valid"
             info["width"] = image.width
             info["height"] = image.height
-            info["format_name"] = image.format or EXTENSION_FAMILY.get(file_path.suffix.lower(), file_path.suffix.upper().replace(".", ""))
+            info["format_name"] = image.format or inferred_format
             info["color_mode"] = image.mode
             info["has_alpha"] = "A" in image.mode
             info["megapixels"] = round((image.width * image.height) / 1_000_000, 2) if image.width and image.height else 0.0
@@ -227,8 +240,10 @@ def extract_basic_image_info(file_path: Path) -> Dict[str, str | int | bool | fl
         info["format_trust"] = format_trust_from_status(str(info["signature_status"]), str(info["parser_status"]))
         if not info["parse_error"]:
             info["parse_error"] = f"The file could not be rendered by Pillow. Extension suggests {inferred_format}; signature says {signature_label}."
-        if signature_family != "Unknown" and inferred_format == "Unknown":
-            info["format_name"] = signature_family
+        if file_path.suffix.lower() == ".png" and file_path.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n":
+            info["parse_error"] += " PNG signature is present but the chunk structure appears incomplete or malformed."
+    if info["signature_status"] == "Matched" and info["parser_status"] == "Valid" and signature_family != "Unknown" and inferred_format == "Unknown":
+        info["format_name"] = signature_family
     return info
 
 
@@ -237,34 +252,94 @@ def compute_perceptual_hash(file_path: Path) -> str:
         with Image.open(file_path) as image:
             if getattr(image, "is_animated", False):
                 image.seek(0)
-            image = image.convert("L").resize((9, 8))
-            pixels = list(image.get_flattened_data())
+            reduced = image.convert("L").resize((9, 8))
+            pixels = list(reduced.getdata())
         rows = [pixels[i * 9:(i + 1) * 9] for i in range(8)]
         bits = []
         for row in rows:
-            for i in range(8):
-                bits.append("1" if row[i] > row[i + 1] else "0")
+            for idx in range(8):
+                bits.append("1" if row[idx] > row[idx + 1] else "0")
         return f"{int(''.join(bits), 2):016x}"
     except Exception:
         return "0" * 16
 
 
+def _stringify_value(value) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="ignore").strip("\x00 ")
+    if isinstance(value, tuple):
+        return ", ".join(_stringify_value(item) for item in value)
+    return str(value)
+
+
+def _flatten_pillow_exif(image: Image.Image) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    try:
+        exif_block = image.getexif()
+    except Exception:
+        exif_block = None
+    if not exif_block:
+        return out
+    gps_raw = None
+    for tag_id, value in exif_block.items():
+        tag_name = PIL_TAGS.get(int(tag_id), str(tag_id))
+        if tag_name == "GPSInfo" and isinstance(value, dict):
+            gps_raw = value
+            for gps_id, gps_value in value.items():
+                gps_name = GPS_TAGS.get(int(gps_id), str(gps_id))
+                out[f"GPS {gps_name}"] = _stringify_value(gps_value)
+        else:
+            out[tag_name] = _stringify_value(value)
+    if gps_raw is not None:
+        out["__pil_gps__"] = gps_raw  # type: ignore[assignment]
+    return out
+
+
 def extract_exif(file_path: Path) -> Dict[str, str]:
     data: Dict[str, str] = {}
+    raw_tags: dict = {}
+    warnings: List[str] = []
+
+    if exifread is not None:
+        try:
+            with file_path.open("rb") as handle:
+                tags = exifread.process_file(handle, details=False)
+            raw_tags = tags
+            for tag, value in tags.items():
+                data[str(tag)] = str(value)
+        except Exception as exc:
+            warnings.append(f"EXIF parsing via exifread failed: {exc.__class__.__name__}")
+    else:
+        warnings.append("exifread is not installed; using Pillow/container fallback only")
+
     try:
-        if exifread is None:
-            data["__raw_tags__"] = {}
-            data["__warning__"] = "EXIF extraction engine unavailable (exifread is not installed). Embedded metadata review is limited."
-            return data
-        with file_path.open("rb") as handle:
-            tags = exifread.process_file(handle, details=False)
-        for tag, value in tags.items():
-            data[str(tag)] = str(value)
-        data["__raw_tags__"] = tags
-    except Exception as exc:
-        data["__raw_tags__"] = {}
-        data["__warning__"] = f"EXIF parsing failed: {exc.__class__.__name__}. Validate metadata with a secondary parser if needed."
+        with Image.open(file_path) as image:
+            pillow_meta = _flatten_pillow_exif(image)
+            for key, value in pillow_meta.items():
+                if key == "__pil_gps__":
+                    raw_tags.setdefault("__pil_gps__", value)
+                    continue
+                data.setdefault(key, value)
+            for key, value in (image.info or {}).items():
+                if isinstance(value, tuple) and key == "dpi":
+                    data.setdefault("Image DPI", f"{value[0]} x {value[1]}")
+                elif isinstance(value, (str, bytes, int, float)):
+                    rendered = _stringify_value(value)
+                    if rendered:
+                        data.setdefault(f"ImageInfo {key}", rendered[:240])
+            if hasattr(image, "text") and isinstance(getattr(image, "text"), dict):
+                for key, value in image.text.items():
+                    rendered = _stringify_value(value)
+                    if rendered:
+                        data.setdefault(f"PNG {key}", rendered[:280])
+    except Exception:
+        pass
+
+    data["__raw_tags__"] = raw_tags
+    if warnings:
+        data["__warning__"] = ". ".join(warnings).strip() + "."
     return data
+
 
 def _entropy_score(blob: bytes) -> float:
     if not blob:
@@ -282,20 +357,20 @@ def _entropy_score(blob: bytes) -> float:
 
 def _appended_payload_indicator(file_path: Path, blob: bytes) -> str:
     suffix = file_path.suffix.lower()
-    if suffix == '.png':
-        marker = b'IEND\xaeB`\x82'
+    if suffix == ".png":
+        marker = b"IEND\xaeB`\x82"
         idx = blob.rfind(marker)
         if idx >= 0 and idx + len(marker) < len(blob):
             trailing = blob[idx + len(marker):]
-            if len(trailing) >= 24:
-                return f'Trailing bytes detected after PNG end marker ({len(trailing)} byte(s)).'
-    if suffix in {'.jpg', '.jpeg'}:
-        idx = blob.rfind(b'\xff\xd9')
+            if len(trailing) >= 16:
+                return f"Trailing bytes detected after PNG end marker ({len(trailing)} byte(s))."
+    if suffix in {".jpg", ".jpeg"}:
+        idx = blob.rfind(b"\xff\xd9")
         if idx >= 0 and idx + 2 < len(blob):
             trailing = blob[idx + 2:]
-            if len(trailing) >= 24:
-                return f'Trailing bytes detected after JPEG end marker ({len(trailing)} byte(s)).'
-    return ''
+            if len(trailing) >= 16:
+                return f"Trailing bytes detected after JPEG end marker ({len(trailing)} byte(s))."
+    return ""
 
 
 def _is_contextual_string(text: str) -> bool:
@@ -314,12 +389,10 @@ def _is_contextual_string(text: str) -> bool:
     symbol_ratio = punct / max(len(text), 1)
     has_urlish = any(token in lower for token in ["http://", "https://", "www.", ".com", "maps", "token", "secret", "password", "script", "geo", "forensic", "camera", "whatsapp", "telegram"])
     has_word_shape = bool(re.search(r"[aeiou]{1,}|[A-Z][a-z]{2,}|[a-z]{4,}", text))
-    repeated_noise = bool(re.search(r"(.){4,}", text))
+    repeated_noise = bool(re.search(r"(.)\1{4,}", text))
     if has_urlish:
         return True
-    if readable_ratio < 0.76:
-        return False
-    if symbol_ratio > 0.24:
+    if readable_ratio < 0.76 or symbol_ratio > 0.24:
         return False
     if repeated_noise and not has_word_shape:
         return False
@@ -328,6 +401,144 @@ def _is_contextual_string(text: str) -> bool:
     if alpha_ratio < 0.38 and not has_word_shape:
         return False
     return has_word_shape or spaces > 0
+
+
+def _classify_payload_blob(blob: bytes) -> tuple[str, str]:
+    head = blob[:64].lstrip()
+    if head.startswith(b"PK\x03\x04"):
+        return "zip", ".zip"
+    if head.startswith(b"%PDF"):
+        return "pdf", ".pdf"
+    if head.startswith((b"<!DOCTYPE html", b"<html", b"<script")) or b"<script" in blob[:256].lower():
+        return "html/js", ".html"
+    if head.startswith((b"<?xml", b"<svg")) or b"<svg" in blob[:256].lower():
+        return "xml/svg", ".xml"
+    if head.startswith((b"{", b"[")):
+        return "json-like", ".json"
+    return "binary-appendix", ".bin"
+
+
+def _png_chunk_findings(blob: bytes) -> tuple[List[str], List[dict]]:
+    findings: List[str] = []
+    recoveries: List[dict] = []
+    if not blob.startswith(b"\x89PNG\r\n\x1a\n"):
+        return findings, recoveries
+
+    iend_marker = b"IEND\xaeB`\x82"
+    raw_iend_idx = blob.rfind(iend_marker)
+    raw_trailing_payload = b""
+    raw_payload_offset = -1
+    if raw_iend_idx >= 0 and raw_iend_idx + len(iend_marker) < len(blob):
+        raw_payload_offset = raw_iend_idx + len(iend_marker)
+        raw_trailing_payload = blob[raw_payload_offset:]
+
+    offset = 8
+    seen_iend = False
+    malformed = False
+    while offset + 8 <= len(blob):
+        try:
+            length = int.from_bytes(blob[offset:offset + 4], "big")
+            chunk_type = blob[offset + 4:offset + 8]
+            data_start = offset + 8
+            data_end = data_start + length
+            crc_end = data_end + 4
+            if crc_end > len(blob):
+                malformed = True
+                findings.append("PNG chunk table ends unexpectedly before CRC; container may be truncated or malformed.")
+                break
+            chunk_name = chunk_type.decode("latin1", errors="ignore")
+            if chunk_name in {"tEXt", "zTXt", "iTXt"}:
+                findings.append(f"PNG metadata chunk present: {chunk_name} ({length} byte(s)).")
+            if chunk_name == "IEND":
+                seen_iend = True
+                if crc_end < len(blob):
+                    payload = blob[crc_end:]
+                    findings.insert(0, f"Trailing bytes detected after PNG end marker ({len(payload)} byte(s)).")
+                    kind, ext = _classify_payload_blob(payload)
+                    recoveries.append({
+                        "offset": crc_end,
+                        "length": len(payload),
+                        "kind": kind,
+                        "extension": ext,
+                        "label": f"Appended {kind} payload after PNG IEND",
+                        "bytes": payload,
+                    })
+                break
+            offset = crc_end
+        except Exception:
+            malformed = True
+            findings.append("PNG chunk parsing aborted due to malformed structure.")
+            break
+
+    if not seen_iend and raw_trailing_payload:
+        findings.insert(0, f"Trailing bytes detected after PNG end marker ({len(raw_trailing_payload)} byte(s)).")
+        kind, ext = _classify_payload_blob(raw_trailing_payload)
+        recoveries.append({
+            "offset": raw_payload_offset,
+            "length": len(raw_trailing_payload),
+            "kind": kind,
+            "extension": ext,
+            "label": f"Appended {kind} payload after raw PNG end marker",
+            "bytes": raw_trailing_payload,
+        })
+        seen_iend = True
+
+    if not seen_iend:
+        findings.append("PNG IEND chunk was not found; container may be malformed or intentionally crafted.")
+    elif malformed:
+        findings.append("PNG structure is malformed even though an end marker was found; treat appended/trailing bytes as a manual-review finding.")
+    return findings, recoveries
+
+
+def _jpeg_tail_findings(blob: bytes) -> tuple[List[str], List[dict]]:
+    findings: List[str] = []
+    recoveries: List[dict] = []
+    idx = blob.rfind(b"\xff\xd9")
+    if idx >= 0 and idx + 2 < len(blob):
+        payload = blob[idx + 2:]
+        findings.append(f"Trailing bytes exist after JPEG end marker ({len(payload)} byte(s)).")
+        kind, ext = _classify_payload_blob(payload)
+        recoveries.append({
+            "offset": idx + 2,
+            "length": len(payload),
+            "kind": kind,
+            "extension": ext,
+            "label": f"Appended {kind} payload after JPEG EOI",
+            "bytes": payload,
+        })
+    return findings, recoveries
+
+
+def _inline_payload_findings(blob: bytes) -> tuple[List[str], List[dict]]:
+    findings: List[str] = []
+    recoveries: List[dict] = []
+    signatures = [
+        (b"PK\x03\x04", "zip", ".zip", "ZIP archive signature"),
+        (b"%PDF", "pdf", ".pdf", "PDF signature"),
+        (b"<script", "html/js", ".html", "HTML/JavaScript marker"),
+        (b"<html", "html/js", ".html", "HTML marker"),
+        (b"<?xml", "xml/svg", ".xml", "XML marker"),
+        (b"<svg", "xml/svg", ".xml", "SVG/XML marker"),
+    ]
+    seen_offsets = set()
+    for token, kind, ext, label in signatures:
+        idx = blob.find(token)
+        if idx <= 16 or idx in seen_offsets:
+            continue
+        payload = blob[idx:]
+        if len(payload) < 24:
+            continue
+        seen_offsets.add(idx)
+        findings.append(f"Embedded {label} detected inside the container at offset {idx} ({len(payload)} byte(s) to EOF).")
+        recoveries.append({
+            "offset": idx,
+            "length": len(payload),
+            "kind": kind,
+            "extension": ext,
+            "label": f"Inline {kind} payload from offset {idx}",
+            "bytes": payload,
+        })
+    return findings, recoveries
 
 
 def extract_embedded_text_hints(file_path: Path, format_name: str = "Unknown") -> Dict[str, object]:
@@ -346,6 +557,9 @@ def extract_embedded_text_hints(file_path: Path, format_name: str = "Unknown") -
             "urls": [],
             "finding_types": [],
             "stego_suspicion": "Hidden-content scan unavailable because the file could not be read.",
+            "container_findings": [],
+            "recoverable_segments": [],
+            "carved_summary": "No carved payload segments were recovered.",
         }
 
     if not blob:
@@ -361,13 +575,13 @@ def extract_embedded_text_hints(file_path: Path, format_name: str = "Unknown") -
             "urls": [],
             "finding_types": [],
             "stego_suspicion": "No byte content was available for hidden-content scanning.",
+            "container_findings": [],
+            "recoverable_segments": [],
+            "carved_summary": "No carved payload segments were recovered.",
         }
 
-    ascii_strings = [
-        s.decode("utf-8", errors="ignore").strip()
-        for s in re.findall(rb"[\x20-\x7e]{8,}", blob)
-    ]
-    cleaned = []
+    ascii_strings = [s.decode("utf-8", errors="ignore").strip() for s in re.findall(rb"[\x20-\x7e]{8,}", blob)]
+    cleaned: List[str] = []
     seen = set()
     noise_count = 0
     for item in ascii_strings:
@@ -380,12 +594,12 @@ def extract_embedded_text_hints(file_path: Path, format_name: str = "Unknown") -
         else:
             noise_count += 1
 
-    urls = []
-    url_seen = set()
+    urls: List[str] = []
+    seen_urls = set()
     for item in cleaned:
-        for match in re.findall(r"""https?://[^\s"'<>]+""", item, flags=re.IGNORECASE):
-            if match not in url_seen:
-                url_seen.add(match)
+        for match in re.findall(r'''https?://[^\s"'<>]+''', item, flags=re.IGNORECASE):
+            if match not in seen_urls:
+                seen_urls.add(match)
                 urls.append(match)
 
     suspicious_patterns = [
@@ -404,11 +618,12 @@ def extract_embedded_text_hints(file_path: Path, format_name: str = "Unknown") -
         (r"-----BEGIN [A-Z ]+-----", "embedded key / certificate block", "credential"),
     ]
 
-    code_indicators: list[str] = []
-    context_strings: list[str] = []
-    suspicious_embeds: list[str] = []
-    payload_markers: list[str] = []
+    code_indicators: List[str] = []
+    context_strings: List[str] = []
+    suspicious_embeds: List[str] = []
+    payload_markers: List[str] = []
     finding_types: List[str] = []
+
     for item in cleaned:
         lower = item.lower()
         matched = False
@@ -426,32 +641,61 @@ def extract_embedded_text_hints(file_path: Path, format_name: str = "Unknown") -
             suspicious_embeds.append(f"Long encoded-looking blob: {item[:120]}")
             if "encoded" not in finding_types:
                 finding_types.append("encoded")
-        if ("http://" in lower or "https://" in lower or "token" in lower or "secret" in lower or "password" in lower or "script" in lower):
+        if any(token in lower for token in ["http://", "https://", "token", "secret", "password", "script"]):
             context_strings.append(item[:180])
         elif len(context_strings) < 12:
             context_strings.append(item[:120])
 
-    appended = _appended_payload_indicator(file_path, blob)
-    if appended:
-        suspicious_embeds.append(appended)
-        if 'container-appendix' not in finding_types:
-            finding_types.append('container-appendix')
+    container_findings: List[str] = []
+    recoveries: List[dict] = []
+    if file_path.suffix.lower() == ".png":
+        extra_findings, extra_recoveries = _png_chunk_findings(blob)
+        container_findings.extend(extra_findings)
+        recoveries.extend(extra_recoveries)
+    elif file_path.suffix.lower() in {".jpg", ".jpeg"}:
+        extra_findings, extra_recoveries = _jpeg_tail_findings(blob)
+        container_findings.extend(extra_findings)
+        recoveries.extend(extra_recoveries)
+    else:
+        appended = _appended_payload_indicator(file_path, blob)
+        if appended:
+            container_findings.append(appended)
+
+    inline_findings, inline_recoveries = _inline_payload_findings(blob)
+    for finding in inline_findings:
+        if finding not in container_findings:
+            container_findings.append(finding)
+    existing_offsets = {(item.get("offset"), item.get("kind")) for item in recoveries}
+    for recovery in inline_recoveries:
+        key = (recovery.get("offset"), recovery.get("kind"))
+        if key not in existing_offsets:
+            recoveries.append(recovery)
+            existing_offsets.add(key)
+
+    for finding in container_findings:
+        if finding not in suspicious_embeds:
+            suspicious_embeds.append(finding)
+        if "append" in finding.lower() or "trailing" in finding.lower():
+            if "container-appendix" not in finding_types:
+                finding_types.append("container-appendix")
+        if "chunk" in finding.lower() and "chunk-metadata" not in finding_types:
+            finding_types.append("chunk-metadata")
 
     tail = blob[-4096:] if len(blob) > 4096 else blob
     entropy = _entropy_score(tail)
     stego_suspicion = "No strong steganography or appended-payload indicator was detected."
-    if appended and entropy >= 7.4:
+    if recoveries and entropy >= 7.4:
         stego_suspicion = f"High-entropy trailing data suggests appended payload or stego-like packing (entropy {entropy:.2f})."
-    elif appended:
-        stego_suspicion = "Trailing bytes exist after the logical end-of-image marker. Validate whether they are benign packaging or an appended payload."
-    elif entropy >= 7.75 and file_path.suffix.lower() in {'.png', '.bmp'}:
+    elif recoveries:
+        stego_suspicion = "Recoverable trailing/appended data exists after the logical image ending. Treat it as a hidden payload candidate until explained."
+    elif entropy >= 7.75 and file_path.suffix.lower() in {".png", ".bmp"}:
         stego_suspicion = f"Late-file entropy is elevated ({entropy:.2f}); no payload was confirmed, but deeper stego review could be justified."
 
-    format_hint = str(format_name or file_path.suffix.upper().replace('.', '') or 'Unknown')
-    if file_path.suffix.lower() == '.svg' or any('<svg' in s.lower() for s in cleaned[:8]):
-        code_indicators.insert(0, 'SVG content can legally contain scripts, hyperlinks, CSS, and embedded XML payloads.')
-        if 'svg' not in finding_types:
-            finding_types.insert(0, 'svg')
+    format_hint = str(format_name or file_path.suffix.upper().replace(".", "") or "Unknown")
+    if file_path.suffix.lower() == ".svg" or any("<svg" in s.lower() for s in cleaned[:8]):
+        code_indicators.insert(0, "SVG content can legally contain scripts, hyperlinks, CSS, and embedded XML payloads.")
+        if "svg" not in finding_types:
+            finding_types.insert(0, "svg")
 
     code_indicators = code_indicators[:12]
     payload_markers = payload_markers[:12]
@@ -460,12 +704,12 @@ def extract_embedded_text_hints(file_path: Path, format_name: str = "Unknown") -
 
     if code_indicators or suspicious_embeds:
         summary = (
-            f"Tiered hidden-content scanning found {len(code_indicators)} code/payload marker(s) and {len(suspicious_embeds)} structural warning(s). "
-            f"Treat this as heuristic evidence until a manual parser confirms the payload context."
+            f"Tiered hidden-content scanning found {len(code_indicators)} code/payload marker(s), {len(suspicious_embeds)} structural warning(s), "
+            f"and {len(recoveries)} recoverable segment(s). Treat this as heuristic evidence until manual validation confirms the payload context."
         )
         overview = (
             f"Embedded text scan for {format_hint}: {len(cleaned)} readable string(s), {len(code_indicators)} marker(s), "
-            f"{len(suspicious_embeds)} structural warning(s)."
+            f"{len(suspicious_embeds)} structural warning(s), {len(recoveries)} recoverable segment(s)."
         )
     elif cleaned:
         summary = (
@@ -482,6 +726,10 @@ def extract_embedded_text_hints(file_path: Path, format_name: str = "Unknown") -
         f"Tier 1 analyst-readable context: {min(len(cleaned), 12)}. Tier 2 suspicious embeds: {len(suspicious_embeds)}. "
         f"Tier 3 payload/code markers: {len(code_indicators)}. Structural noise filtered: {noise_count} ({noise_class})."
     )
+    carved_summary = (
+        f"Recoverable payload segments identified: {len(recoveries)}. "
+        f"Primary types: {', '.join(item['kind'] for item in recoveries[:3]) if recoveries else 'none'}."
+    )
     return {
         "strings": context_strings[:12],
         "context_strings": context_strings[:12],
@@ -492,20 +740,16 @@ def extract_embedded_text_hints(file_path: Path, format_name: str = "Unknown") -
         "context_summary": context_summary,
         "overview": overview,
         "urls": urls[:12],
-        "finding_types": finding_types[:8],
+        "finding_types": finding_types[:10],
         "stego_suspicion": stego_suspicion,
+        "container_findings": container_findings[:8],
+        "recoverable_segments": recoveries[:4],
+        "carved_summary": carved_summary,
     }
 
 
 def infer_timestamp_from_filename(file_name: str) -> Optional[str]:
-    patterns = [
-        r"(20\d{2})-(\d{2})-(\d{2})\s+at\s+(\d{1,2})\.(\d{2})\.(\d{2})\s*([AP]M)?",
-        r"(20\d{2})-(\d{2})-(\d{2})[ _-](\d{2})(\d{2})(\d{2})",
-        r"(20\d{2})(\d{2})(\d{2})[ _-]?(\d{2})(\d{2})(\d{2})",
-        r"(20\d{2})[._-](\d{2})[._-](\d{2})[ T_-](\d{2})[.:_-](\d{2})[.:_-](\d{2})",
-        r"(20\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{1,2})[-_](\d{2})[-_](\d{2})\s*([AP]M)?",
-    ]
-    for pattern in patterns:
+    for pattern in TIMESTAMP_PATTERNS:
         match = re.search(pattern, file_name, flags=re.IGNORECASE)
         if not match:
             continue
@@ -532,10 +776,16 @@ def infer_timestamp_from_filename(file_name: str) -> Optional[str]:
 def extract_timestamp(exif: Dict[str, str], file_path: Path | None = None) -> Tuple[str, str]:
     if exif.get("EXIF DateTimeOriginal"):
         return exif["EXIF DateTimeOriginal"], "Native EXIF Original"
+    if exif.get("DateTimeOriginal"):
+        return exif["DateTimeOriginal"], "Native EXIF Original"
     if exif.get("Image DateTime"):
         return exif["Image DateTime"], "Embedded EXIF"
+    if exif.get("DateTime"):
+        return exif["DateTime"], "Embedded EXIF"
     if exif.get("EXIF DateTimeDigitized"):
         return exif["EXIF DateTimeDigitized"], "Embedded EXIF Digitized"
+    if exif.get("DateTimeDigitized"):
+        return exif["DateTimeDigitized"], "Embedded EXIF Digitized"
     if file_path is not None:
         guessed = infer_timestamp_from_filename(file_path.name)
         if guessed:
@@ -558,7 +808,7 @@ def infer_timestamp_from_text(text: str) -> Optional[str]:
         match = re.search(pattern, text)
         if not match:
             continue
-        year, month, day, hour, minute, second = match.groups(default='00')
+        year, month, day, hour, minute, second = match.groups(default="00")
         try:
             dt = datetime(int(year), int(month), int(day), int(hour), int(minute), int(second))
             return dt.strftime("%Y:%m:%d %H:%M:%S")
@@ -570,12 +820,16 @@ def infer_timestamp_from_text(text: str) -> Optional[str]:
 def build_time_assessment(exif: Dict[str, str], file_path: Path, visible_time_strings: List[str] | None = None) -> Dict[str, object]:
     visible_time_strings = visible_time_strings or []
     candidates: List[tuple[str, str, int]] = []
-    if exif.get("EXIF DateTimeOriginal"):
-        candidates.append((exif["EXIF DateTimeOriginal"], "Native EXIF Original", 94))
-    if exif.get("Image DateTime"):
-        candidates.append((exif["Image DateTime"], "Embedded EXIF", 84))
-    if exif.get("EXIF DateTimeDigitized"):
-        candidates.append((exif["EXIF DateTimeDigitized"], "Embedded EXIF Digitized", 82))
+    for key, label, score in [
+        ("EXIF DateTimeOriginal", "Native EXIF Original", 94),
+        ("DateTimeOriginal", "Native EXIF Original", 94),
+        ("Image DateTime", "Embedded EXIF", 84),
+        ("DateTime", "Embedded EXIF", 84),
+        ("EXIF DateTimeDigitized", "Embedded EXIF Digitized", 82),
+        ("DateTimeDigitized", "Embedded EXIF Digitized", 82),
+    ]:
+        if exif.get(key):
+            candidates.append((exif[key], label, score))
     guessed = infer_timestamp_from_filename(file_path.name)
     if guessed:
         candidates.append((guessed, "Filename Pattern", 58))
@@ -604,6 +858,7 @@ def build_time_assessment(exif: Dict[str, str], file_path: Path, visible_time_st
     candidates = sorted(candidates, key=lambda item: item[2], reverse=True)
     best = candidates[0]
     conflicts: List[str] = []
+
     def _parse_dt(raw: str):
         try:
             return datetime.strptime(raw, "%Y:%m:%d %H:%M:%S")
@@ -637,20 +892,41 @@ def get_tag(exif: Dict[str, str], *names: str, default: str = "N/A") -> str:
 
 
 def extract_device_model(exif: Dict[str, str]) -> Tuple[str, str]:
-    make = exif.get("Image Make", "").strip() or "Unknown"
-    model = exif.get("Image Model", "").strip() or "Unknown"
+    make = get_tag(exif, "Image Make", "Make", default="Unknown").strip() or "Unknown"
+    model = get_tag(exif, "Image Model", "Model", default="Unknown").strip() or "Unknown"
     if make != "Unknown" and model != "Unknown":
         return f"{make} {model}".strip(), make
     return model if model != "Unknown" else make, make
 
 
 def extract_software(exif: Dict[str, str]) -> str:
-    return get_tag(exif, "Image Software", default="N/A")
+    return get_tag(exif, "Image Software", "Software", default="N/A")
 
 
 def extract_orientation(exif: Dict[str, str]) -> str:
-    value = get_tag(exif, "Image Orientation", default="Unknown")
+    value = get_tag(exif, "Image Orientation", "Orientation", default="Unknown")
     return ORIENTATION_MAP.get(value, value)
+
+
+def _safe_fraction(value) -> float:
+    if hasattr(value, "num") and hasattr(value, "den"):
+        try:
+            return float(value.num) / float(value.den)
+        except Exception:
+            return 0.0
+    if isinstance(value, tuple) and len(value) >= 2:
+        try:
+            return float(value[0]) / float(value[1])
+        except Exception:
+            return 0.0
+    try:
+        return float(value)
+    except Exception:
+        return 0.0
+
+
+def _parse_gps_string(value: str) -> List[float]:
+    return [float(item) for item in re.findall(r"-?\d+(?:\.\d+)?", value or "")[:3]]
 
 
 def extract_gps(exif: Dict[str, str]):
@@ -665,10 +941,42 @@ def extract_gps(exif: Dict[str, str]):
         altitude = None
         if "GPS GPSAltitude" in tags:
             alt_val = tags["GPS GPSAltitude"].values[0]
-            altitude = float(alt_val.num) / float(alt_val.den)
+            altitude = _safe_fraction(alt_val)
         return latitude, longitude, altitude, format_coordinates(latitude, longitude)
     except Exception:
-        return None, None, None, "Unavailable"
+        pass
+
+    pil_gps = tags.get("__pil_gps__") if isinstance(tags, dict) else None
+    if isinstance(pil_gps, dict):
+        try:
+            lat_values = pil_gps.get(2)
+            lat_ref = str(pil_gps.get(1, "N"))
+            lon_values = pil_gps.get(4)
+            lon_ref = str(pil_gps.get(3, "E"))
+            if lat_values and lon_values:
+                latitude = dms_to_decimal(lat_values, lat_ref)
+                longitude = dms_to_decimal(lon_values, lon_ref)
+                altitude = _safe_fraction(pil_gps.get(6)) if pil_gps.get(6) is not None else None
+                return latitude, longitude, altitude, format_coordinates(latitude, longitude)
+        except Exception:
+            pass
+
+    try:
+        lat_text = exif.get("GPS GPSLatitude")
+        lon_text = exif.get("GPS GPSLongitude")
+        if lat_text and lon_text:
+            lat_ref = exif.get("GPS GPSLatitudeRef", "N")
+            lon_ref = exif.get("GPS GPSLongitudeRef", "E")
+            latitude = dms_to_decimal(_parse_gps_string(lat_text), lat_ref)
+            longitude = dms_to_decimal(_parse_gps_string(lon_text), lon_ref)
+            altitude = None
+            if exif.get("GPS GPSAltitude"):
+                alt_values = _parse_gps_string(exif.get("GPS GPSAltitude", ""))
+                altitude = alt_values[0] if alt_values else None
+            return latitude, longitude, altitude, format_coordinates(latitude, longitude)
+    except Exception:
+        pass
+    return None, None, None, "Unavailable"
 
 
 def evaluate_timestamp_confidence(timestamp: str, source: str) -> Tuple[int, str]:
@@ -701,19 +1009,19 @@ def evaluate_gps_details(exif: Dict[str, str], latitude: float | None, longitude
 def classify_source(file_path: Path, exif: Dict[str, str], software: str, width: int, height: int, parser_status: str = "Valid") -> str:
     name = file_path.name.lower()
     suffix = file_path.suffix.lower()
+    software_lower = (software or "").lower()
     if parser_status == "Failed":
         return "Malformed / Unsupported Asset"
+    if any(term in software_lower for term in ["photoshop", "lightroom", "snapseed", "canva", "gimp"]):
+        return "Edited / Exported"
+    if exif and suffix in {".jpg", ".jpeg", ".tif", ".tiff", ".heic", ".heif"} and max(width, height) >= 1200:
+        return "Camera Photo"
     if "screenshot" in name:
         return "Screenshot"
     if "whatsapp image" in name or "telegram" in name or "export" in name:
         return "Messaging Export"
     if suffix in {".png", ".webp"} and not exif:
         return "Screenshot / Export"
-    software_lower = software.lower()
-    if any(term in software_lower for term in ["photoshop", "lightroom", "snapseed", "canva", "gimp"]):
-        return "Edited / Exported"
-    if width and height and max(width, height) >= 2000 and exif:
-        return "Camera Photo"
     if suffix in {".gif", ".bmp"}:
         return "Graphic Asset"
     return "Unknown"
@@ -721,14 +1029,14 @@ def classify_source(file_path: Path, exif: Dict[str, str], software: str, width:
 
 def build_metadata_summary(exif: Dict[str, str]) -> Dict[str, str]:
     return {
-        "camera_make": get_tag(exif, "Image Make", default="Unknown"),
-        "lens_model": get_tag(exif, "EXIF LensModel", "EXIF LensSpecification", default="N/A"),
-        "iso": get_tag(exif, "EXIF ISOSpeedRatings", default="N/A"),
-        "exposure_time": get_tag(exif, "EXIF ExposureTime", default="N/A"),
-        "f_number": get_tag(exif, "EXIF FNumber", default="N/A"),
-        "focal_length": get_tag(exif, "EXIF FocalLength", default="N/A"),
-        "artist": get_tag(exif, "Image Artist", default="N/A"),
-        "copyright_notice": get_tag(exif, "Image Copyright", default="N/A"),
+        "camera_make": get_tag(exif, "Image Make", "Make", default="Unknown"),
+        "lens_model": get_tag(exif, "EXIF LensModel", "LensModel", "EXIF LensSpecification", default="N/A"),
+        "iso": get_tag(exif, "EXIF ISOSpeedRatings", "ISOSpeedRatings", default="N/A"),
+        "exposure_time": get_tag(exif, "EXIF ExposureTime", "ExposureTime", default="N/A"),
+        "f_number": get_tag(exif, "EXIF FNumber", "FNumber", default="N/A"),
+        "focal_length": get_tag(exif, "EXIF FocalLength", "FocalLength", default="N/A"),
+        "artist": get_tag(exif, "Image Artist", "Artist", default="N/A"),
+        "copyright_notice": get_tag(exif, "Image Copyright", "Copyright", default="N/A"),
         "orientation": extract_orientation(exif),
     }
 

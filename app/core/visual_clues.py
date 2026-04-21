@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 from PIL import Image, ImageOps
 
@@ -26,20 +26,28 @@ TIME_PATTERNS = [
 
 LOCATION_KEYWORDS = (
     "street", "road", "hospital", "airport", "park", "mall", "city", "district", "bridge",
-    "mosque", "church", "metro", "university", "school", "cairo", "giza", "heliopolis",
+    "mosque", "church", "metro", "university", "school", "tower", "square", "station",
+    "cairo", "giza", "heliopolis", "alexandria", "restaurant", "cafe", "venue",
     "مطار", "مستشفى", "مدينة", "شارع", "طريق", "مول", "حديقة", "الزيتون", "المرج",
 )
 
+PLACE_SUFFIXES = (
+    "tower", "mall", "airport", "station", "bridge", "park", "hospital", "metro", "square",
+    "museum", "university", "school", "cafe", "restaurant", "mosque", "church", "district",
+    "hotel", "corridor",
+)
+
 APP_PATTERNS = [
-    ("Google Maps", ["google maps", "maps/@", "google.com/maps", "maps.google", "street view", "directions", "satellite"]),
+    ("Google Maps", ["google maps", "maps/@", "google.com/maps", "maps.google", "street view", "directions", "satellite", "route overview", "nearby"]),
     ("Google Earth", ["google earth", "earth.google"]),
-    ("WhatsApp", ["whatsapp", "wa.me", "chat", "last seen"]),
-    ("Telegram", ["telegram", "t.me", "channel", "forwarded message"]),
+    ("WhatsApp", ["whatsapp", "wa.me", "last seen", "typing", "online"]),
+    ("Telegram", ["telegram", "t.me", "forwarded message", "joined telegram"]),
     ("Signal", ["signal", "signal.org"]),
-    ("Discord", ["discord", "server", "voice connected"]),
+    ("Discord", ["discord", "voice connected", "server", "dm"]),
     ("Facebook", ["facebook", "messenger", "facebook.com"]),
     ("Instagram", ["instagram", "stories", "reels"]),
-    ("Chrome", ["chrome", "google.com", "www.", "search"]),
+    ("X / Twitter", ["twitter", "x.com", "post", "retweet"]),
+    ("Chrome", ["chrome", "google.com", "www.", "search", "bookmark"]),
     ("Edge", ["microsoft edge", "edge"]),
     ("Firefox", ["firefox"]),
     ("Safari", ["safari"]),
@@ -68,40 +76,19 @@ def _normalize_text(text: str) -> str:
 
 
 def _extract_urls(text: str) -> List[str]:
-    normalized = text.replace(" ", "")
-    urls = re.findall(r"https?://[^\s\"'<>]+", normalized, flags=re.IGNORECASE)
-    if not urls and ("google.com/maps" in normalized.lower() or "maps/@" in normalized.lower()):
-        start = normalized.lower().find("google.com/maps")
-        if start >= 0:
-            candidate = normalized[max(0, start - 8): start + 260]
+    urls = re.findall(r"https?://[^\s\"'<>]+", text, flags=re.IGNORECASE)
+    compact = text.replace(" ", "")
+    if not urls and ("google.com/maps" in compact.lower() or "maps/@" in compact.lower()):
+        idx = compact.lower().find("google.com/maps")
+        if idx >= 0:
+            candidate = compact[max(0, idx - 8): idx + 260]
             candidate = re.sub(r"^[^h]*", "https://", candidate) if not candidate.startswith("http") else candidate
             urls = [candidate]
     return _dedupe(urls, limit=8)
 
 
-def _detect_app(text: str) -> str:
-    lower = text.lower()
-    for app, tokens in APP_PATTERNS:
-        if any(token in lower for token in tokens):
-            return app
-    return "Unknown"
-
-
-def _detect_environment(file_name: str, width: int, height: int, text: str, source_type: str) -> str:
-    lower = text.lower()
-    if any(token in lower for token in ["google maps", "http", "www.", ".com", "search google maps", "directions", "street view"]):
-        return "Desktop Browser Capture" if width >= height else "Mobile Browser Capture"
-    if any(token in lower for token in ["telegram", "whatsapp", "messenger", "discord", "instagram"]):
-        return "Chat / Social Screenshot"
-    if source_type in {"Screenshot", "Screenshot / Export", "Map Screenshot", "Browser Screenshot"}:
-        return "Desktop Screenshot" if width >= height else "Mobile Screenshot"
-    if "camera" in source_type.lower() or source_type == "Camera Photo":
-        return "Camera Capture"
-    if "export" in source_type.lower():
-        return "Exported Media"
-    if "screenshot" in file_name.lower():
-        return "Desktop Screenshot" if width >= height else "Mobile Screenshot"
-    return "Unknown"
+def _extract_usernames(text: str) -> List[str]:
+    return _dedupe(re.findall(r"(?<!\w)@[A-Za-z0-9_.]{3,32}", text), limit=10)
 
 
 def _looks_like_readable_line(line: str) -> bool:
@@ -128,40 +115,112 @@ def _extract_location_like_lines(lines: List[str]) -> List[str]:
         if any(keyword in lower for keyword in LOCATION_KEYWORDS):
             out.append(line)
             continue
-        if re.search(r"(?:st\.?|street|rd\.?|road|ave\.?|avenue|blvd\.?|district|city|park|mall|bridge)", lower):
+        if re.search(r"\b(?:st\.?|street|rd\.?|road|ave\.?|avenue|blvd\.?|district|city|park|mall|bridge|tower|station)\b", lower):
             out.append(line)
     return _dedupe(out, limit=10)
 
 
-def _extract_entity_lines(lines: List[str]) -> Dict[str, List[str]]:
+def _extract_map_labels(lines: List[str]) -> List[str]:
+    out: List[str] = []
+    for line in lines:
+        cleaned = re.sub(r"\s+", " ", line).strip(" -:|")
+        lower = cleaned.lower()
+        if any(keyword in lower for keyword in LOCATION_KEYWORDS):
+            out.append(cleaned)
+            continue
+        words = cleaned.split()
+        if len(words) >= 2 and any(words[-1].lower().strip(".,") == suffix for suffix in PLACE_SUFFIXES):
+            out.append(cleaned)
+    return _dedupe(out, limit=8)
+
+
+def _extract_entity_lines(lines: List[str], merged_text: str) -> Dict[str, List[str]]:
     urls: List[str] = []
     times: List[str] = []
     locations: List[str] = []
+    usernames: List[str] = []
     for line in lines:
         urls.extend(_extract_urls(line))
+        usernames.extend(_extract_usernames(line))
         for pattern in TIME_PATTERNS:
             for match in pattern.finditer(line):
                 times.append(match.group(0))
         lower = line.lower()
         if any(keyword in lower for keyword in LOCATION_KEYWORDS):
             locations.append(line)
+    app_names = []
+    lower = merged_text.lower()
+    for app, tokens in APP_PATTERNS:
+        if any(token in lower for token in tokens):
+            app_names.append(app)
     return {
         "urls": _dedupe(urls, limit=8),
         "times": _dedupe(times, limit=8),
-        "locations": _dedupe(locations, limit=10),
+        "locations": _dedupe(locations + _extract_location_like_lines(lines), limit=10),
+        "usernames": _dedupe(usernames, limit=8),
+        "app_names": _dedupe(app_names, limit=6),
+        "map_labels": _extract_map_labels(lines),
     }
+
+
+def _detect_app(text: str, app_names: List[str]) -> str:
+    if app_names:
+        return app_names[0]
+    lower = text.lower()
+    for app, tokens in APP_PATTERNS:
+        if any(token in lower for token in tokens):
+            return app
+    return "Unknown"
+
+
+def _detect_environment(file_name: str, width: int, height: int, text: str, source_type: str) -> str:
+    lower = text.lower()
+    if any(token in lower for token in ["google maps", "http", "www.", ".com", "search google maps", "directions", "street view"]):
+        return "Desktop Browser Capture" if width >= height else "Mobile Browser Capture"
+    if any(token in lower for token in ["telegram", "whatsapp", "messenger", "discord", "instagram", "x.com", "twitter"]):
+        return "Chat / Social Screenshot"
+    if source_type in {"Screenshot", "Screenshot / Export", "Map Screenshot", "Browser Screenshot", "Chat Screenshot", "Desktop Capture"}:
+        return "Desktop Screenshot" if width >= height else "Mobile Screenshot"
+    if "camera" in source_type.lower() or source_type == "Camera Photo":
+        return "Camera Capture"
+    if "export" in source_type.lower():
+        return "Exported Media"
+    if "screenshot" in file_name.lower():
+        return "Desktop Screenshot" if width >= height else "Mobile Screenshot"
+    return "Unknown"
+
+
+def _score_ocr(lines: List[str], zone_hits: List[str], entities: Dict[str, List[str]]) -> Tuple[int, str]:
+    confidence = min(92, 28 + (len(lines) * 4) + (len(zone_hits) * 6))
+    signal_count = sum(len(entities[key]) for key in ["urls", "times", "locations", "usernames", "app_names", "map_labels"])
+    confidence = min(95, confidence + min(18, signal_count * 3))
+    if signal_count >= 4:
+        relevance = "High analyst relevance: OCR recovered multiple actionable entities that can support source, time, or location reasoning."
+    elif signal_count >= 2:
+        relevance = "Medium analyst relevance: OCR recovered a small set of useful entities that can assist triage and corroboration."
+    elif lines:
+        relevance = "Low-to-medium analyst relevance: OCR recovered readable context but only limited directly actionable entities."
+    else:
+        relevance = "Low analyst relevance: OCR returned weak or mostly structural text."
+    return confidence, relevance
 
 
 def extract_visible_text_clues(file_path: Path, width: int, height: int, *, source_hint: str = "", force: bool = False) -> Dict[str, object]:
     default = {
         "lines": [],
         "excerpt": "",
+        "raw_text": "",
         "visible_urls": [],
         "visible_time_strings": [],
         "visible_location_strings": [],
         "app_detected": "Unknown",
+        "app_names": [],
         "environment_profile": "Unknown",
         "ocr_note": "OCR not attempted.",
+        "ocr_confidence": 0,
+        "ocr_analyst_relevance": "OCR not attempted.",
+        "ocr_username_entities": [],
+        "ocr_map_labels": [],
     }
     if pytesseract is None:
         default["ocr_note"] = "OCR engine is unavailable in this environment."
@@ -174,24 +233,23 @@ def extract_visible_text_clues(file_path: Path, width: int, height: int, *, sour
         return default
 
     zone_hits: List[str] = []
+    text_blocks: List[str] = []
     try:
         with Image.open(file_path) as image:
             image.load()
             work = image.convert("L")
             work = ImageOps.autocontrast(work)
             if max(work.size) < 1700:
-                scale = 2
-                work = work.resize((work.width * scale, work.height * scale))
+                work = work.resize((work.width * 2, work.height * 2))
             zones = [
                 ("full", work, "--psm 11"),
                 ("top", work.crop((0, 0, work.width, max(180, int(work.height * 0.22)))), "--psm 6"),
-                ("left", work.crop((0, 0, max(220, int(work.width * 0.35)), work.height)), "--psm 6"),
-                ("bottom", work.crop((0, int(work.height * 0.72), work.width, work.height)), "--psm 6"),
             ]
-            text_blocks = []
+            if force:
+                zones.append(("bottom", work.crop((0, int(work.height * 0.72), work.width, work.height)), "--psm 6"))
             for zone_name, candidate, config in zones:
                 try:
-                    block = pytesseract.image_to_string(candidate, config=config, timeout=5)
+                    block = pytesseract.image_to_string(candidate, config=config, timeout=1.2)
                 except Exception:
                     continue
                 if block and block.strip():
@@ -210,25 +268,30 @@ def extract_visible_text_clues(file_path: Path, width: int, height: int, *, sour
     lines = _dedupe([line for line in raw_lines if _looks_like_readable_line(line)], limit=28)
     if not lines:
         default["ocr_note"] = "OCR completed but only low-value structural text was recovered."
+        default["raw_text"] = merged[:2500]
         return default
     excerpt = _normalize_text(" ".join(lines[:6]))[:280]
-    entities = _extract_entity_lines(lines)
-    visible_urls = entities["urls"]
-    visible_time_strings = entities["times"]
-    visible_location_strings = _dedupe(entities["locations"] + _extract_location_like_lines(lines), limit=10)
+    entity_lines = _extract_entity_lines(lines, merged)
+    confidence, relevance = _score_ocr(lines, zone_hits, entity_lines)
     merged_text = "\n".join(lines)
-    app_detected = _detect_app(merged_text)
+    app_detected = _detect_app(merged_text, entity_lines["app_names"])
     environment_profile = _detect_environment(file_path.name, width, height, merged_text, source_hint)
     zone_note = ", ".join(zone_hits[:4]) if zone_hits else "none"
     return {
         "lines": lines[:28],
         "excerpt": excerpt,
-        "visible_urls": _dedupe(visible_urls, limit=8),
-        "visible_time_strings": _dedupe(visible_time_strings, limit=8),
-        "visible_location_strings": _dedupe(visible_location_strings, limit=8),
+        "raw_text": merged[:4000],
+        "visible_urls": entity_lines["urls"],
+        "visible_time_strings": entity_lines["times"],
+        "visible_location_strings": entity_lines["locations"],
         "app_detected": app_detected,
+        "app_names": entity_lines["app_names"],
+        "ocr_username_entities": entity_lines["usernames"],
+        "ocr_map_labels": entity_lines["map_labels"],
         "environment_profile": environment_profile,
         "ocr_note": f"OCR zones recovered from: {zone_note}.",
+        "ocr_confidence": confidence,
+        "ocr_analyst_relevance": relevance,
     }
 
 
@@ -245,9 +308,11 @@ def parse_derived_geo(text_candidates: List[str], visible_urls: List[str], *, so
             "source": "Unavailable",
             "confidence": 0,
             "note": "No screenshot-derived geolocation clue recovered.",
+            "possible_geo_clues": [],
         }
+    compact = joined.replace(" ", "")
     for pattern in MAP_COORD_PATTERNS:
-        match = pattern.search(joined.replace(" ", ""))
+        match = pattern.search(compact)
         if not match:
             continue
         try:
@@ -264,7 +329,7 @@ def parse_derived_geo(text_candidates: List[str], visible_urls: List[str], *, so
         if source_type in {"Map Screenshot", "Browser Screenshot", "Screenshot", "Screenshot / Export"}:
             confidence += 6
         note = (
-            f"Derived geolocation clue parsed from {'on-screen map content' if 'maps' in joined.lower() else 'visible coordinate text'}; corroborate it with browser history, saved links, or surrounding case context before courtroom use."
+            "Derived geolocation clue parsed from on-screen map content or visible coordinate text; corroborate it with browser history, saved links, or surrounding case context before courtroom use."
         )
         if zoom:
             note = note[:-1] + f" Zoom/context marker: {zoom}z."
@@ -275,8 +340,24 @@ def parse_derived_geo(text_candidates: List[str], visible_urls: List[str], *, so
             "source": source,
             "confidence": min(confidence, 78),
             "note": note,
+            "possible_geo_clues": [display],
         }
     lower_joined = joined.lower()
+    map_labels = _extract_map_labels([line for line in joined.splitlines() if line.strip()])
+    location_hits = _extract_location_like_lines([line for line in joined.splitlines() if line.strip()])
+    possible_geo_clues = _dedupe(map_labels + location_hits, limit=6)
+    if possible_geo_clues:
+        best = possible_geo_clues[0]
+        confidence = 34 if any(token in lower_joined for token in ["google maps", "directions", "street view", "route overview", "nearby", "satellite"]) else 22
+        return {
+            "latitude": None,
+            "longitude": None,
+            "display": f"Possible geo clue: {best}",
+            "source": "OCR place label",
+            "confidence": confidence,
+            "note": "Visible map/place labels suggest a possible geo lead, but no stable coordinates were parsed. Preserve OCR text and application context for manual venue reasoning.",
+            "possible_geo_clues": possible_geo_clues,
+        }
     if any(token in lower_joined for token in ["google maps", "directions", "street view", "nearby", "route overview", "satellite"]):
         return {
             "latitude": None,
@@ -285,6 +366,7 @@ def parse_derived_geo(text_candidates: List[str], visible_urls: List[str], *, so
             "source": "Visual map UI",
             "confidence": 22,
             "note": "Map-style UI markers were detected, but no stable coordinates could be parsed. Preserve the screenshot, OCR text, and browser context for manual venue reasoning.",
+            "possible_geo_clues": [],
         }
     return {
         "latitude": None,
@@ -293,7 +375,92 @@ def parse_derived_geo(text_candidates: List[str], visible_urls: List[str], *, so
         "source": "Unavailable",
         "confidence": 0,
         "note": "No screenshot-derived geolocation clue recovered.",
+        "possible_geo_clues": [],
     }
+
+
+def infer_source_profile(
+    file_path: Path,
+    *,
+    source_type: str,
+    width: int,
+    height: int,
+    has_exif: bool,
+    software: str,
+    visible_urls: List[str],
+    app_detected: str,
+    visible_lines: List[str] | None = None,
+    map_labels: List[str] | None = None,
+) -> Dict[str, object]:
+    reasons: List[str] = []
+    name = file_path.name.lower()
+    software_l = software.lower()
+    joined = " ".join((visible_urls or []) + (visible_lines or []) + (map_labels or [])).lower()
+    suffix = file_path.suffix.lower()
+    screenshot_like = source_type in {"Screenshot", "Screenshot / Export", "Messaging Export"} or "screenshot" in name or suffix in {".png", ".webp"}
+    browser_like = bool(visible_urls) or "www." in joined or "http" in joined
+    map_ui = app_detected in {"Google Maps", "Google Earth"} or any("google.com/maps" in url.lower() for url in visible_urls)
+    chat_ui = app_detected in {"WhatsApp", "Telegram", "Signal", "Discord", "Facebook", "Instagram", "X / Twitter"}
+
+    if map_ui or (map_labels and screenshot_like):
+        reasons.extend([
+            "Visible text suggests map-style UI or venue labels.",
+            f"Detected application context: {app_detected}.",
+        ])
+        return {"type": "Screenshot", "subtype": "Map Screenshot", "confidence": 84 if map_ui else 74, "reasons": reasons}
+    if app_detected in {"Chrome", "Safari", "Firefox", "Edge"} and browser_like:
+        reasons.extend([
+            "Browser-style text or URLs were recovered through OCR.",
+            f"Application fingerprint suggests {app_detected}.",
+        ])
+        return {"type": "Screenshot", "subtype": "Browser Screenshot", "confidence": 78, "reasons": reasons}
+    if chat_ui:
+        reasons.extend([
+            f"Application fingerprint suggests {app_detected}.",
+            "Recovered on-screen text is consistent with chat/social UI.",
+        ])
+        return {"type": "Screenshot", "subtype": "Chat Screenshot", "confidence": 80, "reasons": reasons}
+    if source_type == "Camera Photo":
+        reasons.append("Native EXIF/container profile is consistent with camera-origin media.")
+        if has_exif:
+            reasons.append("Embedded EXIF strengthens original-capture posture.")
+        return {"type": "Camera Photo", "subtype": "Camera Original", "confidence": 86 if has_exif else 62, "reasons": reasons}
+    if source_type == "Edited / Exported":
+        if any(term in software_l for term in ["photoshop", "lightroom", "snapseed", "gimp", "canva"]):
+            reasons.append(f"Software tag '{software}' suggests an edit/export workflow.")
+        else:
+            reasons.append("Metadata profile points to export or editing history.")
+        return {"type": "Edited / Exported", "subtype": "Edited Export", "confidence": 76, "reasons": reasons}
+    if source_type in {"Screenshot", "Screenshot / Export"}:
+        confidence = 72
+        reasons.append("Source classification and file naming are consistent with a screenshot workflow.")
+        if "screenshot" in name:
+            confidence += 10
+            reasons.append("Filename explicitly contains screenshot wording.")
+        if width >= height:
+            reasons.append("Landscape desktop-like aspect ratio reinforces desktop capture posture.")
+            subtype = "Desktop Capture"
+        else:
+            reasons.append("Portrait/mobile-like aspect ratio suggests mobile screenshot posture.")
+            subtype = "Mobile Screenshot"
+        return {"type": "Screenshot", "subtype": subtype, "confidence": min(confidence, 88), "reasons": reasons}
+    if source_type == "Messaging Export":
+        reasons.append("Thin metadata plus messaging-like cues suggest an exported chat/media artifact.")
+        return {"type": "Messaging Export", "subtype": "Chat Export", "confidence": 78, "reasons": reasons}
+    if file_path.suffix.lower() in {".gif", ".bmp"}:
+        reasons.append("Container/extension pair is more consistent with a graphic asset than a camera original.")
+        return {"type": "Graphic Asset", "subtype": "Graphic Asset", "confidence": 70, "reasons": reasons}
+    if not has_exif and file_path.suffix.lower() == ".png":
+        reasons.append("PNG without EXIF is often screenshot/export media, though it may still be a generic graphic asset.")
+        subtype = "Desktop Capture" if width >= height else "Mobile Screenshot"
+        return {"type": "Screenshot / Export", "subtype": subtype, "confidence": 61, "reasons": reasons}
+    if suffix in {".jpg", ".jpeg"} and not browser_like and not chat_ui and not map_ui and max(width, height) >= 1000:
+        reasons.append("JPEG dimensions and lack of strong browser/chat cues look more like a photo asset than a UI capture.")
+        if map_labels:
+            reasons.append("Map-like words were seen, but they are not strong enough by themselves to override the broader photo posture.")
+        return {"type": "Unknown", "subtype": "Photo-like Asset", "confidence": 58, "reasons": reasons}
+    reasons.append("No decisive source fingerprint was recovered; keep provenance posture conservative.")
+    return {"type": source_type or "Unknown", "subtype": source_type or "Unknown", "confidence": 48, "reasons": reasons}
 
 
 def profile_source_details(
@@ -307,29 +474,14 @@ def profile_source_details(
     visible_urls: List[str],
     app_detected: str,
 ) -> Tuple[str, int]:
-    name = file_path.name.lower()
-    software_l = software.lower()
-    if app_detected in {"Google Maps", "Google Earth"} or any("google.com/maps" in url.lower() for url in visible_urls):
-        return "Map Screenshot", 84
-    if app_detected in {"Chrome", "Safari", "Firefox", "Edge"} and ("http" in " ".join(visible_urls).lower() or "www." in " ".join(visible_urls).lower()):
-        return "Browser Screenshot", 78
-    if app_detected in {"WhatsApp", "Telegram", "Signal", "Discord", "Facebook", "Instagram"}:
-        return "Messaging Export", 80
-    if source_type in {"Screenshot", "Screenshot / Export"}:
-        confidence = 72
-        if "screenshot" in name:
-            confidence += 10
-        return "Screenshot", min(confidence, 88)
-    if source_type == "Messaging Export":
-        return "Messaging Export", 78
-    if source_type == "Edited / Exported":
-        return "Edited / Exported", 72
-    if source_type == "Camera Photo":
-        return "Camera Photo", 86 if has_exif else 62
-    if file_path.suffix.lower() in {".gif", ".bmp"}:
-        return "Graphic Asset", 70
-    if any(term in software_l for term in ["photoshop", "lightroom", "snapseed", "gimp", "canva"]):
-        return "Edited / Exported", 76
-    if not has_exif and file_path.suffix.lower() == ".png" and width >= height:
-        return "Screenshot / Export", 61
-    return source_type or "Unknown", 48
+    profile = infer_source_profile(
+        file_path,
+        source_type=source_type,
+        width=width,
+        height=height,
+        has_exif=has_exif,
+        software=software,
+        visible_urls=visible_urls,
+        app_detected=app_detected,
+    )
+    return str(profile["subtype"]), int(profile["confidence"])

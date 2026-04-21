@@ -17,6 +17,8 @@ class EvidenceRecord:
     perceptual_hash: str
     file_size: int
     imported_at: str
+    original_file_path: Path = Path(".")
+    working_copy_path: Path = Path(".")
     exif: Dict[str, str] = field(default_factory=dict)
     raw_exif: Dict[str, str] = field(default_factory=dict)
     exif_warning: str = ""
@@ -31,7 +33,9 @@ class EvidenceRecord:
     camera_make: str = "Unknown"
     software: str = "N/A"
     source_type: str = "Unknown"
+    source_subtype: str = "Unknown"
     source_profile_confidence: int = 0
+    source_profile_reasons: List[str] = field(default_factory=list)
     environment_profile: str = "Unknown"
     app_detected: str = "Unknown"
     scene_group: str = ""
@@ -63,6 +67,12 @@ class EvidenceRecord:
     derived_geo_confidence: int = 0
     derived_geo_note: str = "No screenshot-derived geolocation clue recovered."
     geo_status: str = "No native GPS recovered."
+    gps_ladder: List[str] = field(default_factory=list)
+    gps_primary_issue: str = "No GPS issue summary generated."
+    metadata_issues: List[str] = field(default_factory=list)
+    metadata_strengths: List[str] = field(default_factory=list)
+    metadata_recommendations: List[str] = field(default_factory=list)
+    metadata_issue_summary: str = "No metadata issue summary generated."
     anomaly_reasons: List[str] = field(default_factory=list)
     anomaly_contributors: List[str] = field(default_factory=list)
     manipulation_flags: List[str] = field(default_factory=list)
@@ -81,6 +91,10 @@ class EvidenceRecord:
     aspect_ratio: str = "Unknown"
     brightness_mean: float = 0.0
     duplicate_group: str = ""
+    duplicate_relation: str = ""
+    duplicate_method: str = ""
+    duplicate_peers: List[str] = field(default_factory=list)
+    duplicate_distance: int = 0
     analyst_verdict: str = ""
     courtroom_notes: str = ""
     parser_status: str = "Valid"
@@ -97,11 +111,27 @@ class EvidenceRecord:
     metadata_score: int = 0
     technical_score: int = 0
     score_breakdown: List[str] = field(default_factory=list)
+    score_primary_issue: str = "No primary score issue identified."
+    score_reason: str = "No score reason generated."
+    score_next_step: str = "No next step generated."
+    score_summary: str = "No explainability summary generated."
+    validation_hits: List[str] = field(default_factory=list)
+    validation_misses: List[str] = field(default_factory=list)
     extracted_strings: List[str] = field(default_factory=list)
     visible_text_lines: List[str] = field(default_factory=list)
+    ocr_raw_text: str = ""
+    ocr_confidence: int = 0
+    ocr_analyst_relevance: str = "OCR not attempted."
+    ocr_app_names: List[str] = field(default_factory=list)
+    ocr_username_entities: List[str] = field(default_factory=list)
+    ocr_map_labels: List[str] = field(default_factory=list)
     visible_urls: List[str] = field(default_factory=list)
+    ocr_url_entities: List[str] = field(default_factory=list)
     visible_time_strings: List[str] = field(default_factory=list)
+    ocr_time_entities: List[str] = field(default_factory=list)
     visible_location_strings: List[str] = field(default_factory=list)
+    ocr_location_entities: List[str] = field(default_factory=list)
+    possible_geo_clues: List[str] = field(default_factory=list)
     visible_text_excerpt: str = ""
     hidden_code_indicators: List[str] = field(default_factory=list)
     hidden_finding_types: List[str] = field(default_factory=list)
@@ -110,6 +140,9 @@ class EvidenceRecord:
     hidden_context_summary: str = "No visible or embedded text context was retained."
     hidden_suspicious_embeds: List[str] = field(default_factory=list)
     hidden_payload_markers: List[str] = field(default_factory=list)
+    hidden_container_findings: List[str] = field(default_factory=list)
+    hidden_carved_files: List[str] = field(default_factory=list)
+    hidden_carved_summary: str = "No carved payload segments were recovered."
     stego_suspicion: str = "No strong steganography or appended-payload indicator was detected."
     urls_found: List[str] = field(default_factory=list)
     time_candidates: List[str] = field(default_factory=list)

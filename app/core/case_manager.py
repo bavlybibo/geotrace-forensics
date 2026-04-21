@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from dataclasses import fields
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,9 +26,11 @@ from .exif_service import (
     evaluate_gps_details,
     is_supported_image,
 )
-from .visual_clues import extract_visible_text_clues, parse_derived_geo, profile_source_details
+from .visual_clues import extract_visible_text_clues, infer_source_profile, parse_derived_geo, profile_source_details
 from .hashing import compute_hashes
 from .models import CaseInfo, CaseStats, EvidenceRecord
+from .explainability import apply_explainability
+from .validation_service import build_validation_metrics
 
 
 ProgressCallback = Callable[[int, str], None]
@@ -143,6 +146,7 @@ class CaseManager:
             record.score_breakdown = breakdown
             record.anomaly_contributors = contributors
             record.integrity_status, record.integrity_note = self._derive_integrity_status(record)
+            apply_explainability(record)
             record.analyst_verdict = self._derive_analyst_verdict(record)
             record.courtroom_notes = self._derive_courtroom_notes(record)
             if not record.osint_leads:
@@ -167,6 +171,7 @@ class CaseManager:
             record.custody_event_summary = self.db.summarize_evidence_events(record.case_id, record.evidence_id)
 
         self.records = combined
+        build_validation_metrics(self.records)
         self._write_case_snapshot()
         self.db.log_action(self.active_case_id, None, "BATCH_COMPLETE", f"Analysis finished for {len(self.records)} item(s)")
         if progress_callback:
@@ -184,30 +189,61 @@ class CaseManager:
                 collected.append(file_path)
         return collected
 
+    def _stage_evidence_file(self, source_path: Path, evidence_id: str) -> Path:
+        vault = self.case_root / self.active_case_id / "evidence"
+        vault.mkdir(parents=True, exist_ok=True)
+        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", source_path.name).strip("._") or f"{evidence_id}{source_path.suffix.lower()}"
+        target = vault / f"{evidence_id}__{safe_name}"
+        if source_path.resolve() == target.resolve():
+            return target
+        shutil.copy2(source_path, target)
+        return target
+
+    def _carve_hidden_payloads(self, evidence_id: str, recoveries: List[dict]) -> List[str]:
+        if not recoveries:
+            return []
+        carved_root = self.case_root / self.active_case_id / "carved_payloads" / evidence_id
+        carved_root.mkdir(parents=True, exist_ok=True)
+        carved_files: List[str] = []
+        for index, segment in enumerate(recoveries[:4], start=1):
+            blob = segment.get("bytes")
+            if not isinstance(blob, (bytes, bytearray)) or not blob:
+                continue
+            ext = str(segment.get("extension", ".bin"))
+            ext = ext if ext.startswith(".") else f".{ext}"
+            kind = re.sub(r"[^A-Za-z0-9_-]+", "_", str(segment.get("kind", "payload"))).strip("_") or "payload"
+            output = carved_root / f"{evidence_id}_segment_{index:02d}_{kind}{ext}"
+            output.write_bytes(bytes(blob))
+            carved_files.append(str(output))
+        return carved_files
+
     def _build_record(self, file_path: Path, index: int) -> EvidenceRecord:
-        hashes = compute_hashes(file_path)
-        exif = extract_exif(file_path)
+        original_path = file_path
+        evidence_id = f"IMG-{index:03d}"
+        staged_path = self._stage_evidence_file(original_path, evidence_id)
+        hashes = compute_hashes(staged_path)
+        exif = extract_exif(staged_path)
         exif_warning = str(exif.get("__warning__", "")).strip()
-        basic = extract_basic_image_info(file_path)
+        basic = extract_basic_image_info(staged_path)
         device_model, camera_make = extract_device_model(exif)
         software = extract_software(exif)
         lat, lon, altitude, gps_display = extract_gps(exif)
-        evidence_id = f"IMG-{index:03d}"
         imported_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        created_time, modified_time, created_time_note = extract_file_times(file_path)
+        created_time, modified_time, created_time_note = extract_file_times(original_path)
         metadata = build_metadata_summary(exif)
         normalized_exif = {k: v for k, v in exif.items() if k not in {"__raw_tags__", "__warning__"}}
         initial_source_type = classify_source(
-            file_path,
+            original_path,
             normalized_exif,
             software,
             int(basic["width"]),
             int(basic["height"]),
             str(basic["parser_status"]),
         )
-        embedded_scan = extract_embedded_text_hints(file_path, str(basic["format_name"]))
+        embedded_scan = extract_embedded_text_hints(staged_path, str(basic["format_name"]))
+        carved_files = self._carve_hidden_payloads(evidence_id, list(embedded_scan.get("recoverable_segments", [])))
         visible = extract_visible_text_clues(
-            file_path,
+            staged_path,
             int(basic["width"]),
             int(basic["height"]),
             source_hint=initial_source_type,
@@ -218,8 +254,8 @@ class CaseManager:
             list(visible.get("visible_urls", [])) + list(embedded_scan.get("urls", [])),
             source_type=initial_source_type,
         )
-        source_type, source_profile_confidence = profile_source_details(
-            file_path,
+        source_profile = infer_source_profile(
+            staged_path,
             source_type=initial_source_type,
             width=int(basic["width"]),
             height=int(basic["height"]),
@@ -227,8 +263,14 @@ class CaseManager:
             software=software,
             visible_urls=list(visible.get("visible_urls", [])),
             app_detected=str(visible.get("app_detected", "Unknown")),
+            visible_lines=list(visible.get("lines", [])),
+            map_labels=list(visible.get("ocr_map_labels", [])),
         )
-        time_assessment = build_time_assessment(normalized_exif, file_path, list(visible.get("visible_time_strings", [])))
+        source_type = str(source_profile.get("type", initial_source_type))
+        source_subtype = str(source_profile.get("subtype", source_type))
+        source_profile_confidence = int(source_profile.get("confidence", 0))
+        source_profile_reasons = list(source_profile.get("reasons", []))
+        time_assessment = build_time_assessment(normalized_exif, original_path, list(visible.get("visible_time_strings", [])))
         timestamp = str(time_assessment.get("timestamp", "Unknown"))
         timestamp_source = str(time_assessment.get("source", "Unavailable"))
         timestamp_confidence = int(time_assessment.get("confidence", 0))
@@ -244,8 +286,10 @@ class CaseManager:
             case_id=self.active_case_id,
             case_name=self.active_case_name,
             evidence_id=evidence_id,
-            file_path=file_path,
-            file_name=file_path.name,
+            file_path=staged_path,
+            original_file_path=original_path,
+            working_copy_path=staged_path,
+            file_name=original_path.name,
             sha256=hashes["sha256"],
             md5=hashes["md5"],
             perceptual_hash=compute_perceptual_hash(file_path),
@@ -265,7 +309,9 @@ class CaseManager:
             camera_make=camera_make,
             software=software,
             source_type=source_type,
+            source_subtype=source_subtype,
             source_profile_confidence=source_profile_confidence,
+            source_profile_reasons=source_profile_reasons,
             environment_profile=str(visible.get("environment_profile", "Unknown")),
             app_detected=str(visible.get("app_detected", "Unknown")),
             format_name=str(basic["format_name"]),
@@ -311,9 +357,19 @@ class CaseManager:
             animation_duration_ms=int(basic["animation_duration_ms"]),
             extracted_strings=list(embedded_scan.get("strings", [])),
             visible_text_lines=list(visible.get("lines", [])),
+            ocr_raw_text=str(visible.get("raw_text", "")),
+            ocr_confidence=int(visible.get("ocr_confidence", 0)),
+            ocr_analyst_relevance=str(visible.get("ocr_analyst_relevance", "OCR not attempted.")),
+            ocr_app_names=list(visible.get("app_names", [])),
+            ocr_username_entities=list(visible.get("ocr_username_entities", [])),
+            ocr_map_labels=list(visible.get("ocr_map_labels", [])),
             visible_urls=list(visible.get("visible_urls", [])),
+            ocr_url_entities=list(visible.get("visible_urls", [])),
             visible_time_strings=list(visible.get("visible_time_strings", [])),
+            ocr_time_entities=list(visible.get("visible_time_strings", [])),
             visible_location_strings=list(visible.get("visible_location_strings", [])),
+            ocr_location_entities=list(visible.get("visible_location_strings", [])),
+            possible_geo_clues=list(derived_geo.get("possible_geo_clues", [])),
             visible_text_excerpt=str(visible.get("excerpt", "")),
             hidden_code_indicators=list(embedded_scan.get("code_indicators", [])),
             hidden_finding_types=list(embedded_scan.get("finding_types", [])),
@@ -322,6 +378,9 @@ class CaseManager:
             hidden_context_summary=str(embedded_scan.get("context_summary", "No visible or embedded text context was retained.")),
             hidden_suspicious_embeds=list(embedded_scan.get("suspicious_embeds", [])),
             hidden_payload_markers=list(embedded_scan.get("payload_markers", [])),
+            hidden_container_findings=list(embedded_scan.get("container_findings", [])),
+            hidden_carved_files=carved_files,
+            hidden_carved_summary=str(embedded_scan.get("carved_summary", "No carved payload segments were recovered.")),
             stego_suspicion=str(embedded_scan.get("stego_suspicion", "No strong steganography or appended-payload indicator was detected.")),
             urls_found=list(embedded_scan.get("urls", [])),
             time_candidates=list(time_assessment.get("candidates", [])),
@@ -329,7 +388,7 @@ class CaseManager:
         )
         record.integrity_status, record.integrity_note = self._derive_integrity_status(record)
         record.osint_leads = build_osint_leads(
-            file_path,
+            original_path,
             source_type,
             timestamp,
             timestamp_source,
@@ -347,6 +406,10 @@ class CaseManager:
             record.osint_leads.append(f"Visible URL clue(s): {', '.join(record.visible_urls[:2])}.")
         if record.visible_text_excerpt:
             record.osint_leads.append("On-screen text was recovered through OCR. Preserve the screenshot origin and any matching browser/application logs.")
+        if record.possible_geo_clues:
+            record.osint_leads.append("Possible geo leads from OCR/map labels: " + ", ".join(record.possible_geo_clues[:3]) + ".")
+        if record.source_profile_reasons:
+            record.osint_leads.append("Source-profile reasons: " + "; ".join(record.source_profile_reasons[:2]) + ".")
         record.osint_leads = record.osint_leads[:8]
         self.db.log_action(record.case_id, record.evidence_id, "IMPORT", f"Imported {record.file_name}")
         return record
@@ -368,101 +431,57 @@ class CaseManager:
         return "Pending Review", "Structural verification has not been finalized yet."
 
     def _derive_analyst_verdict(self, record: EvidenceRecord) -> str:
-        verdict_bits: list[str] = []
-        if record.source_type in {"Screenshot", "Messaging Export", "Screenshot / Export", "Map Screenshot", "Browser Screenshot"}:
-            verdict_bits.append("The file profile is consistent with a screenshot, browser capture, or exported chat artifact rather than a camera-original photo.")
-        elif record.source_type == "Camera Photo":
-            verdict_bits.append("The file retains characteristics of a camera-origin image with richer acquisition metadata.")
-        elif record.source_type == "Edited / Exported":
-            verdict_bits.append("The metadata profile suggests the media likely passed through an editing or export workflow.")
-        elif record.source_type == "Malformed / Unsupported Asset":
-            verdict_bits.append("The file could not be cleanly decoded, so it should be treated as malformed or unsupported until a second parser confirms its structure.")
-        else:
-            verdict_bits.append("The source profile is mixed, so the file should be treated as a derivative image until corroborated.")
-
-        if record.exif_warning:
-            verdict_bits.append(record.exif_warning)
-
-        if record.timestamp_source.startswith("Native EXIF") or record.timestamp_source == "Embedded EXIF":
-            verdict_bits.append("Timestamp confidence is stronger because the selected anchor came from embedded EXIF tags.")
-        elif record.timestamp_source == "Filename Pattern":
-            verdict_bits.append("Timestamp was recovered from filename structure, so it is useful for triage but should be corroborated externally.")
-        elif record.timestamp_source == "Visible On-Screen Time":
-            verdict_bits.append("A visible on-screen time clue contributed to the time model, but it remains weaker than native EXIF and still needs corroboration.")
-        elif record.timestamp_source.startswith("Filesystem"):
-            verdict_bits.append("Time values rely on filesystem metadata, which can drift after copying or export operations.")
-        else:
-            verdict_bits.append("No reliable native timestamp was recovered.")
-        if record.time_conflicts:
-            verdict_bits.append("Multiple time candidates disagree materially, so chronology claims should remain conservative until cross-checked externally.")
-
-        if record.has_gps:
-            verdict_bits.append("Native GPS intelligence is available and should be correlated with maps, venues, and surrounding evidence.")
-        elif record.derived_geo_display != "Unavailable":
-            verdict_bits.append("No native GPS was present, but screenshot-derived location clues were parsed from visible content and should be treated as medium-confidence contextual leads.")
-        else:
-            verdict_bits.append("No native GPS coordinates were present, so timeline and source correlation become the primary investigative anchors.")
-
+        evidence_bits: list[str] = []
+        if record.metadata_issues:
+            evidence_bits.append(record.metadata_issues[0])
+        if record.hidden_container_findings:
+            evidence_bits.append(record.hidden_container_findings[0])
+        elif record.hidden_code_indicators:
+            evidence_bits.append(record.hidden_code_indicators[0])
         if record.duplicate_group:
-            verdict_bits.append(f"Visual fingerprinting links this file to {record.duplicate_group}, which may indicate reposting, versioning, or duplicate capture.")
-        if record.parser_status != "Valid":
-            verdict_bits.append("Decoder health is degraded, so the visible preview and structural assumptions should be corroborated with a second parser before courtroom use.")
-        elif record.signature_status == "Mismatch":
-            verdict_bits.append("Header signature and file extension disagree, which is a strong structure-integrity concern even if a parser can still render the file.")
-        elif record.is_animated:
-            verdict_bits.append("The media is animated, so frame-level review is important because the visible first frame may not represent the full sequence.")
-
-        if record.hidden_code_indicators:
-            verdict_bits.append("Tiered hidden-content scanning recovered code-like, credential-like, or script-capable markers inside the container, so the file should be treated as content-bearing rather than image-only until confirmed.")
-        elif record.hidden_suspicious_embeds:
-            verdict_bits.append("Structural hidden-content scanning found appended-data or encoded-content warnings even though no direct code payload was confirmed.")
-        elif record.extracted_strings:
-            verdict_bits.append("Readable embedded strings were retained for analyst context, but they do not by themselves prove hidden code or exploitability.")
-        if record.visible_text_excerpt:
-            verdict_bits.append("On-screen OCR recovered visible text clues that can support app, map, browser, or screenshot-context reasoning.")
-
-        verdict_bits.append(f"Current structural integrity state: {record.integrity_status}. {record.integrity_note}")
-
-        if record.risk_level == "High":
-            verdict_bits.append("Priority review is recommended because metadata anomalies materially affect source confidence.")
-        elif record.risk_level == "Medium":
-            verdict_bits.append("Moderate review is recommended to verify whether the observed gaps are benign or workflow-driven.")
-        else:
-            verdict_bits.append("Current metadata signals do not point to aggressive manipulation, but provenance still requires case context.")
-        return " ".join(verdict_bits)
+            evidence_bits.append(record.similarity_note)
+        if record.gps_ladder:
+            evidence_bits.append(record.gps_ladder[min(1, len(record.gps_ladder) - 1)])
+        if record.time_conflicts:
+            evidence_bits.append(record.time_conflicts[0])
+        evidence_bits = evidence_bits[:4]
+        recommendation = record.metadata_recommendations[0] if record.metadata_recommendations else record.score_next_step
+        return (
+            f"Primary issue: {record.score_primary_issue}. "
+            f"Why it matters: {record.score_reason} "
+            f"Evidence: {' | '.join(evidence_bits) if evidence_bits else record.metadata_issue_summary}. "
+            f"Recommended next step: {recommendation}"
+        )
 
     def _derive_courtroom_notes(self, record: EvidenceRecord) -> str:
         strengths: list[str] = []
         limitations: list[str] = []
         if record.timestamp_confidence >= 80:
-            strengths.append("Strong native or embedded time anchor available.")
+            strengths.append(f"Time anchor available via {record.timestamp_source} ({record.timestamp_confidence}%).")
         elif record.timestamp_confidence > 0:
-            limitations.append(f"Selected time anchor is {record.timestamp_source.lower()} and should be corroborated.")
+            limitations.append(f"Time anchor is {record.timestamp_source.lower()} and should be corroborated externally.")
         else:
             limitations.append("No trustworthy native time anchor was recovered.")
-        if record.gps_confidence >= 80:
-            strengths.append("Native GPS coordinates recovered.")
-        elif record.has_gps:
-            limitations.append("GPS exists but needs manual validation against the workflow context.")
+        if record.has_gps:
+            strengths.append(f"Native GPS recovered: {record.gps_display}.")
         elif record.derived_geo_display != "Unavailable":
-            limitations.append("Location clue is screenshot-derived rather than native EXIF GPS; use it as contextual support only unless corroborated.")
+            limitations.append("Location clue is screenshot/browser-derived rather than native EXIF GPS.")
         else:
-            limitations.append("No native GPS available; rely on timeline and external corroboration.")
+            limitations.append("No native GPS available; location claims require external corroboration.")
         if record.time_conflicts:
-            limitations.append("Time-candidate conflicts exist across filename, visible, or filesystem anchors.")
+            limitations.append("Time candidates conflict materially across filename, visible, or filesystem anchors.")
         if record.parser_status != "Valid" or record.signature_status == "Mismatch":
-            limitations.append("Structure / parser issues reduce courtroom confidence until a second parser confirms the file.")
+            limitations.append("Structure/parser issues reduce courtroom confidence until a second parser confirms the file.")
         if record.hidden_code_indicators:
-            limitations.append("Container includes embedded code-like strings; context must be explained before courtroom use.")
+            limitations.append("Container includes code-like or credential-like strings that must be explained before courtroom use.")
         elif record.hidden_suspicious_embeds:
-            limitations.append("Hidden-content scanning found structural warnings that still need analyst explanation.")
-        if record.exif_warning:
-            limitations.append(record.exif_warning)
-        if record.created_time == "Unavailable":
-            limitations.append("Filesystem birth time is unavailable on this platform; ctime was not treated as creation time.")
-        strengths.append(f"Integrity status: {record.integrity_status}.")
+            limitations.append("Container includes structural hidden-content warnings that still need analyst explanation.")
+        if record.duplicate_group:
+            strengths.append(f"Duplicate relation available: {record.duplicate_relation or record.duplicate_group}.")
         if record.visible_text_excerpt:
-            strengths.append("On-screen text clues were preserved for later corroboration.")
+            strengths.append("Visible OCR clues were preserved for later corroboration.")
+        if record.integrity_status:
+            strengths.append(f"Integrity status: {record.integrity_status}.")
         if not strengths:
             strengths.append("Hashes and case-scoped custody logging remain available.")
         return "Strengths: " + " ".join(strengths) + " Limitations: " + " ".join(limitations)
@@ -480,7 +499,7 @@ class CaseManager:
         stats.duplicates_count = len({record.duplicate_group for record in self.records if record.duplicate_group})
         stats.avg_score = round(sum(r.suspicion_score for r in self.records) / len(self.records)) if self.records else 0
         stats.parser_issue_count = sum(1 for record in self.records if record.parser_status != "Valid" or record.signature_status == "Mismatch")
-        stats.hidden_content_count = sum(1 for record in self.records if record.hidden_code_indicators)
+        stats.hidden_content_count = sum(1 for record in self.records if record.hidden_code_indicators or record.hidden_suspicious_embeds or record.hidden_carved_files)
         stats.bookmarked_count = sum(1 for record in self.records if record.bookmarked)
         stats.validation_summary = self.validation_summary()
         return stats
@@ -561,13 +580,19 @@ class CaseManager:
             return "Validation pending — no evidence analyzed yet."
         gps_ok = sum(1 for record in self.records if record.has_gps and record.gps_confidence >= 80)
         parser_ok = sum(1 for record in self.records if record.parser_status == "Valid")
-        hidden = sum(1 for record in self.records if record.hidden_code_indicators)
+        hidden = sum(1 for record in self.records if record.hidden_code_indicators or record.hidden_suspicious_embeds)
         integrity_ok = sum(1 for record in self.records if record.integrity_status in {"Verified", "Partial"})
         chain_ok, chain_note = self.db.verify_log_chain(self.active_case_id)
         chain_state = "verified" if chain_ok else "needs review"
+        ocr_entities = sum(1 for record in self.records if (record.ocr_location_entities or record.ocr_time_entities or record.ocr_url_entities or record.ocr_username_entities))
+        derived_geo = sum(1 for record in self.records if record.derived_geo_display != "Unavailable" or record.possible_geo_clues)
+        validation = build_validation_metrics(self.records)
+        validation_line = validation.get("summary", "No linked validation dataset was found.")
         return (
             f"GPS strong anchors {gps_ok}/{len(self.records)} • Parser clean {parser_ok}/{len(self.records)} • "
-            f"Hidden/code hits {hidden} • Integrity checked {integrity_ok}/{len(self.records)} • Custody chain {chain_state}"
+            f"OCR/entity-rich items {ocr_entities}/{len(self.records)} • Derived geo leads {derived_geo}/{len(self.records)} • "
+            f"Hidden/code hits {hidden} • Integrity checked {integrity_ok}/{len(self.records)} • Custody chain {chain_state} • "
+            f"Validation: {validation_line}"
         )
 
     def export_chain_of_custody(self) -> str:
