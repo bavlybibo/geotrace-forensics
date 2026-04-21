@@ -3,7 +3,6 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable
 
 from .models import EvidenceRecord
 
@@ -48,6 +47,12 @@ class CaseDatabase:
                 )
                 """
             )
+
+    def reset_case(self) -> None:
+        with self._connect() as connection:
+            connection.execute("DELETE FROM evidence")
+            connection.execute("DELETE FROM custody_log")
+            connection.commit()
 
     def upsert_evidence(self, record: EvidenceRecord) -> None:
         with self._connect() as connection:

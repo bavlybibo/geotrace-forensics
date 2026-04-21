@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-import os
+import contextlib
+import io
 import re
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 import exifread
-from PIL import Image, ImageStat
+from PIL import Image, ImageSequence, ImageStat, UnidentifiedImageError
 
 try:
     from pillow_heif import register_heif_opener  # type: ignore
@@ -32,7 +33,6 @@ SUPPORTED_EXTENSIONS = {
     ".heif",
 }
 
-
 ORIENTATION_MAP = {
     "1": "Normal",
     "2": "Mirrored Horizontal",
@@ -42,6 +42,29 @@ ORIENTATION_MAP = {
     "6": "Rotated 90° CW",
     "7": "Mirrored Horizontal + Rotated 90° CW",
     "8": "Rotated 270° CW",
+}
+
+SIGNATURE_MAP = {
+    b"\x89PNG\r\n\x1a\n": ("PNG", "PNG signature"),
+    b"\xff\xd8\xff": ("JPEG", "JPEG SOI"),
+    b"GIF87a": ("GIF", "GIF87a"),
+    b"GIF89a": ("GIF", "GIF89a"),
+    b"BM": ("BMP", "BMP header"),
+    b"II*\x00": ("TIFF", "TIFF little-endian"),
+    b"MM\x00*": ("TIFF", "TIFF big-endian"),
+}
+
+EXTENSION_FAMILY = {
+    ".jpg": "JPEG",
+    ".jpeg": "JPEG",
+    ".png": "PNG",
+    ".tif": "TIFF",
+    ".tiff": "TIFF",
+    ".webp": "WEBP",
+    ".bmp": "BMP",
+    ".gif": "GIF",
+    ".heic": "HEIC",
+    ".heif": "HEIF",
 }
 
 
@@ -63,29 +86,97 @@ def extract_file_times(file_path: Path) -> Tuple[str, str]:
     return human_datetime(created_ts) if created_ts else "Unknown", human_datetime(modified_ts) if modified_ts else "Unknown"
 
 
+def sniff_file_signature(file_path: Path) -> Tuple[str, str]:
+    try:
+        head = file_path.read_bytes()[:32]
+    except Exception:
+        return "Unknown", "Unreadable"
+
+    for prefix, resolved in SIGNATURE_MAP.items():
+        if head.startswith(prefix):
+            return resolved
+
+    if len(head) >= 12 and head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "WEBP", "RIFF/WEBP"
+
+    if len(head) >= 16 and head[4:8] == b"ftyp":
+        brand = head[8:16].decode("latin1", errors="ignore").strip("\x00 ")
+        if "heic" in brand.lower():
+            return "HEIC", f"ISO BMFF/{brand}"
+        if "heif" in brand.lower() or "mif1" in brand.lower():
+            return "HEIF", f"ISO BMFF/{brand}"
+
+    return "Unknown", "Unknown"
+
+
+def format_trust_for_extension(file_path: Path, signature_family: str) -> str:
+    expected = EXTENSION_FAMILY.get(file_path.suffix.lower(), "Unknown")
+    if expected == "Unknown" and signature_family == "Unknown":
+        return "Weak"
+    if signature_family == "Unknown":
+        return "Weak"
+    if expected == signature_family:
+        return "Verified"
+    if expected == "HEIC" and signature_family in {"HEIC", "HEIF"}:
+        return "Verified"
+    if expected == "HEIF" and signature_family in {"HEIF", "HEIC"}:
+        return "Verified"
+    return "Mismatch"
+
+
 def extract_basic_image_info(file_path: Path) -> Dict[str, str | int | bool | float]:
+    signature_family, signature_label = sniff_file_signature(file_path)
+    declared_format = EXTENSION_FAMILY.get(file_path.suffix.lower(), file_path.suffix.upper().replace(".", "") or "Unknown")
     info: Dict[str, str | int | bool | float] = {
         "width": 0,
         "height": 0,
-        "format_name": "Unknown",
+        "format_name": declared_format,
+        "declared_format": declared_format,
+        "detected_format": signature_family,
         "color_mode": "Unknown",
         "has_alpha": False,
         "dpi": "N/A",
         "megapixels": 0.0,
         "aspect_ratio": "Unknown",
         "brightness_mean": 0.0,
+        "parser_status": "Failed",
+        "preview_status": "Unavailable",
+        "structure_status": "Suspicious",
+        "format_signature": signature_label,
+        "format_trust": format_trust_for_extension(file_path, signature_family),
+        "parse_error": "",
+        "frame_count": 1,
+        "is_animated": False,
+        "animation_duration_ms": 0,
     }
     try:
         with Image.open(file_path) as image:
+            image.load()
+            actual_format = (image.format or signature_family or declared_format or "Unknown").upper()
+            info["parser_status"] = "Valid"
             info["width"] = image.width
             info["height"] = image.height
-            info["format_name"] = image.format or file_path.suffix.upper().replace(".", "")
+            info["format_name"] = actual_format
+            info["detected_format"] = actual_format if actual_format != "UNKNOWN" else signature_family
             info["color_mode"] = image.mode
             info["has_alpha"] = "A" in image.mode
             info["megapixels"] = round((image.width * image.height) / 1_000_000, 2) if image.width and image.height else 0.0
             if image.width and image.height:
                 info["aspect_ratio"] = f"{image.width}:{image.height}"
-            grayscale = image.convert("L")
+            preview_frame = image
+            if getattr(image, "is_animated", False):
+                info["is_animated"] = True
+                info["frame_count"] = max(1, int(getattr(image, "n_frames", 1)))
+                info["structure_status"] = "Animated"
+                preview_frame = next(iter(ImageSequence.Iterator(image))).copy()
+                duration = image.info.get("duration")
+                if isinstance(duration, (int, float)):
+                    info["animation_duration_ms"] = int(duration) * int(info["frame_count"])
+                info["preview_status"] = "First Frame"
+            else:
+                info["preview_status"] = "Ready"
+                info["structure_status"] = "Valid"
+            grayscale = preview_frame.convert("L")
             stat = ImageStat.Stat(grayscale)
             info["brightness_mean"] = round(float(stat.mean[0]), 2) if stat.mean else 0.0
             dpi = image.info.get("dpi")
@@ -93,14 +184,35 @@ def extract_basic_image_info(file_path: Path) -> Dict[str, str | int | bool | fl
                 info["dpi"] = f"{int(dpi[0])} x {int(dpi[1])}"
             elif dpi:
                 info["dpi"] = str(dpi)
-    except Exception:
-        pass
-    return info
+    except UnidentifiedImageError as exc:
+        info["parse_error"] = f"Unsupported or malformed image structure: {exc.__class__.__name__}"
+        info["parser_status"] = "Failed"
+        info["structure_status"] = "Corrupt"
+    except Exception as exc:
+        info["parse_error"] = f"Decoder failure: {exc.__class__.__name__}"
+        info["parser_status"] = "Failed"
+        info["structure_status"] = "Corrupt"
 
+    if info["detected_format"] in {"Unknown", "UNKNOWN"} and signature_family != "Unknown":
+        info["detected_format"] = signature_family
+    if info["format_trust"] == "Mismatch":
+        info["structure_status"] = "Mismatch" if info["parser_status"] == "Valid" else "Corrupt"
+        if info["parser_status"] == "Valid":
+            info["preview_status"] = "Ready (Mismatch)"
+    if info["parser_status"] == "Failed":
+        info["preview_status"] = "Decoder Failed"
+        if not info["parse_error"]:
+            info["parse_error"] = f"The file could not be rendered by Pillow. Extension suggests {declared_format}; signature says {signature_label}."
+        if signature_family != "Unknown":
+            info["format_name"] = signature_family
+            info["detected_format"] = signature_family
+    return info
 
 def compute_perceptual_hash(file_path: Path) -> str:
     try:
         with Image.open(file_path) as image:
+            if getattr(image, "is_animated", False):
+                image.seek(0)
             image = image.convert("L").resize((9, 8))
             pixels = list(image.getdata())
         rows = [pixels[i * 9:(i + 1) * 9] for i in range(8)]
@@ -110,17 +222,18 @@ def compute_perceptual_hash(file_path: Path) -> str:
                 bits.append("1" if row[i] > row[i + 1] else "0")
         return f"{int(''.join(bits), 2):016x}"
     except Exception:
-        return "0" * 16
+        return "Unavailable"
 
 
 def extract_exif(file_path: Path) -> Dict[str, str]:
     data: Dict[str, str] = {}
+    sink = io.StringIO()
     try:
-        with file_path.open("rb") as handle:
+        with file_path.open("rb") as handle, contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
             tags = exifread.process_file(handle, details=False)
         for tag, value in tags.items():
             data[str(tag)] = str(value)
-        data["__raw_tags__"] = tags  # internal use
+        data["__raw_tags__"] = tags
     except Exception:
         data["__raw_tags__"] = {}
     return data
@@ -159,11 +272,7 @@ def infer_timestamp_from_filename(file_name: str) -> Optional[str]:
 
 
 def extract_timestamp(exif: Dict[str, str], file_path: Path | None = None) -> Tuple[str, str]:
-    embedded = (
-        exif.get("EXIF DateTimeOriginal")
-        or exif.get("Image DateTime")
-        or exif.get("EXIF DateTimeDigitized")
-    )
+    embedded = exif.get("EXIF DateTimeOriginal") or exif.get("Image DateTime") or exif.get("EXIF DateTimeDigitized")
     if embedded:
         return embedded, "Embedded EXIF"
     if file_path is not None:
@@ -221,9 +330,21 @@ def extract_gps(exif: Dict[str, str]):
         return None, None, None, "Unavailable"
 
 
-def classify_source(file_path: Path, exif: Dict[str, str], software: str, width: int, height: int) -> str:
+def classify_source(
+    file_path: Path,
+    exif: Dict[str, str],
+    software: str,
+    width: int,
+    height: int,
+    parser_status: str = "Valid",
+    format_trust: str = "Verified",
+) -> str:
     name = file_path.name.lower()
     suffix = file_path.suffix.lower()
+    if format_trust == "Mismatch":
+        return "Signature Mismatch Asset"
+    if parser_status == "Failed":
+        return "Malformed / Unsupported Asset"
     if "screenshot" in name:
         return "Screenshot"
     if "whatsapp image" in name or "telegram" in name or "export" in name:
@@ -264,6 +385,10 @@ def build_osint_leads(
     gps_display: str,
     width: int,
     height: int,
+    format_trust: str = "Verified",
+    declared_format: str = "Unknown",
+    detected_format: str = "Unknown",
+    parser_status: str = "Valid",
 ) -> list[str]:
     leads: list[str] = []
     leads.append(f"Preserve original path and hash pair for later chain-of-custody validation: {file_path.name}.")
@@ -275,6 +400,10 @@ def build_osint_leads(
         leads.append(f"Software tag '{software}' may indicate export or editing history. Validate whether this matches the alleged acquisition workflow.")
     if gps_display != "Unavailable":
         leads.append(f"Verify GPS coordinates externally and compare with maps, CCTV coverage, or witness statements around {gps_display}.")
+    if format_trust == "Mismatch":
+        leads.append(f"Header signature suggests {detected_format}, while the extension suggests {declared_format}. Preserve the original and validate whether the mismatch is benign export behavior or deliberate disguise.")
+    if parser_status != "Valid":
+        leads.append("Run a secondary parser before relying on preview output or structural assumptions from this file.")
     if source_type in {"Messaging Export", "Screenshot", "Screenshot / Export"}:
         leads.append("Messaging-export indicators suggest reduced embedded metadata; prioritize filename patterns, chat context, and filesystem times.")
     if width and height:

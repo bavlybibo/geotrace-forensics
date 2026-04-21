@@ -74,6 +74,9 @@ class ReportService:
                     "device_model": record.device_model,
                     "software": record.software,
                     "format": record.format_name,
+                    "declared_format": record.declared_format,
+                    "detected_format": record.detected_format,
+                    "format_trust": record.format_trust,
                     "dimensions": record.dimensions,
                     "gps": {
                         "display": record.gps_display,
@@ -89,7 +92,7 @@ class ReportService:
                     "risk_level": record.risk_level,
                     "sha256": record.sha256,
                     "md5": record.md5,
-                    "perceptual_hash": record.perceptual_hash,
+                    "perceptual_hash": None if record.perceptual_hash in {"", "Unavailable", "0" * 16} else record.perceptual_hash,
                 }
             )
         output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -104,18 +107,15 @@ class ReportService:
         duplicate_groups = sorted({record.duplicate_group for record in records if record.duplicate_group})
         screenshots = sum(1 for record in records if "Screenshot" in record.source_type or "Messaging" in record.source_type)
         avg_score = round(sum(r.suspicion_score for r in records) / total) if total else 0
-        generated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        dominant_source = (
-            max({r.source_type for r in records}, key=lambda s: sum(1 for r in records if r.source_type == s))
-            if total
-            else "Unknown"
-        )
+        generated = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         def badge_class(level: str) -> str:
             return {"High": "badge-high", "Medium": "badge-medium"}.get(level, "badge-low")
 
-        def chip(text: str, level: str = "neutral") -> str:
-            return f"<span class='chip chip-{html.escape(level)}'>{html.escape(text)}</span>"
+        if total:
+            dominant_source = max({r.source_type for r in records}, key=lambda s: sum(1 for r in records if r.source_type == s))
+        else:
+            dominant_source = "Unknown"
 
         rows = "\n".join(
             f"""
@@ -132,56 +132,30 @@ class ReportService:
                 <td>{record.suspicion_score}</td>
                 <td>{record.confidence_score}%</td>
                 <td><span class="risk {badge_class(record.risk_level)}">{html.escape(record.risk_level)}</span></td>
-                <td>{html.escape(record.integrity_status)}</td>
+                <td>{html.escape(record.analyst_verdict)}</td>
             </tr>
             """
             for record in records
         )
 
-        evidence_cards = []
-        for record in records[:12]:
-            image_html = ""
-            try:
-                image_html = f"<img class='thumb' src='{record.file_path.as_uri()}' alt='{html.escape(record.file_name)}'>"
-            except Exception:
-                image_html = ""
-            leads_html = "".join(f"<li>{html.escape(lead)}</li>" for lead in record.osint_leads[:3])
-            flags_html = "".join(f"<li>{html.escape(flag)}</li>" for flag in record.anomaly_reasons[:3])
-            evidence_cards.append(
-                f"""
-                <section class="detail-card">
-                    <div class="detail-header">
-                        <div>
-                            <h3>{html.escape(record.evidence_id)} — {html.escape(record.file_name)}</h3>
-                            <div class="pill-row">
-                                {chip(record.source_type, 'cyan')}
-                                {chip(record.timestamp_source, 'neutral')}
-                                {chip(f'Score {record.suspicion_score}', 'neutral')}
-                                {chip(record.risk_level, 'risk' if record.risk_level == 'High' else 'warn' if record.risk_level == 'Medium' else 'good')}
-                            </div>
-                        </div>
-                        {image_html}
-                    </div>
-                    <div class="detail-grid">
-                        <div>
-                            <p><strong>Analyst verdict:</strong> {html.escape(record.analyst_verdict)}</p>
-                            <p><strong>Timestamp:</strong> {html.escape(record.timestamp)} ({html.escape(record.timestamp_source)})</p>
-                            <p><strong>GPS:</strong> {html.escape(record.gps_display)}</p>
-                            <p><strong>Device / Software:</strong> {html.escape(record.device_model)} / {html.escape(record.software)}</p>
-                            <p><strong>Hashes:</strong><br><code>{html.escape(record.sha256)}</code></p>
-                        </div>
-                        <div>
-                            <h4>Key Flags</h4>
-                            <ul>{flags_html or '<li>No major metadata anomaly was flagged.</li>'}</ul>
-                            <h4>OSINT Leads</h4>
-                            <ul>{leads_html}</ul>
-                        </div>
-                    </div>
-                </section>
-                """
-            )
-        evidence_cards_html = "\n".join(evidence_cards)
-        custody_html = "<br>".join(html.escape(line) for line in custody_log.splitlines()[:40]) if custody_log else "No custody actions logged."
+        evidence_cards = "\n".join(
+            f"""
+            <div class="detail-card">
+                <h3>{html.escape(record.evidence_id)} — {html.escape(record.file_name)}</h3>
+                <div class="pill-row">
+                    <span class="pill">{html.escape(record.source_type)}</span>
+                    <span class="pill">{html.escape(record.timestamp_source)}</span>
+                    <span class="pill">{html.escape(record.gps_display)}</span>
+                    <span class="pill">Score {record.suspicion_score}</span>
+                </div>
+                <p>{html.escape(record.analyst_verdict)}</p>
+                <ul>{''.join(f'<li>{html.escape(lead)}</li>' for lead in record.osint_leads[:4])}</ul>
+            </div>
+            """
+            for record in records[:10]
+        )
+
+        custody_html = "<br>".join(html.escape(line) for line in custody_log.splitlines()[:24]) if custody_log else "No custody actions logged."
 
         chart_blocks = []
         for file_name, title in [
@@ -197,15 +171,6 @@ class ReportService:
                 )
         charts_html = "\n".join(chart_blocks) or "<p class='muted'>No charts were available at report generation time.</p>"
 
-        methodology = [
-            "SHA-256 and MD5 hashing on evidence import to preserve integrity tracking.",
-            "Timestamp recovery hierarchy: EXIF → filename pattern → filesystem times.",
-            "Perceptual hashing to expose visually similar or re-exported image clusters.",
-            "Context-aware scoring that distinguishes screenshots/exports from native camera originals.",
-            "Analyst-style verdict generation with recommended next actions and evidentiary caveats.",
-        ]
-        methodology_html = "".join(f"<li>{html.escape(item)}</li>" for item in methodology)
-
         overall_assessment = (
             f"This case package contains <strong>{total}</strong> image artifacts. The dominant source profile is "
             f"<strong>{html.escape(dominant_source)}</strong>, with <strong>{gps_count}</strong> GPS-bearing files, "
@@ -220,16 +185,16 @@ class ReportService:
             <meta charset="utf-8">
             <title>GeoTrace Forensics X Report</title>
             <style>
-                body {{ font-family: 'Segoe UI', Arial, sans-serif; background:#04101b; color:#eef8ff; margin:0; padding:28px; }}
-                .hero {{ background: linear-gradient(135deg, #08192d, #0c2441); border:1px solid #173c63; border-radius:28px; padding:32px; margin-bottom:24px; box-shadow:0 16px 34px rgba(0,0,0,.18); }}
-                h1,h2,h3,h4 {{ color:#7edcff; margin-top:0; }}
+                body {{ font-family: 'Segoe UI', Arial, sans-serif; background:#07111a; color:#eef8ff; margin:0; padding:28px; }}
+                .hero {{ background: linear-gradient(135deg, #0a1726, #10253b 58%, #17304b); border:1px solid #224b6c; border-radius:28px; padding:32px; margin-bottom:24px; box-shadow:0 20px 40px rgba(0,0,0,.20); }}
+                h1,h2,h3 {{ color:#7fe4ff; margin-top:0; }}
                 p, li {{ line-height:1.65; }}
                 .muted {{ color:#93b3cf; font-size:13px; }}
                 .metrics {{ display:grid; grid-template-columns:repeat(6, minmax(130px,1fr)); gap:16px; margin-top:22px; }}
-                .metric {{ background:#071425; border:1px solid #173c63; border-radius:18px; padding:18px; }}
+                .metric {{ background:#0b1622; border:1px solid #244a6f; border-radius:18px; padding:18px; }}
                 .metric .value {{ font-size:32px; font-weight:800; color:#ffffff; }}
-                .card {{ background:#081525; border:1px solid #173c63; border-radius:22px; padding:24px; margin-bottom:22px; }}
-                .grid-two {{ display:grid; grid-template-columns:1.1fr .9fr; gap:20px; }}
+                .card {{ background:#0a1623; border:1px solid #224867; border-radius:22px; padding:24px; margin-bottom:22px; }}
+                .grid-two {{ display:grid; grid-template-columns:1.05fr .95fr; gap:20px; }}
                 .grid-charts {{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }}
                 .chart-card {{ background:#06111d; border:1px solid #143553; border-radius:18px; padding:16px; }}
                 .chart-card img {{ width:100%; border-radius:14px; border:1px solid #1f496f; background:#030b15; }}
@@ -241,18 +206,11 @@ class ReportService:
                 .badge-high {{ background:#351621; color:#ffadbb; border:1px solid #874a5c; }}
                 .badge-medium {{ background:#342b14; color:#ffd48b; border:1px solid #7a6331; }}
                 .badge-low {{ background:#143124; color:#97efc5; border:1px solid #2f7753; }}
-                .detail-card {{ background:#06111d; border:1px solid #173b60; border-radius:20px; padding:18px; margin-bottom:16px; }}
-                .detail-header {{ display:flex; justify-content:space-between; gap:18px; align-items:flex-start; }}
-                .detail-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:14px; }}
-                .thumb {{ width:220px; max-height:180px; object-fit:contain; border-radius:14px; border:1px solid #1f496f; background:#030b15; }}
-                .pill-row {{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }}
-                .chip {{ display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:700; }}
-                .chip-neutral {{ background:#10243f; border:1px solid #27547f; color:#dff5ff; }}
-                .chip-cyan {{ background:#0d2943; border:1px solid #36bdff; color:#9be7ff; }}
-                .chip-good {{ background:#133124; border:1px solid #2f7753; color:#97efc5; }}
-                .chip-warn {{ background:#342b14; border:1px solid #7a6331; color:#ffd48b; }}
-                .chip-risk {{ background:#351621; border:1px solid #874a5c; color:#ffadbb; }}
-                code {{ font-family:Consolas, monospace; color:#b9f2ff; word-break:break-all; }}
+                .detail-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }}
+                .detail-card {{ background:#06111d; border:1px solid #173b60; border-radius:18px; padding:18px; }}
+                .pill-row {{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }}
+                .pill {{ background:#10243f; border:1px solid #27547f; border-radius:999px; padding:4px 10px; color:#dff5ff; font-size:13px; }}
+                code {{ font-family:Consolas, monospace; color:#b9f2ff; }}
             </style>
         </head>
         <body>
@@ -260,12 +218,6 @@ class ReportService:
                 <h1>GeoTrace Forensics X — Investigation Report</h1>
                 <p class="muted">Case: {html.escape(case_name)} | Generated: {generated}</p>
                 <p>{overall_assessment}</p>
-                <div class="pill-row">
-                    {chip(dominant_source, 'cyan')}
-                    {chip(f'GPS Enabled {gps_count}', 'good' if gps_count else 'warn')}
-                    {chip(f'Duplicate Clusters {len(duplicate_groups)}', 'neutral')}
-                    {chip(f'Average Score {avg_score}', 'warn' if avg_score >= 30 else 'good')}
-                </div>
                 <div class="metrics">
                     <div class="metric"><div class="value">{total}</div><div>Images</div></div>
                     <div class="metric"><div class="value">{gps_count}</div><div>GPS Enabled</div></div>
@@ -278,13 +230,19 @@ class ReportService:
 
             <section class="grid-two">
                 <div class="card">
-                    <h2>Executive Summary</h2>
+                    <h2>Analyst Summary</h2>
                     <p>GeoTrace performed integrity hashing, metadata extraction, timestamp recovery, source profiling, duplicate fingerprinting, and analyst-style verdict generation for each evidence item. The scoring model is context-aware, so screenshots and messaging exports are not treated the same way as camera originals.</p>
                     <p><strong>Operational workflow:</strong> Acquire → Verify → Extract → Correlate → Score → Report</p>
                 </div>
                 <div class="card">
                     <h2>Methodology Highlights</h2>
-                    <ul>{methodology_html}</ul>
+                    <ul>
+                        <li>SHA-256 and MD5 integrity validation on import.</li>
+                        <li>Timestamp recovery hierarchy: EXIF → filename pattern → filesystem times.</li>
+                        <li>Perceptual hashing to expose near-duplicate media clusters.</li>
+                        <li>Location triage when native GPS is present.</li>
+                        <li>Analyst-style verdicting to explain probable source workflow and reliability posture.</li>
+                    </ul>
                 </div>
             </section>
 
@@ -307,16 +265,18 @@ class ReportService:
                             <th>Score</th>
                             <th>Confidence</th>
                             <th>Risk</th>
-                            <th>Integrity</th>
+                            <th>Analyst Verdict</th>
                         </tr>
                     </thead>
-                    <tbody>{rows}</tbody>
+                    <tbody>
+                        {rows}
+                    </tbody>
                 </table>
             </section>
 
             <section class="card">
                 <h2>Evidence Detail Cards</h2>
-                {evidence_cards_html}
+                <div class="detail-grid">{evidence_cards}</div>
             </section>
 
             <section class="card">
@@ -361,10 +321,10 @@ class ReportService:
             Spacer(1, 10),
             Paragraph("Methodology", heading),
             Paragraph("Acquire → Verify → Extract → Correlate → Score → Report", normal),
-            Spacer(1, 10),
+            Spacer(1, 12),
         ]
 
-        table_data = [["ID", "File", "Source", "Timestamp", "GPS", "Score", "Risk"]]
+        table_data = [["ID", "File", "Source", "Time", "GPS", "Score", "Risk"]]
         for record in records:
             table_data.append(
                 [
@@ -377,31 +337,28 @@ class ReportService:
                     record.risk_level,
                 ]
             )
+
         table = Table(table_data, repeatRows=1)
         table.setStyle(
             TableStyle(
                 [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#123b67")),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#8eb8d6")),
-                    ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#f5fbff")),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#f5fbff"), colors.HexColor("#eaf6ff")]),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0c4c8a")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#b6c6d8")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#f7fbff")),
                 ]
             )
         )
-        story.extend([Paragraph("Evidence Matrix", heading), table, Spacer(1, 16)])
-
-        for record in records[:8]:
-            story.append(Paragraph(f"{record.evidence_id} — {record.file_name}", heading))
+        story.append(table)
+        story.append(Spacer(1, 14))
+        story.append(Paragraph("Analyst Detail Cards", heading))
+        for record in records[:6]:
+            story.append(Paragraph(f"<b>{record.evidence_id} — {record.file_name}</b>", normal))
             story.append(Paragraph(record.analyst_verdict, normal))
-            story.append(Paragraph(f"Timestamp: {record.timestamp} ({record.timestamp_source})", normal))
-            story.append(Paragraph(f"GPS: {record.gps_display}", normal))
-            story.append(Paragraph(f"Device / Software: {record.device_model} / {record.software}", normal))
-            if record.file_path.exists():
-                try:
-                    story.append(Image(str(record.file_path), width=220, height=150))
-                except Exception:
-                    pass
-            story.append(Spacer(1, 14))
+            for lead in record.osint_leads[:3]:
+                story.append(Paragraph(f"• {lead}", normal))
+            story.append(Spacer(1, 8))
         doc.build(story)
         return output

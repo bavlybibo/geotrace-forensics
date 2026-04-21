@@ -32,8 +32,10 @@ class CaseManager:
         self.case_root.mkdir(parents=True, exist_ok=True)
         self.db = CaseDatabase(self.case_root / "geotrace_case.db")
         self.records: List[EvidenceRecord] = []
+        self.case_id = "GT-2026-001"
 
     def load_images(self, paths: List[Path]) -> List[EvidenceRecord]:
+        self.db.reset_case()
         collected: List[EvidenceRecord] = []
         for file_path in paths:
             if file_path.is_dir():
@@ -46,11 +48,15 @@ class CaseManager:
         assign_duplicate_groups(collected)
         baseline_device = dominant_device(collected)
         for record in collected:
-            score, confidence, level, reasons = detect_anomalies(record, baseline_device, record.file_path)
+            score, confidence, level, reasons, authenticity, metadata, technical, breakdown = detect_anomalies(record, baseline_device, record.file_path)
             record.suspicion_score = score
             record.confidence_score = confidence
             record.risk_level = level
             record.anomaly_reasons = reasons
+            record.authenticity_score = authenticity
+            record.metadata_score = metadata
+            record.technical_score = technical
+            record.score_breakdown = breakdown
             record.analyst_verdict = self._derive_analyst_verdict(record)
             if not record.osint_leads:
                 record.osint_leads = build_osint_leads(
@@ -63,6 +69,10 @@ class CaseManager:
                     record.gps_display,
                     record.width,
                     record.height,
+                    record.format_trust,
+                    record.declared_format,
+                    record.detected_format,
+                    record.parser_status,
                 )
             self.db.upsert_evidence(record)
             self.db.log_action(record.evidence_id, "ANALYZE", f"Risk={level}, Score={score}, Confidence={confidence}")
@@ -89,6 +99,8 @@ class CaseManager:
             software,
             int(basic["width"]),
             int(basic["height"]),
+            str(basic["parser_status"]),
+            str(basic["format_trust"]),
         )
         record = EvidenceRecord(
             evidence_id=evidence_id,
@@ -109,6 +121,8 @@ class CaseManager:
             software=software,
             source_type=source_type,
             format_name=str(basic["format_name"]),
+            declared_format=str(basic["declared_format"]),
+            detected_format=str(basic["detected_format"]),
             color_mode=str(basic["color_mode"]),
             has_alpha=bool(basic["has_alpha"]),
             dpi=str(basic["dpi"]),
@@ -129,6 +143,15 @@ class CaseManager:
             megapixels=float(basic["megapixels"]),
             aspect_ratio=str(basic["aspect_ratio"]),
             brightness_mean=float(basic["brightness_mean"]),
+            parser_status=str(basic["parser_status"]),
+            preview_status=str(basic["preview_status"]),
+            structure_status=str(basic["structure_status"]),
+            format_signature=str(basic["format_signature"]),
+            format_trust=str(basic["format_trust"]),
+            parse_error=str(basic["parse_error"]),
+            frame_count=int(basic["frame_count"]),
+            is_animated=bool(basic["is_animated"]),
+            animation_duration_ms=int(basic["animation_duration_ms"]),
         )
         record.osint_leads = build_osint_leads(
             file_path,
@@ -140,6 +163,10 @@ class CaseManager:
             gps_display,
             record.width,
             record.height,
+            record.format_trust,
+            record.declared_format,
+            record.detected_format,
+            record.parser_status,
         )
         self.db.log_action(record.evidence_id, "IMPORT", f"Imported {record.file_name}")
         return record
@@ -152,6 +179,10 @@ class CaseManager:
             verdict_bits.append("The file retains characteristics of a camera-origin image with richer acquisition metadata.")
         elif record.source_type == "Edited / Exported":
             verdict_bits.append("The metadata profile suggests the media likely passed through an editing or export workflow.")
+        elif record.source_type == "Malformed / Unsupported Asset":
+            verdict_bits.append("The file could not be cleanly decoded, so it should be treated as malformed or unsupported until a second parser confirms its structure.")
+        elif record.source_type == "Signature Mismatch Asset":
+            verdict_bits.append(f"The file extension suggests {record.declared_format}, but the detected signature points to {record.detected_format}. Treat it as a mismatched asset until workflow context explains the discrepancy.")
         else:
             verdict_bits.append("The source profile is mixed, so the file should be treated as a derivative image until corroborated.")
 
@@ -171,6 +202,14 @@ class CaseManager:
 
         if record.duplicate_group:
             verdict_bits.append(f"Visual fingerprinting links this file to {record.duplicate_group}, which may indicate reposting, versioning, or duplicate capture.")
+        if record.parser_status != "Valid":
+            verdict_bits.append("Parser health is degraded, which means preview, dimensions, and embedded structure should be corroborated before courtroom use.")
+        elif record.format_trust == "Mismatch":
+            verdict_bits.append(f"Format trust is degraded because the declared extension ({record.declared_format}) does not match the detected signature ({record.detected_format}).")
+        elif record.format_trust != "Verified":
+            verdict_bits.append("Format trust is not fully verified because extension and header confidence do not fully align.")
+        elif record.is_animated:
+            verdict_bits.append("The media is animated, so frame-level review is important because the visible first frame may not represent the full sequence.")
 
         if record.risk_level == "High":
             verdict_bits.append("Priority review is recommended because metadata anomalies materially affect source confidence.")
@@ -178,7 +217,6 @@ class CaseManager:
             verdict_bits.append("Moderate review is recommended to verify whether the observed gaps are benign or workflow-driven.")
         else:
             verdict_bits.append("Current metadata signals do not point to aggressive manipulation, but provenance still requires case context.")
-
         return " ".join(verdict_bits)
 
     def build_stats(self) -> CaseStats:
@@ -241,6 +279,17 @@ class CaseManager:
                     "osint_leads": record.osint_leads,
                     "duplicate_group": record.duplicate_group,
                     "analyst_verdict": record.analyst_verdict,
+                    "parser_status": record.parser_status,
+                    "preview_status": record.preview_status,
+                    "structure_status": record.structure_status,
+                    "format_trust": record.format_trust,
+                    "format_signature": record.format_signature,
+                    "declared_format": record.declared_format,
+                    "detected_format": record.detected_format,
+                    "authenticity_score": record.authenticity_score,
+                    "metadata_score": record.metadata_score,
+                    "technical_score": record.technical_score,
+                    "score_breakdown": record.score_breakdown,
                     "note": record.note,
                 }
             )

@@ -25,6 +25,8 @@ class EvidenceRecord:
     software: str = "N/A"
     source_type: str = "Unknown"
     format_name: str = "Unknown"
+    declared_format: str = "Unknown"
+    detected_format: str = "Unknown"
     color_mode: str = "Unknown"
     has_alpha: bool = False
     dpi: str = "N/A"
@@ -54,6 +56,19 @@ class EvidenceRecord:
     brightness_mean: float = 0.0
     duplicate_group: str = ""
     analyst_verdict: str = ""
+    parser_status: str = "Valid"
+    preview_status: str = "Ready"
+    structure_status: str = "Valid"
+    format_signature: str = "Unknown"
+    format_trust: str = "Unverified"
+    parse_error: str = ""
+    frame_count: int = 1
+    is_animated: bool = False
+    animation_duration_ms: int = 0
+    authenticity_score: int = 0
+    metadata_score: int = 0
+    technical_score: int = 0
+    score_breakdown: List[str] = field(default_factory=list)
 
     @property
     def has_gps(self) -> bool:
@@ -64,6 +79,14 @@ class EvidenceRecord:
         if self.width and self.height:
             return f"{self.width} x {self.height}"
         return "Unknown"
+
+    @property
+    def format_summary(self) -> str:
+        if self.format_trust == "Mismatch":
+            return f"{self.declared_format} extension / {self.detected_format} detected"
+        if self.detected_format not in {"", "Unknown"}:
+            return self.detected_format
+        return self.format_name
 
 
 @dataclass
