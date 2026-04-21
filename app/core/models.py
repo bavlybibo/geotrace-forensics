@@ -21,6 +21,8 @@ class EvidenceRecord:
     raw_exif: Dict[str, str] = field(default_factory=dict)
     timestamp: str = "Unknown"
     timestamp_source: str = "Unavailable"
+    timestamp_confidence: int = 0
+    timestamp_verdict: str = "No trusted time anchor recovered yet."
     created_time: str = "Unknown"
     modified_time: str = "Unknown"
     device_model: str = "Unknown"
@@ -43,7 +45,11 @@ class EvidenceRecord:
     gps_longitude: Optional[float] = None
     gps_altitude: Optional[float] = None
     gps_display: str = "Unavailable"
+    gps_source: str = "Unavailable"
+    gps_confidence: int = 0
+    gps_verification: str = "No native GPS recovered."
     anomaly_reasons: List[str] = field(default_factory=list)
+    anomaly_contributors: List[str] = field(default_factory=list)
     osint_leads: List[str] = field(default_factory=list)
     suspicion_score: int = 0
     confidence_score: int = 0
@@ -59,6 +65,7 @@ class EvidenceRecord:
     brightness_mean: float = 0.0
     duplicate_group: str = ""
     analyst_verdict: str = ""
+    courtroom_notes: str = ""
     parser_status: str = "Valid"
     preview_status: str = "Ready"
     structure_status: str = "Valid"
@@ -75,9 +82,11 @@ class EvidenceRecord:
     score_breakdown: List[str] = field(default_factory=list)
     extracted_strings: List[str] = field(default_factory=list)
     hidden_code_indicators: List[str] = field(default_factory=list)
+    hidden_finding_types: List[str] = field(default_factory=list)
     hidden_code_summary: str = "No embedded code-like content detected."
     hidden_content_overview: str = "No embedded text payloads or code-like markers detected."
     urls_found: List[str] = field(default_factory=list)
+    custody_event_summary: List[str] = field(default_factory=list)
 
     @property
     def has_gps(self) -> bool:
@@ -101,6 +110,10 @@ class CaseStats:
     screenshots_count: int = 0
     duplicates_count: int = 0
     avg_score: int = 0
+    parser_issue_count: int = 0
+    hidden_content_count: int = 0
+    bookmarked_count: int = 0
+    validation_summary: str = "Validation pending"
 
 
 @dataclass

@@ -70,12 +70,8 @@ class CaseDatabase:
                 )
                 """
             )
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_custody_case ON custody_log_case(case_id, id DESC)"
-            )
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_evidence_case ON evidence_records(case_id)"
-            )
+            connection.execute("CREATE INDEX IF NOT EXISTS idx_custody_case ON custody_log_case(case_id, id DESC)")
+            connection.execute("CREATE INDEX IF NOT EXISTS idx_evidence_case ON evidence_records(case_id)")
 
     def create_case(self, case_id: str, case_name: str, *, set_active: bool = True) -> None:
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -94,7 +90,10 @@ class CaseDatabase:
     def set_active_case(self, case_id: str) -> None:
         with self._connect() as connection:
             connection.execute("UPDATE cases SET is_active = 0")
-            connection.execute("UPDATE cases SET is_active = 1, updated_at = ? WHERE case_id = ?", (datetime.now(timezone.utc).isoformat(timespec="seconds"), case_id))
+            connection.execute(
+                "UPDATE cases SET is_active = 1, updated_at = ? WHERE case_id = ?",
+                (datetime.now(timezone.utc).isoformat(timespec="seconds"), case_id),
+            )
 
     def rename_case(self, case_id: str, case_name: str) -> None:
         with self._connect() as connection:
@@ -190,10 +189,12 @@ class CaseDatabase:
             )
 
     def log_action(self, case_id: str, evidence_id: Optional[str], action: str, details: str) -> None:
+        normalized_action = (action or "UNKNOWN").strip().upper().replace(" ", "_")
+        normalized_details = (details or "").strip() or "No details provided."
         with self._connect() as connection:
             connection.execute(
                 "INSERT INTO custody_log_case(case_id, action_time, evidence_id, action, details) VALUES (?, ?, ?, ?, ?)",
-                (case_id, datetime.now(timezone.utc).isoformat(timespec="seconds"), evidence_id, action, details),
+                (case_id, datetime.now(timezone.utc).isoformat(timespec="seconds"), evidence_id, normalized_action, normalized_details),
             )
             connection.execute(
                 "UPDATE cases SET updated_at = ? WHERE case_id = ?",
@@ -208,3 +209,16 @@ class CaseDatabase:
                     (case_id,),
                 )
             )
+
+    def fetch_logs_for_evidence(self, case_id: str, evidence_id: str):
+        with self._connect() as connection:
+            return list(
+                connection.execute(
+                    "SELECT action_time, evidence_id, action, details FROM custody_log_case WHERE case_id = ? AND evidence_id = ? ORDER BY id DESC",
+                    (case_id, evidence_id),
+                )
+            )
+
+    def summarize_evidence_events(self, case_id: str, evidence_id: str, limit: int = 6) -> List[str]:
+        rows = self.fetch_logs_for_evidence(case_id, evidence_id)
+        return [f"{row['action_time']} • {row['action']} • {row['details']}" for row in rows[:limit]]

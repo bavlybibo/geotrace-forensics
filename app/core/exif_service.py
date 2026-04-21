@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 try:
     import exifread
@@ -18,7 +18,7 @@ try:
 except Exception:
     pass
 
-from .gps_utils import dms_to_decimal, format_coordinates
+from .gps_utils import dms_to_decimal, format_coordinates, gps_confidence_summary
 
 
 SUPPORTED_EXTENSIONS = {
@@ -256,6 +256,7 @@ def extract_embedded_text_hints(file_path: Path, format_name: str = "Unknown") -
             "summary": "The file bytes could not be read for hidden-content scanning.",
             "overview": "Embedded text and hidden-code scan unavailable.",
             "urls": [],
+            "finding_types": [],
         }
 
     if not blob:
@@ -265,6 +266,7 @@ def extract_embedded_text_hints(file_path: Path, format_name: str = "Unknown") -
             "summary": "No byte content was available for hidden-content scanning.",
             "overview": "Embedded text and hidden-code scan unavailable.",
             "urls": [],
+            "finding_types": [],
         }
 
     ascii_strings = [
@@ -288,40 +290,47 @@ def extract_embedded_text_hints(file_path: Path, format_name: str = "Unknown") -
                 urls.append(match)
 
     suspicious_patterns = [
-        (r"<script\b", "HTML/JavaScript <script> marker"),
-        (r"javascript:", "javascript: URI payload"),
-        (r"<svg\b", "SVG/vector payload marker"),
-        (r"onload=|onerror=", "HTML event-handler payload marker"),
-        (r"<\?php", "PHP code marker"),
-        (r"eval\(", "eval() marker"),
-        (r"document\.cookie|localStorage|sessionStorage", "browser data access marker"),
-        (r"powershell|cmd\.exe|/bin/bash|curl\s|wget\s", "shell / command execution marker"),
-        (r"base64,|frombase64string|atob\(", "base64 payload marker"),
-        (r"import\s+os|subprocess\.|__import__", "Python execution marker"),
-        (r"SELECT\s+.+FROM|UNION\s+SELECT", "SQL payload marker"),
-        (r"token=|api[_-]?key|secret|password=|authorization:", "credential/token marker"),
-        (r"-----BEGIN [A-Z ]+-----", "embedded key / certificate block"),
+        (r"<script\b", "HTML/JavaScript <script> marker", "script"),
+        (r"javascript:", "javascript: URI payload", "script"),
+        (r"<svg\b", "SVG/vector payload marker", "svg"),
+        (r"onload=|onerror=", "HTML event-handler payload marker", "script"),
+        (r"<\?php", "PHP code marker", "code"),
+        (r"eval\(", "eval() marker", "code"),
+        (r"document\.cookie|localStorage|sessionStorage", "browser data access marker", "browser-data"),
+        (r"powershell|cmd\.exe|/bin/bash|curl\s|wget\s", "shell / command execution marker", "command"),
+        (r"base64,|frombase64string|atob\(", "base64 payload marker", "encoded"),
+        (r"import\s+os|subprocess\.|__import__", "Python execution marker", "code"),
+        (r"SELECT\s+.+FROM|UNION\s+SELECT", "SQL payload marker", "sql"),
+        (r"token=|api[_-]?key|secret|password=|authorization:", "credential/token marker", "credential"),
+        (r"-----BEGIN [A-Z ]+-----", "embedded key / certificate block", "credential"),
     ]
     code_indicators: list[str] = []
     preview_strings: list[str] = []
+    finding_types: List[str] = []
     for item in cleaned:
         lower = item.lower()
         matched = False
-        for pattern, label in suspicious_patterns:
+        for pattern, label, finding_type in suspicious_patterns:
             if re.search(pattern, item, flags=re.IGNORECASE):
                 indicator = f"{label}: {item[:140]}"
                 if indicator not in code_indicators:
                     code_indicators.append(indicator)
+                if finding_type not in finding_types:
+                    finding_types.append(finding_type)
                 matched = True
         if matched or any(token in lower for token in ["http://", "https://", "data:", "script", "token", "secret", "password", "key", "cmd", "curl", "wget"]):
             if item not in preview_strings:
                 preview_strings.append(item[:180])
+            if ("url" not in finding_types) and ("http://" in lower or "https://" in lower):
+                finding_types.append("url")
         if len(preview_strings) >= 12 and len(code_indicators) >= 8:
             break
 
     format_hint = str(format_name or file_path.suffix.upper().replace('.', '') or 'Unknown')
     if file_path.suffix.lower() == '.svg' or any('<svg' in s.lower() for s in cleaned[:8]):
         code_indicators.insert(0, 'SVG content can legally contain scripts, hyperlinks, CSS, and embedded XML payloads.')
+        if 'svg' not in finding_types:
+            finding_types.insert(0, 'svg')
 
     if code_indicators:
         summary = (
@@ -346,6 +355,7 @@ def extract_embedded_text_hints(file_path: Path, format_name: str = "Unknown") -
         "summary": summary,
         "overview": overview,
         "urls": urls[:12],
+        "finding_types": finding_types[:8],
     }
 
 
@@ -382,9 +392,12 @@ def infer_timestamp_from_filename(file_name: str) -> Optional[str]:
 
 
 def extract_timestamp(exif: Dict[str, str], file_path: Path | None = None) -> Tuple[str, str]:
-    embedded = exif.get("EXIF DateTimeOriginal") or exif.get("Image DateTime") or exif.get("EXIF DateTimeDigitized")
-    if embedded:
-        return embedded, "Embedded EXIF"
+    if exif.get("EXIF DateTimeOriginal"):
+        return exif["EXIF DateTimeOriginal"], "Native EXIF Original"
+    if exif.get("Image DateTime"):
+        return exif["Image DateTime"], "Embedded EXIF"
+    if exif.get("EXIF DateTimeDigitized"):
+        return exif["EXIF DateTimeDigitized"], "Embedded EXIF Digitized"
     if file_path is not None:
         guessed = infer_timestamp_from_filename(file_path.name)
         if guessed:
@@ -438,6 +451,33 @@ def extract_gps(exif: Dict[str, str]):
         return latitude, longitude, altitude, format_coordinates(latitude, longitude)
     except Exception:
         return None, None, None, "Unavailable"
+
+
+def evaluate_timestamp_confidence(timestamp: str, source: str) -> Tuple[int, str]:
+    if timestamp == "Unknown" or source == "Unavailable":
+        return 0, "No trusted time anchor was recovered from EXIF, filename, or filesystem metadata."
+    if source == "Native EXIF Original":
+        return 94, "Timestamp came from EXIF DateTimeOriginal, which is the strongest native time anchor available in this workflow."
+    if source.startswith("Embedded EXIF"):
+        return 84, "Timestamp came from embedded EXIF metadata but not the strongest original-capture tag."
+    if source == "Filename Pattern":
+        return 58, "Timestamp was inferred from the filename. Use it for triage, but corroborate it before courtroom use."
+    if source.startswith("Filesystem"):
+        return 42, "Timestamp came from filesystem metadata, which can drift after copying, syncing, or export operations."
+    return 30, "Timestamp source is weak or inferred and needs external corroboration."
+
+
+def evaluate_gps_details(exif: Dict[str, str], latitude: float | None, longitude: float | None, altitude: float | None, source_type: str) -> Tuple[str, int, str]:
+    gps_source = "Native EXIF" if latitude is not None and longitude is not None else "Unavailable"
+    confidence, note = gps_confidence_summary(
+        latitude,
+        longitude,
+        source=gps_source,
+        altitude=altitude,
+        exif_present=bool(exif),
+        source_type=source_type,
+    )
+    return gps_source, confidence, note
 
 
 def classify_source(file_path: Path, exif: Dict[str, str], software: str, width: int, height: int, parser_status: str = "Valid") -> str:

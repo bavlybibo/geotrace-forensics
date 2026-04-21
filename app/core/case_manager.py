@@ -22,6 +22,8 @@ from .exif_service import (
     extract_gps,
     extract_software,
     extract_timestamp,
+    evaluate_gps_details,
+    evaluate_timestamp_confidence,
     is_supported_image,
 )
 from .hashing import compute_hashes
@@ -119,7 +121,7 @@ class CaseManager:
                 raise AnalysisCancelled()
             if progress_callback:
                 progress_callback(62 + int(index / max(total, 1) * 28), f"Scoring {record.evidence_id} ({index}/{total})")
-            score, confidence, level, reasons, authenticity, metadata, technical, breakdown = detect_anomalies(record, baseline_device, record.file_path)
+            score, confidence, level, reasons, authenticity, metadata, technical, breakdown, contributors = detect_anomalies(record, baseline_device, record.file_path)
             record.suspicion_score = score
             record.confidence_score = confidence
             record.risk_level = level
@@ -128,7 +130,9 @@ class CaseManager:
             record.metadata_score = metadata
             record.technical_score = technical
             record.score_breakdown = breakdown
+            record.anomaly_contributors = contributors
             record.analyst_verdict = self._derive_analyst_verdict(record)
+            record.courtroom_notes = self._derive_courtroom_notes(record)
             if not record.osint_leads:
                 record.osint_leads = build_osint_leads(
                     record.file_path,
@@ -143,6 +147,7 @@ class CaseManager:
                 )
             self.db.upsert_evidence(record)
             self.db.log_action(record.case_id, record.evidence_id, "ANALYZE", f"Risk={level}, Score={score}, Confidence={confidence}")
+            record.custody_event_summary = self.db.summarize_evidence_events(record.case_id, record.evidence_id)
 
         self.records = combined
         self._write_case_snapshot()
@@ -184,6 +189,8 @@ class CaseManager:
             str(basic["parser_status"]),
         )
         embedded_scan = extract_embedded_text_hints(file_path, str(basic["format_name"]))
+        timestamp_confidence, timestamp_verdict = evaluate_timestamp_confidence(timestamp, timestamp_source)
+        gps_source, gps_confidence, gps_verification = evaluate_gps_details(normalized_exif, lat, lon, altitude, source_type)
         record = EvidenceRecord(
             case_id=self.active_case_id,
             case_name=self.active_case_name,
@@ -199,6 +206,8 @@ class CaseManager:
             raw_exif=normalized_exif,
             timestamp=timestamp,
             timestamp_source=timestamp_source,
+            timestamp_confidence=timestamp_confidence,
+            timestamp_verdict=timestamp_verdict,
             created_time=created_time,
             modified_time=modified_time,
             device_model=device_model,
@@ -221,6 +230,9 @@ class CaseManager:
             gps_longitude=lon,
             gps_altitude=altitude,
             gps_display=gps_display,
+            gps_source=gps_source,
+            gps_confidence=gps_confidence,
+            gps_verification=gps_verification,
             width=int(basic["width"]),
             height=int(basic["height"]),
             megapixels=float(basic["megapixels"]),
@@ -238,6 +250,7 @@ class CaseManager:
             animation_duration_ms=int(basic["animation_duration_ms"]),
             extracted_strings=list(embedded_scan.get("strings", [])),
             hidden_code_indicators=list(embedded_scan.get("code_indicators", [])),
+            hidden_finding_types=list(embedded_scan.get("finding_types", [])),
             hidden_code_summary=str(embedded_scan.get("summary", "No embedded code-like content detected.")),
             hidden_content_overview=str(embedded_scan.get("overview", "No embedded text payloads or code-like markers detected.")),
             urls_found=list(embedded_scan.get("urls", [])),
@@ -305,6 +318,29 @@ class CaseManager:
             verdict_bits.append("Current metadata signals do not point to aggressive manipulation, but provenance still requires case context.")
         return " ".join(verdict_bits)
 
+    def _derive_courtroom_notes(self, record: EvidenceRecord) -> str:
+        strengths = []
+        limitations = []
+        if record.timestamp_confidence >= 80:
+            strengths.append("Strong native time anchor available.")
+        elif record.timestamp_confidence > 0:
+            limitations.append("Time anchor is inferred and should be corroborated.")
+        else:
+            limitations.append("No trustworthy native time anchor was recovered.")
+        if record.gps_confidence >= 80:
+            strengths.append("Native GPS coordinates recovered.")
+        elif record.has_gps:
+            limitations.append("GPS exists but needs manual validation against the workflow context.")
+        else:
+            limitations.append("No GPS available; rely on timeline and external corroboration.")
+        if record.parser_status != "Valid" or record.signature_status == "Mismatch":
+            limitations.append("Structure / parser issues reduce courtroom confidence until a second parser confirms the file.")
+        if record.hidden_code_indicators:
+            limitations.append("Container includes embedded code-like strings; context must be explained before courtroom use.")
+        if not strengths:
+            strengths.append("Hashes and case-scoped custody logging remain available.")
+        return "Strengths: " + " ".join(strengths) + " Limitations: " + " ".join(limitations)
+
     def build_stats(self) -> CaseStats:
         stats = CaseStats()
         stats.total_images = len(self.records)
@@ -317,6 +353,10 @@ class CaseManager:
         stats.screenshots_count = sum(1 for record in self.records if "Screenshot" in record.source_type or "Messaging" in record.source_type)
         stats.duplicates_count = len({record.duplicate_group for record in self.records if record.duplicate_group})
         stats.avg_score = round(sum(r.suspicion_score for r in self.records) / len(self.records)) if self.records else 0
+        stats.parser_issue_count = sum(1 for record in self.records if record.parser_status != "Valid" or record.signature_status == "Mismatch")
+        stats.hidden_content_count = sum(1 for record in self.records if record.hidden_code_indicators or record.extracted_strings)
+        stats.bookmarked_count = sum(1 for record in self.records if record.bookmarked)
+        stats.validation_summary = self.validation_summary()
         return stats
 
     def update_note(self, evidence_id: str, note: str) -> None:
@@ -375,6 +415,31 @@ class CaseManager:
     def case_snapshot_path(self, case_id: Optional[str] = None) -> Path:
         case_id = case_id or self.active_case_id
         return self.case_root / case_id / "case_snapshot.json"
+
+    def compare_candidates(self, evidence_id: str) -> List[EvidenceRecord]:
+        base = self.get_record(evidence_id)
+        if base is None:
+            return []
+        peers = [record for record in self.records if record.evidence_id != evidence_id]
+        return sorted(
+            peers,
+            key=lambda record: (
+                record.duplicate_group != base.duplicate_group if base.duplicate_group else True,
+                abs(record.suspicion_score - base.suspicion_score),
+                record.evidence_id,
+            ),
+        )
+
+    def validation_summary(self) -> str:
+        if not self.records:
+            return "Validation pending — no evidence analyzed yet."
+        gps_ok = sum(1 for record in self.records if record.has_gps and record.gps_confidence >= 80)
+        parser_ok = sum(1 for record in self.records if record.parser_status == "Valid")
+        hidden = sum(1 for record in self.records if record.hidden_code_indicators)
+        return (
+            f"GPS strong anchors {gps_ok}/{len(self.records)} • Parser clean {parser_ok}/{len(self.records)} • "
+            f"Hidden/code hits {hidden}"
+        )
 
     def export_chain_of_custody(self) -> str:
         logs = self.db.fetch_logs(self.active_case_id)
