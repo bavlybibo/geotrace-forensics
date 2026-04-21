@@ -30,12 +30,10 @@ def dominant_device(records: Iterable[EvidenceRecord]) -> str:
 def assign_duplicate_groups(records: List[EvidenceRecord]) -> None:
     buckets: dict[str, List[EvidenceRecord]] = {}
     for record in records:
-        if record.perceptual_hash in {"", "Unavailable", "0" * 16}:
-            continue
         buckets.setdefault(record.perceptual_hash, []).append(record)
     group_index = 1
     for phash, items in buckets.items():
-        if len(items) > 1:
+        if len(items) > 1 and phash != "0" * 16:
             group = f"Cluster-{group_index:02d}"
             for item in items:
                 item.duplicate_group = group
@@ -46,67 +44,66 @@ def detect_anomalies(record: EvidenceRecord, baseline_device: str, file_path: Pa
     authenticity = 0
     metadata = 0
     technical = 0
-    confidence = 64
+    confidence = 62
     reasons: List[str] = []
     breakdown: List[str] = []
     source_type = record.source_type
 
-    if record.format_trust == "Mismatch":
-        technical += 32
-        confidence += 8
-        reasons.append(f"The extension suggests {record.declared_format}, but the detected file signature indicates {record.detected_format}. Treat the file as mismatched until validated.")
-        breakdown.append("Technical +32 — extension vs signature mismatch")
-
     if record.parser_status == "Failed":
-        technical += 34
-        confidence += 6
-        reasons.append("Media decoding failed, so preview output and structural assumptions should be validated with a secondary parser.")
-        breakdown.append("Technical +34 — parser / decoder failure")
+        technical += 46
+        confidence += 8
+        reasons.append("Media decoder could not safely parse the file. Treat it as malformed, unsupported, or structurally damaged until validated.")
+        breakdown.append("Technical +46 — parser / decoder failure")
     elif record.structure_status == "Animated":
-        technical += 5
-        reasons.append("Animated media needs frame-aware review because a single frame may not represent the full artifact.")
-        breakdown.append("Technical +5 — animated media handling")
-    elif record.structure_status in {"Suspicious", "Mismatch"}:
-        technical += 14
-        reasons.append("The file structure is unusual for its current trust profile and should be reviewed before relying on it.")
-        breakdown.append("Technical +14 — unusual structure / trust state")
+        technical += 6
+        reasons.append("Animated media requires frame-aware review because the visible first frame may not represent the full artifact.")
+        breakdown.append("Technical +6 — animated media handling")
+    elif record.structure_status == "Suspicious":
+        technical += 18
+        reasons.append("The file structure is unusual for its extension or trust profile and should be validated before relying on it.")
+        breakdown.append("Technical +18 — unusual structure / trust mismatch")
 
-    if record.format_trust == "Weak":
+    if record.signature_status == "Mismatch":
+        technical += 24
+        confidence += 6
+        reasons.append("Extension and detected file signature do not align, which is a strong tamper or corruption indicator.")
+        breakdown.append("Technical +24 — extension vs signature mismatch")
+    elif record.format_trust in {"Weak", "Header-only"}:
         technical += 8
-        reasons.append("The file header could not be strongly verified from the signature, so format trust remains weak.")
-        breakdown.append("Technical +8 — weak format trust")
+        reasons.append("Container trust is limited because only partial header confidence was available for this file.")
+        breakdown.append("Technical +8 — limited container trust")
 
     if not record.exif:
         if source_type in {"Screenshot", "Messaging Export", "Screenshot / Export", "Graphic Asset"}:
-            metadata += 8
-            confidence += 8
+            metadata += 10
+            confidence += 10
             reasons.append("Embedded metadata is limited, which is common for screenshots, exports, and graphic assets.")
-            breakdown.append("Metadata +8 — limited native EXIF in export-like media")
+            breakdown.append("Metadata +10 — limited native EXIF in export-like media")
         else:
-            metadata += 18
+            metadata += 24
             reasons.append("No embedded EXIF metadata was recovered from the file.")
-            breakdown.append("Metadata +18 — no embedded EXIF")
+            breakdown.append("Metadata +24 — no embedded EXIF")
 
     if record.timestamp == "Unknown":
-        authenticity += 14
-        confidence -= 10
-        reasons.append("No recoverable time anchor was found from EXIF, filename, or filesystem fallback.")
-        breakdown.append("Authenticity +14 — no recoverable time anchor")
+        authenticity += 16
+        confidence -= 12
+        reasons.append("Timestamp could not be recovered from EXIF, filename, or filesystem fallback.")
+        breakdown.append("Authenticity +16 — no recoverable time anchor")
     elif record.timestamp_source == "Filename Pattern":
         authenticity += 4
         confidence += 4
         reasons.append("Timestamp was inferred from the filename pattern rather than native EXIF.")
         breakdown.append("Authenticity +4 — filename-based time anchor")
     elif record.timestamp_source.startswith("Filesystem"):
-        authenticity += 7
-        reasons.append("Timestamp depends on filesystem metadata, which can drift during copying or export operations.")
-        breakdown.append("Authenticity +7 — filesystem-derived time anchor")
+        authenticity += 8
+        reasons.append("Timestamp depends on filesystem metadata, which may change during copying or export operations.")
+        breakdown.append("Authenticity +8 — filesystem-derived time anchor")
 
     if not record.has_gps:
         if source_type in {"Camera Photo", "Unknown", "Edited / Exported"}:
-            authenticity += 6
+            authenticity += 7
             reasons.append("No GPS coordinates were available for a photo-like source.")
-            breakdown.append("Authenticity +6 — missing GPS for photo-like media")
+            breakdown.append("Authenticity +7 — missing GPS for photo-like media")
         else:
             reasons.append("GPS is unavailable, which is often normal for screenshots, graphics, and exported messaging media.")
     else:
@@ -116,68 +113,63 @@ def detect_anomalies(record: EvidenceRecord, baseline_device: str, file_path: Pa
     if record.software not in {"N/A", "", "Unknown"}:
         sw = record.software.lower()
         if any(term in sw for term in ["photoshop", "lightroom", "snapseed", "gimp", "canva"]):
-            authenticity += 14
+            authenticity += 18
             reasons.append(f"Software tag '{record.software}' suggests editing or export processing.")
-            breakdown.append("Authenticity +14 — editor/export software tag")
+            breakdown.append("Authenticity +18 — editor/export software tag")
         else:
-            authenticity += 3
+            authenticity += 4
             reasons.append(f"Software tag present: {record.software}.")
-            breakdown.append("Authenticity +3 — software tag present")
+            breakdown.append("Authenticity +4 — software tag present")
 
     if baseline_device and record.device_model not in {"Unknown", baseline_device}:
-        authenticity += 8
+        authenticity += 10
         reasons.append(f"Device differs from the dominant device observed in this batch ({baseline_device}).")
-        breakdown.append("Authenticity +8 — device continuity mismatch")
+        breakdown.append("Authenticity +10 — device continuity mismatch")
 
     if record.duplicate_group:
-        authenticity += 5
-        confidence += 6
+        authenticity += 6
+        confidence += 8
         reasons.append(f"Near-duplicate visual fingerprint match detected within {record.duplicate_group}.")
-        breakdown.append("Authenticity +5 — duplicate cluster present")
+        breakdown.append("Authenticity +6 — duplicate cluster present")
 
     if record.width and record.height:
         if min(record.width, record.height) < 720 and source_type == "Camera Photo":
-            authenticity += 5
+            authenticity += 6
             reasons.append("Unusually small dimensions for a camera-style image.")
-            breakdown.append("Authenticity +5 — unusually small camera dimensions")
-        if record.brightness_mean <= 1.0:
-            technical += 4
-            reasons.append("The visible frame is nearly black or uniform, so content review should not rely on a quick glance alone.")
-            breakdown.append("Technical +4 — near-uniform / near-black frame")
+            breakdown.append("Authenticity +6 — unusually small camera dimensions")
+        elif source_type in {"Screenshot", "Messaging Export", "Screenshot / Export"}:
+            confidence += 5
     else:
-        technical += 8
+        technical += 10
         reasons.append("Basic dimensions could not be read, which weakens trust in the parser output and preview pipeline.")
-        breakdown.append("Technical +8 — dimensions unavailable")
+        breakdown.append("Technical +10 — dimensions unavailable")
 
     exif_dt = parse_timestamp(record.timestamp)
     if exif_dt:
         try:
             file_dt = datetime.fromtimestamp(file_path.stat().st_mtime)
             if abs((file_dt - exif_dt).days) > 365:
-                authenticity += 7
+                authenticity += 8
                 reasons.append("Recovered time differs significantly from filesystem modified time.")
-                breakdown.append("Authenticity +7 — large EXIF/filesystem gap")
+                breakdown.append("Authenticity +8 — large EXIF/filesystem gap")
         except Exception:
             pass
 
     if source_type == "Edited / Exported":
-        authenticity += 9
-        reasons.append("Source profile suggests edited or exported media rather than a direct camera original.")
-        breakdown.append("Authenticity +9 — edited/exported profile")
+        authenticity += 10
+        reasons.append("Source profile suggests edited/exported media rather than a direct camera original.")
+        breakdown.append("Authenticity +10 — edited/exported profile")
     if source_type == "Malformed / Unsupported Asset":
-        technical += 12
-        breakdown.append("Technical +12 — malformed / unsupported asset profile")
-    if source_type == "Signature Mismatch Asset":
-        technical += 10
-        breakdown.append("Technical +10 — signature mismatch source profile")
+        technical += 18
+        breakdown.append("Technical +18 — malformed / unsupported asset profile")
 
-    score = round(authenticity * 0.42 + metadata * 0.22 + technical * 0.72)
+    score = round(authenticity * 0.45 + metadata * 0.25 + technical * 0.65)
     score = max(0, min(score, 100))
-    confidence = max(18, min(confidence, 98))
+    confidence = max(15, min(confidence, 98))
 
-    if technical >= 42 or score >= 68:
+    if technical >= 44 or score >= 70:
         level = "High"
-    elif score >= 32:
+    elif score >= 35:
         level = "Medium"
     else:
         level = "Low"

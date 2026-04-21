@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-import contextlib
-import io
 import re
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-import exifread
+try:
+    import exifread
+except Exception:  # pragma: no cover
+    exifread = None
 from PIL import Image, ImageSequence, ImageStat, UnidentifiedImageError
 
 try:
@@ -109,30 +110,38 @@ def sniff_file_signature(file_path: Path) -> Tuple[str, str]:
     return "Unknown", "Unknown"
 
 
-def format_trust_for_extension(file_path: Path, signature_family: str) -> str:
+def signature_status_for_extension(file_path: Path, signature_family: str) -> str:
     expected = EXTENSION_FAMILY.get(file_path.suffix.lower(), "Unknown")
     if expected == "Unknown" and signature_family == "Unknown":
-        return "Weak"
+        return "Unknown"
     if signature_family == "Unknown":
-        return "Weak"
+        return "Unknown"
     if expected == signature_family:
-        return "Verified"
+        return "Matched"
     if expected == "HEIC" and signature_family in {"HEIC", "HEIF"}:
-        return "Verified"
+        return "Compatible"
     if expected == "HEIF" and signature_family in {"HEIF", "HEIC"}:
-        return "Verified"
+        return "Compatible"
     return "Mismatch"
+
+
+def format_trust_from_status(signature_status: str, parser_status: str) -> str:
+    if signature_status == "Mismatch":
+        return "Conflict"
+    if parser_status == "Failed":
+        return "Header-only" if signature_status in {"Matched", "Compatible"} else "Weak"
+    if signature_status in {"Matched", "Compatible"}:
+        return "Verified"
+    return "Weak"
 
 
 def extract_basic_image_info(file_path: Path) -> Dict[str, str | int | bool | float]:
     signature_family, signature_label = sniff_file_signature(file_path)
-    declared_format = EXTENSION_FAMILY.get(file_path.suffix.lower(), file_path.suffix.upper().replace(".", "") or "Unknown")
+    inferred_format = EXTENSION_FAMILY.get(file_path.suffix.lower(), file_path.suffix.upper().replace(".", "") or "Unknown")
     info: Dict[str, str | int | bool | float] = {
         "width": 0,
         "height": 0,
-        "format_name": declared_format,
-        "declared_format": declared_format,
-        "detected_format": signature_family,
+        "format_name": inferred_format,
         "color_mode": "Unknown",
         "has_alpha": False,
         "dpi": "N/A",
@@ -143,7 +152,8 @@ def extract_basic_image_info(file_path: Path) -> Dict[str, str | int | bool | fl
         "preview_status": "Unavailable",
         "structure_status": "Suspicious",
         "format_signature": signature_label,
-        "format_trust": format_trust_for_extension(file_path, signature_family),
+        "format_trust": "Weak",
+        "signature_status": signature_status_for_extension(file_path, signature_family),
         "parse_error": "",
         "frame_count": 1,
         "is_animated": False,
@@ -152,12 +162,10 @@ def extract_basic_image_info(file_path: Path) -> Dict[str, str | int | bool | fl
     try:
         with Image.open(file_path) as image:
             image.load()
-            actual_format = (image.format or signature_family or declared_format or "Unknown").upper()
             info["parser_status"] = "Valid"
             info["width"] = image.width
             info["height"] = image.height
-            info["format_name"] = actual_format
-            info["detected_format"] = actual_format if actual_format != "UNKNOWN" else signature_family
+            info["format_name"] = image.format or EXTENSION_FAMILY.get(file_path.suffix.lower(), file_path.suffix.upper().replace(".", ""))
             info["color_mode"] = image.mode
             info["has_alpha"] = "A" in image.mode
             info["megapixels"] = round((image.width * image.height) / 1_000_000, 2) if image.width and image.height else 0.0
@@ -179,6 +187,7 @@ def extract_basic_image_info(file_path: Path) -> Dict[str, str | int | bool | fl
             grayscale = preview_frame.convert("L")
             stat = ImageStat.Stat(grayscale)
             info["brightness_mean"] = round(float(stat.mean[0]), 2) if stat.mean else 0.0
+            info["format_trust"] = format_trust_from_status(str(info["signature_status"]), str(info["parser_status"]))
             dpi = image.info.get("dpi")
             if isinstance(dpi, tuple) and len(dpi) >= 2:
                 info["dpi"] = f"{int(dpi[0])} x {int(dpi[1])}"
@@ -193,20 +202,17 @@ def extract_basic_image_info(file_path: Path) -> Dict[str, str | int | bool | fl
         info["parser_status"] = "Failed"
         info["structure_status"] = "Corrupt"
 
-    if info["detected_format"] in {"Unknown", "UNKNOWN"} and signature_family != "Unknown":
-        info["detected_format"] = signature_family
-    if info["format_trust"] == "Mismatch":
-        info["structure_status"] = "Mismatch" if info["parser_status"] == "Valid" else "Corrupt"
-        if info["parser_status"] == "Valid":
-            info["preview_status"] = "Ready (Mismatch)"
+    if info["signature_status"] == "Mismatch" and info["structure_status"] == "Valid":
+        info["structure_status"] = "Suspicious"
     if info["parser_status"] == "Failed":
         info["preview_status"] = "Decoder Failed"
+        info["format_trust"] = format_trust_from_status(str(info["signature_status"]), str(info["parser_status"]))
         if not info["parse_error"]:
-            info["parse_error"] = f"The file could not be rendered by Pillow. Extension suggests {declared_format}; signature says {signature_label}."
-        if signature_family != "Unknown":
+            info["parse_error"] = f"The file could not be rendered by Pillow. Extension suggests {inferred_format}; signature says {signature_label}."
+        if signature_family != "Unknown" and inferred_format == "Unknown":
             info["format_name"] = signature_family
-            info["detected_format"] = signature_family
     return info
+
 
 def compute_perceptual_hash(file_path: Path) -> str:
     try:
@@ -214,7 +220,8 @@ def compute_perceptual_hash(file_path: Path) -> str:
             if getattr(image, "is_animated", False):
                 image.seek(0)
             image = image.convert("L").resize((9, 8))
-            pixels = list(image.getdata())
+            flattened = image.getdata()
+            pixels = list(flattened)
         rows = [pixels[i * 9:(i + 1) * 9] for i in range(8)]
         bits = []
         for row in rows:
@@ -222,14 +229,16 @@ def compute_perceptual_hash(file_path: Path) -> str:
                 bits.append("1" if row[i] > row[i + 1] else "0")
         return f"{int(''.join(bits), 2):016x}"
     except Exception:
-        return "Unavailable"
+        return "0" * 16
 
 
 def extract_exif(file_path: Path) -> Dict[str, str]:
     data: Dict[str, str] = {}
-    sink = io.StringIO()
     try:
-        with file_path.open("rb") as handle, contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+        if exifread is None:
+            data["__raw_tags__"] = {}
+            return data
+        with file_path.open("rb") as handle:
             tags = exifread.process_file(handle, details=False)
         for tag, value in tags.items():
             data[str(tag)] = str(value)
@@ -330,19 +339,9 @@ def extract_gps(exif: Dict[str, str]):
         return None, None, None, "Unavailable"
 
 
-def classify_source(
-    file_path: Path,
-    exif: Dict[str, str],
-    software: str,
-    width: int,
-    height: int,
-    parser_status: str = "Valid",
-    format_trust: str = "Verified",
-) -> str:
+def classify_source(file_path: Path, exif: Dict[str, str], software: str, width: int, height: int, parser_status: str = "Valid") -> str:
     name = file_path.name.lower()
     suffix = file_path.suffix.lower()
-    if format_trust == "Mismatch":
-        return "Signature Mismatch Asset"
     if parser_status == "Failed":
         return "Malformed / Unsupported Asset"
     if "screenshot" in name:
@@ -385,10 +384,6 @@ def build_osint_leads(
     gps_display: str,
     width: int,
     height: int,
-    format_trust: str = "Verified",
-    declared_format: str = "Unknown",
-    detected_format: str = "Unknown",
-    parser_status: str = "Valid",
 ) -> list[str]:
     leads: list[str] = []
     leads.append(f"Preserve original path and hash pair for later chain-of-custody validation: {file_path.name}.")
@@ -400,10 +395,6 @@ def build_osint_leads(
         leads.append(f"Software tag '{software}' may indicate export or editing history. Validate whether this matches the alleged acquisition workflow.")
     if gps_display != "Unavailable":
         leads.append(f"Verify GPS coordinates externally and compare with maps, CCTV coverage, or witness statements around {gps_display}.")
-    if format_trust == "Mismatch":
-        leads.append(f"Header signature suggests {detected_format}, while the extension suggests {declared_format}. Preserve the original and validate whether the mismatch is benign export behavior or deliberate disguise.")
-    if parser_status != "Valid":
-        leads.append("Run a secondary parser before relying on preview output or structural assumptions from this file.")
     if source_type in {"Messaging Export", "Screenshot", "Screenshot / Export"}:
         leads.append("Messaging-export indicators suggest reduced embedded metadata; prioritize filename patterns, chat context, and filesystem times.")
     if width and height:

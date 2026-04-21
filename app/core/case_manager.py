@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+import re
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import List
+from typing import Callable, List, Optional
 
 from .anomalies import assign_duplicate_groups, detect_anomalies, dominant_device, parse_timestamp
 from .case_db import CaseDatabase
@@ -22,7 +23,15 @@ from .exif_service import (
     is_supported_image,
 )
 from .hashing import compute_hashes
-from .models import CaseStats, EvidenceRecord
+from .models import CaseInfo, CaseStats, EvidenceRecord
+
+
+ProgressCallback = Callable[[int, str], None]
+CancelCallback = Callable[[], bool]
+
+
+class AnalysisCancelled(Exception):
+    pass
 
 
 class CaseManager:
@@ -32,22 +41,78 @@ class CaseManager:
         self.case_root.mkdir(parents=True, exist_ok=True)
         self.db = CaseDatabase(self.case_root / "geotrace_case.db")
         self.records: List[EvidenceRecord] = []
-        self.case_id = "GT-2026-001"
+        active = self.db.get_active_case()
+        if active is None:
+            active = self.new_case("Launch Candidate Case")
+        self.active_case = active
 
-    def load_images(self, paths: List[Path]) -> List[EvidenceRecord]:
-        self.db.reset_case()
+    @property
+    def active_case_id(self) -> str:
+        return self.active_case.case_id
+
+    @property
+    def active_case_name(self) -> str:
+        return self.active_case.case_name
+
+    def list_cases(self) -> List[CaseInfo]:
+        return self.db.list_cases()
+
+    def new_case(self, case_name: Optional[str] = None) -> CaseInfo:
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        case_name = (case_name or f"Case {timestamp}").strip() or f"Case {timestamp}"
+        slug = re.sub(r"[^A-Z0-9]+", "-", case_name.upper()).strip("-")[:26] or "CASE"
+        case_id = f"GT-{datetime.now(timezone.utc).strftime('%Y')}-{slug}-{timestamp[-4:]}"
+        self.db.create_case(case_id, case_name, set_active=True)
+        self.active_case = self.db.get_active_case() or CaseInfo(case_id, case_name, datetime.now(timezone.utc).isoformat(timespec="seconds"), datetime.now(timezone.utc).isoformat(timespec="seconds"), 0)
+        self.records = []
+        self._write_case_snapshot()
+        self.db.log_action(self.active_case_id, None, "CASE_OPEN", f"Opened case {self.active_case_name}")
+        return self.active_case
+
+    def switch_case(self, case_id: str) -> Optional[CaseInfo]:
+        cases = {item.case_id: item for item in self.db.list_cases()}
+        case = cases.get(case_id)
+        if case is None:
+            return None
+        self.db.set_active_case(case_id)
+        self.active_case = case
+        self.records = []
+        return self.active_case
+
+    def load_images(
+        self,
+        paths: List[Path],
+        progress_callback: Optional[ProgressCallback] = None,
+        cancel_callback: Optional[CancelCallback] = None,
+    ) -> List[EvidenceRecord]:
+        files = self._collect_files(paths)
+        if cancel_callback and cancel_callback():
+            raise AnalysisCancelled()
+        total = len(files)
+        if total == 0:
+            self.records = []
+            self._write_case_snapshot()
+            return []
+
         collected: List[EvidenceRecord] = []
-        for file_path in paths:
-            if file_path.is_dir():
-                for child in sorted(file_path.rglob("*")):
-                    if child.is_file() and is_supported_image(child):
-                        collected.append(self._build_record(child, len(collected) + 1))
-            elif file_path.is_file() and is_supported_image(file_path):
-                collected.append(self._build_record(file_path, len(collected) + 1))
+        self.db.log_action(self.active_case_id, None, "IMPORT_BATCH", f"Queued {total} evidence item(s)")
+        for index, file_path in enumerate(files, start=1):
+            if cancel_callback and cancel_callback():
+                raise AnalysisCancelled()
+            if progress_callback:
+                progress_callback(max(5, int((index - 1) / max(total, 1) * 55)), f"Importing {file_path.name} ({index}/{total})")
+            collected.append(self._build_record(file_path, index))
 
+        if progress_callback:
+            progress_callback(62, "Correlating duplicates and baseline devices…")
         assign_duplicate_groups(collected)
         baseline_device = dominant_device(collected)
-        for record in collected:
+
+        for index, record in enumerate(collected, start=1):
+            if cancel_callback and cancel_callback():
+                raise AnalysisCancelled()
+            if progress_callback:
+                progress_callback(62 + int(index / max(total, 1) * 28), f"Scoring {record.evidence_id} ({index}/{total})")
             score, confidence, level, reasons, authenticity, metadata, technical, breakdown = detect_anomalies(record, baseline_device, record.file_path)
             record.suspicion_score = score
             record.confidence_score = confidence
@@ -69,17 +134,27 @@ class CaseManager:
                     record.gps_display,
                     record.width,
                     record.height,
-                    record.format_trust,
-                    record.declared_format,
-                    record.detected_format,
-                    record.parser_status,
                 )
             self.db.upsert_evidence(record)
-            self.db.log_action(record.evidence_id, "ANALYZE", f"Risk={level}, Score={score}, Confidence={confidence}")
+            self.db.log_action(record.case_id, record.evidence_id, "ANALYZE", f"Risk={level}, Score={score}, Confidence={confidence}")
 
         self.records = collected
         self._write_case_snapshot()
+        self.db.log_action(self.active_case_id, None, "BATCH_COMPLETE", f"Analysis complete for {len(self.records)} item(s)")
+        if progress_callback:
+            progress_callback(100, f"Analysis complete — {len(self.records)} evidence item(s)")
         return self.records
+
+    def _collect_files(self, paths: List[Path]) -> List[Path]:
+        collected: List[Path] = []
+        for file_path in paths:
+            if file_path.is_dir():
+                for child in sorted(file_path.rglob("*")):
+                    if child.is_file() and is_supported_image(child):
+                        collected.append(child)
+            elif file_path.is_file() and is_supported_image(file_path):
+                collected.append(file_path)
+        return collected
 
     def _build_record(self, file_path: Path, index: int) -> EvidenceRecord:
         hashes = compute_hashes(file_path)
@@ -90,19 +165,21 @@ class CaseManager:
         software = extract_software(exif)
         lat, lon, altitude, gps_display = extract_gps(exif)
         evidence_id = f"IMG-{index:03d}"
-        imported_at = datetime.utcnow().isoformat(timespec="seconds")
+        imported_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         created_time, modified_time = extract_file_times(file_path)
         metadata = build_metadata_summary(exif)
+        normalized_exif = {k: v for k, v in exif.items() if k != "__raw_tags__"}
         source_type = classify_source(
             file_path,
-            {k: v for k, v in exif.items() if k != "__raw_tags__"},
+            normalized_exif,
             software,
             int(basic["width"]),
             int(basic["height"]),
             str(basic["parser_status"]),
-            str(basic["format_trust"]),
         )
         record = EvidenceRecord(
+            case_id=self.active_case_id,
+            case_name=self.active_case_name,
             evidence_id=evidence_id,
             file_path=file_path,
             file_name=file_path.name,
@@ -111,7 +188,8 @@ class CaseManager:
             perceptual_hash=compute_perceptual_hash(file_path),
             file_size=file_path.stat().st_size,
             imported_at=imported_at,
-            exif={k: v for k, v in exif.items() if k != "__raw_tags__"},
+            exif=normalized_exif,
+            raw_exif=normalized_exif,
             timestamp=timestamp,
             timestamp_source=timestamp_source,
             created_time=created_time,
@@ -121,8 +199,6 @@ class CaseManager:
             software=software,
             source_type=source_type,
             format_name=str(basic["format_name"]),
-            declared_format=str(basic["declared_format"]),
-            detected_format=str(basic["detected_format"]),
             color_mode=str(basic["color_mode"]),
             has_alpha=bool(basic["has_alpha"]),
             dpi=str(basic["dpi"]),
@@ -148,6 +224,7 @@ class CaseManager:
             structure_status=str(basic["structure_status"]),
             format_signature=str(basic["format_signature"]),
             format_trust=str(basic["format_trust"]),
+            signature_status=str(basic["signature_status"]),
             parse_error=str(basic["parse_error"]),
             frame_count=int(basic["frame_count"]),
             is_animated=bool(basic["is_animated"]),
@@ -163,12 +240,8 @@ class CaseManager:
             gps_display,
             record.width,
             record.height,
-            record.format_trust,
-            record.declared_format,
-            record.detected_format,
-            record.parser_status,
         )
-        self.db.log_action(record.evidence_id, "IMPORT", f"Imported {record.file_name}")
+        self.db.log_action(record.case_id, record.evidence_id, "IMPORT", f"Imported {record.file_name}")
         return record
 
     def _derive_analyst_verdict(self, record: EvidenceRecord) -> str:
@@ -181,8 +254,6 @@ class CaseManager:
             verdict_bits.append("The metadata profile suggests the media likely passed through an editing or export workflow.")
         elif record.source_type == "Malformed / Unsupported Asset":
             verdict_bits.append("The file could not be cleanly decoded, so it should be treated as malformed or unsupported until a second parser confirms its structure.")
-        elif record.source_type == "Signature Mismatch Asset":
-            verdict_bits.append(f"The file extension suggests {record.declared_format}, but the detected signature points to {record.detected_format}. Treat it as a mismatched asset until workflow context explains the discrepancy.")
         else:
             verdict_bits.append("The source profile is mixed, so the file should be treated as a derivative image until corroborated.")
 
@@ -203,11 +274,9 @@ class CaseManager:
         if record.duplicate_group:
             verdict_bits.append(f"Visual fingerprinting links this file to {record.duplicate_group}, which may indicate reposting, versioning, or duplicate capture.")
         if record.parser_status != "Valid":
-            verdict_bits.append("Parser health is degraded, which means preview, dimensions, and embedded structure should be corroborated before courtroom use.")
-        elif record.format_trust == "Mismatch":
-            verdict_bits.append(f"Format trust is degraded because the declared extension ({record.declared_format}) does not match the detected signature ({record.detected_format}).")
-        elif record.format_trust != "Verified":
-            verdict_bits.append("Format trust is not fully verified because extension and header confidence do not fully align.")
+            verdict_bits.append("Decoder health is degraded, so the visible preview and structural assumptions should be corroborated with a second parser before courtroom use.")
+        elif record.signature_status == "Mismatch":
+            verdict_bits.append("Header signature and file extension disagree, which is a strong structure-integrity concern even if a parser can still render the file.")
         elif record.is_animated:
             verdict_bits.append("The media is animated, so frame-level review is important because the visible first frame may not represent the full sequence.")
 
@@ -234,19 +303,39 @@ class CaseManager:
         return stats
 
     def update_note(self, evidence_id: str, note: str) -> None:
-        for record in self.records:
-            if record.evidence_id == evidence_id:
-                record.note = note
-                self.db.upsert_evidence(record)
-                self.db.log_action(evidence_id, "NOTE", note or "Note cleared")
-                break
+        record = self.get_record(evidence_id)
+        if record is None:
+            return
+        record.note = note
+        self.db.upsert_evidence(record)
+        self.db.log_action(self.active_case_id, evidence_id, "NOTE", note or "Note cleared")
         self._write_case_snapshot()
 
+    def update_tags(self, evidence_id: str, tags: str, bookmarked: bool) -> None:
+        record = self.get_record(evidence_id)
+        if record is None:
+            return
+        record.tags = tags
+        record.bookmarked = bookmarked
+        self.db.upsert_evidence(record)
+        self.db.log_action(self.active_case_id, evidence_id, "TAG", f"Tags={tags or 'None'} | Bookmarked={bookmarked}")
+        self._write_case_snapshot()
+
+    def get_record(self, evidence_id: str) -> Optional[EvidenceRecord]:
+        for record in self.records:
+            if record.evidence_id == evidence_id:
+                return record
+        return None
+
     def export_chain_of_custody(self) -> str:
-        logs = self.db.fetch_logs()
+        logs = self.db.fetch_logs(self.active_case_id)
         if not logs:
             return "No chain-of-custody activity logged yet."
-        return "\n".join(f"[{row[0]}] {row[1]} | {row[2]} | {row[3]}" for row in logs)
+        lines = []
+        for row in logs:
+            evidence_id = row["evidence_id"] or "CASE"
+            lines.append(f"[{row['action_time']}] {evidence_id} | {row['action']} | {row['details']}")
+        return "\n".join(lines)
 
     def _timeline_span(self) -> str:
         timestamps = [parse_timestamp(record.timestamp) for record in self.records if record.timestamp != "Unknown"]
@@ -260,10 +349,17 @@ class CaseManager:
         return f"{start.strftime('%Y-%m-%d %H:%M')} → {end.strftime('%Y-%m-%d %H:%M')} ({hours}h span)"
 
     def _write_case_snapshot(self) -> None:
-        snapshot_path = self.case_root / "case_snapshot.json"
-        payload = []
+        case_dir = self.case_root / self.active_case_id
+        case_dir.mkdir(parents=True, exist_ok=True)
+        snapshot_path = case_dir / "case_snapshot.json"
+        payload = {
+            "case_id": self.active_case_id,
+            "case_name": self.active_case_name,
+            "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "records": [],
+        }
         for record in self.records:
-            payload.append(
+            payload["records"].append(
                 {
                     "evidence_id": record.evidence_id,
                     "file_name": record.file_name,
@@ -283,14 +379,15 @@ class CaseManager:
                     "preview_status": record.preview_status,
                     "structure_status": record.structure_status,
                     "format_trust": record.format_trust,
+                    "signature_status": record.signature_status,
                     "format_signature": record.format_signature,
-                    "declared_format": record.declared_format,
-                    "detected_format": record.detected_format,
                     "authenticity_score": record.authenticity_score,
                     "metadata_score": record.metadata_score,
                     "technical_score": record.technical_score,
                     "score_breakdown": record.score_breakdown,
                     "note": record.note,
+                    "tags": record.tags,
+                    "bookmarked": record.bookmarked,
                 }
             )
         snapshot_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

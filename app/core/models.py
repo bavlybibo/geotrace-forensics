@@ -7,6 +7,8 @@ from typing import Dict, List, Optional
 
 @dataclass
 class EvidenceRecord:
+    case_id: str
+    case_name: str
     evidence_id: str
     file_path: Path
     file_name: str
@@ -16,6 +18,7 @@ class EvidenceRecord:
     file_size: int
     imported_at: str
     exif: Dict[str, str] = field(default_factory=dict)
+    raw_exif: Dict[str, str] = field(default_factory=dict)
     timestamp: str = "Unknown"
     timestamp_source: str = "Unavailable"
     created_time: str = "Unknown"
@@ -25,8 +28,6 @@ class EvidenceRecord:
     software: str = "N/A"
     source_type: str = "Unknown"
     format_name: str = "Unknown"
-    declared_format: str = "Unknown"
-    detected_format: str = "Unknown"
     color_mode: str = "Unknown"
     has_alpha: bool = False
     dpi: str = "N/A"
@@ -49,6 +50,8 @@ class EvidenceRecord:
     risk_level: str = "Low"
     integrity_status: str = "Verified"
     note: str = ""
+    tags: str = ""
+    bookmarked: bool = False
     width: int = 0
     height: int = 0
     megapixels: float = 0.0
@@ -61,6 +64,7 @@ class EvidenceRecord:
     structure_status: str = "Valid"
     format_signature: str = "Unknown"
     format_trust: str = "Unverified"
+    signature_status: str = "Unknown"
     parse_error: str = ""
     frame_count: int = 1
     is_animated: bool = False
@@ -80,14 +84,6 @@ class EvidenceRecord:
             return f"{self.width} x {self.height}"
         return "Unknown"
 
-    @property
-    def format_summary(self) -> str:
-        if self.format_trust == "Mismatch":
-            return f"{self.declared_format} extension / {self.detected_format} detected"
-        if self.detected_format not in {"", "Unknown"}:
-            return self.detected_format
-        return self.format_name
-
 
 @dataclass
 class CaseStats:
@@ -100,3 +96,12 @@ class CaseStats:
     screenshots_count: int = 0
     duplicates_count: int = 0
     avg_score: int = 0
+
+
+@dataclass
+class CaseInfo:
+    case_id: str
+    case_name: str
+    created_at: str
+    updated_at: str
+    item_count: int = 0
