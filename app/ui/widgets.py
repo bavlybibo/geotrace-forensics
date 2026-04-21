@@ -8,18 +8,12 @@ class StatCard(QFrame):
     def __init__(self, title: str, value: str = "0") -> None:
         super().__init__()
         self.setObjectName("StatCard")
-
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 14)
-        layout.setSpacing(10)
+        layout.setContentsMargins(16, 12, 16, 14)
+        layout.setSpacing(8)
 
         accent = QFrame()
         accent.setObjectName("StatCardAccent")
-
-        inner = QWidget()
-        inner_layout = QVBoxLayout(inner)
-        inner_layout.setContentsMargins(16, 2, 16, 0)
-        inner_layout.setSpacing(6)
 
         self.value_label = QLabel(value)
         self.value_label.setObjectName("CardValue")
@@ -30,19 +24,43 @@ class StatCard(QFrame):
         self.title_label.setObjectName("CardTitle")
         self.title_label.setWordWrap(True)
 
-        inner_layout.addWidget(self.value_label)
-        inner_layout.addWidget(self.title_label)
-
         layout.addWidget(accent)
-        layout.addWidget(inner)
+        layout.addWidget(self.value_label)
+        layout.addWidget(self.title_label)
         layout.addStretch(1)
 
     def set_value(self, value: str) -> None:
         self.value_label.setText(value)
         length = len(value)
         if length > 28:
-            self.value_label.setStyleSheet("font-size: 16pt; font-weight: 900; color: #ffffff;")
-        elif length > 16:
-            self.value_label.setStyleSheet("font-size: 18pt; font-weight: 900; color: #ffffff;")
+            size = 13
+        elif length > 20:
+            size = 16
+        elif length > 12:
+            size = 20
         else:
-            self.value_label.setStyleSheet("font-size: 22pt; font-weight: 900; color: #ffffff;")
+            size = 26
+        self.value_label.setStyleSheet(f"font-size: {size}pt; font-weight: 900; color: #ffffff;")
+
+
+class ChartCard(QFrame):
+    def __init__(self, title: str) -> None:
+        super().__init__()
+        self.setObjectName("PanelFrame")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+
+        title_label = QLabel(title)
+        title_label.setObjectName("SectionLabel")
+        self.image_label = QLabel("Chart will appear after evidence is loaded.")
+        self.image_label.setAlignment(Qt.AlignCenter)
+        self.image_label.setMinimumHeight(220)
+        self.image_label.setObjectName("ChartCanvas")
+        self.caption = QLabel("")
+        self.caption.setObjectName("MutedLabel")
+        self.caption.setWordWrap(True)
+
+        layout.addWidget(title_label)
+        layout.addWidget(self.image_label, 1)
+        layout.addWidget(self.caption)
