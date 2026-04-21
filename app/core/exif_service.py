@@ -119,18 +119,30 @@ def extract_exif(file_path: Path) -> Dict[str, str]:
 
 def infer_timestamp_from_filename(file_name: str) -> Optional[str]:
     patterns = [
-        (r"(20\d{2})-(\d{2})-(\d{2})\s+at\s+(\d{1,2})\.(\d{2})\.(\d{2})", "%Y:%m:%d %H:%M:%S"),
-        (r"(20\d{2})-(\d{2})-(\d{2})[ _-](\d{2})(\d{2})(\d{2})", "%Y:%m:%d %H:%M:%S"),
-        (r"(20\d{2})(\d{2})(\d{2})[ _-]?(\d{2})(\d{2})(\d{2})", "%Y:%m:%d %H:%M:%S"),
-        (r"(20\d{2})[._-](\d{2})[._-](\d{2})[ T_-](\d{2})[.:_-](\d{2})[.:_-](\d{2})", "%Y:%m:%d %H:%M:%S"),
+        r"(20\d{2})-(\d{2})-(\d{2})\s+at\s+(\d{1,2})\.(\d{2})\.(\d{2})\s*([AP]M)?",
+        r"(20\d{2})-(\d{2})-(\d{2})[ _-](\d{2})(\d{2})(\d{2})",
+        r"(20\d{2})(\d{2})(\d{2})[ _-]?(\d{2})(\d{2})(\d{2})",
+        r"(20\d{2})[._-](\d{2})[._-](\d{2})[ T_-](\d{2})[.:_-](\d{2})[.:_-](\d{2})",
+        r"(20\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{1,2})[-_](\d{2})[-_](\d{2})\s*([AP]M)?",
     ]
-    for pattern, _ in patterns:
+    for pattern in patterns:
         match = re.search(pattern, file_name, flags=re.IGNORECASE)
         if not match:
             continue
         try:
-            year, month, day, hour, minute, second = match.groups()
-            dt = datetime(int(year), int(month), int(day), int(hour), int(minute), int(second))
+            parts = list(match.groups())
+            meridiem = None
+            if len(parts) == 7:
+                meridiem = parts.pop()
+            year, month, day, hour, minute, second = parts
+            hour_i = int(hour)
+            if meridiem:
+                meridiem = meridiem.upper()
+                if meridiem == "PM" and hour_i != 12:
+                    hour_i += 12
+                elif meridiem == "AM" and hour_i == 12:
+                    hour_i = 0
+            dt = datetime(int(year), int(month), int(day), hour_i, int(minute), int(second))
             return dt.strftime("%Y:%m:%d %H:%M:%S")
         except Exception:
             continue
