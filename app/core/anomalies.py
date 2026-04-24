@@ -48,6 +48,22 @@ def _record_tokens(record: EvidenceRecord) -> set[str]:
     return tokens
 
 
+def _name_duplicate_hint(record: EvidenceRecord) -> bool:
+    name = f"{record.file_name} {record.evidence_id}".lower()
+    return any(token in name for token in ["duplicate", "dupe", "copy", "stripped", "clone"])
+
+
+def _source_family(record: EvidenceRecord) -> str:
+    source = f"{record.source_type} {record.source_subtype}".lower()
+    if "camera" in source:
+        return "camera"
+    if any(token in source for token in ["screenshot", "export", "messaging", "chat", "browser", "desktop", "mobile"]):
+        return "screen"
+    if any(token in source for token in ["asset", "graphic", "malformed"]):
+        return "asset"
+    return "other"
+
+
 def _relation_details(left: EvidenceRecord, right: EvidenceRecord, *, max_distance: int) -> tuple[str, int, int, str] | None:
     if left.sha256 and right.sha256 and left.sha256 == right.sha256:
         return "Exact duplicate", 100, 0, "sha256"
@@ -59,21 +75,51 @@ def _relation_details(left: EvidenceRecord, right: EvidenceRecord, *, max_distan
         size_ratio = min(left.file_size, right.file_size) / max(left.file_size, right.file_size)
     token_overlap = len(_record_tokens(left) & _record_tokens(right))
 
-    if distance <= max_distance:
-        score = max(70, min(99, 100 - (distance * 8)))
-        method = "phash + dimensions" if same_dimensions else "phash"
-        return "Near duplicate", score, distance, method
+    # pHash alone is not enough for forensic duplicate grouping: simple scenes,
+    # map screenshots, or low-detail assets can collide. Promote a relation only
+    # when the visual fingerprint is supported by a provenance/name/text signal.
+    left_family = _source_family(left)
+    right_family = _source_family(right)
+    if {left_family, right_family} == {"camera", "screen"}:
+        return None
+    if "asset" in {left_family, right_family} and not (_name_duplicate_hint(left) or _name_duplicate_hint(right)):
+        return None
 
-    if distance <= max_distance + 6 and (same_dimensions or size_ratio >= 0.82 or token_overlap >= 2):
-        score = max(48, min(88, 92 - (distance * 4)))
-        method_bits = []
+    name_hint = _name_duplicate_hint(left) or _name_duplicate_hint(right)
+    text_match = token_overlap >= 2
+    name_supported_match = name_hint and distance <= max_distance and (same_dimensions or (left_family == right_family and distance <= 2))
+    size_supported_match = (
+        distance <= 1
+        and size_ratio >= 0.95
+        and left_family == right_family
+        and left_family not in {"asset"}
+    )
+
+    if distance <= max_distance and (text_match or name_supported_match or size_supported_match):
+        score = max(72, min(99, 100 - (distance * 7)))
+        method_bits = ["phash"]
         if same_dimensions:
             method_bits.append("dimensions")
-        if size_ratio >= 0.82:
+        if size_ratio >= 0.25 or size_supported_match:
             method_bits.append("size")
         if token_overlap >= 2:
             method_bits.append("text overlap")
-        return "Derivative / related", score, distance, " + ".join(method_bits) or "heuristic"
+        if name_hint:
+            method_bits.append("filename hint")
+        return "Near duplicate", score, distance, " + ".join(method_bits)
+
+    if distance <= max_distance + 4 and (text_match or (name_hint and same_dimensions)):
+        score = max(48, min(86, 90 - (distance * 4)))
+        method_bits = ["phash"]
+        if same_dimensions:
+            method_bits.append("dimensions")
+        if size_ratio >= 0.40:
+            method_bits.append("size")
+        if token_overlap >= 2:
+            method_bits.append("text overlap")
+        if name_hint:
+            method_bits.append("filename hint")
+        return "Derivative / related", score, distance, " + ".join(method_bits)
 
     return None
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import html
 import json
 import matplotlib
@@ -19,7 +20,10 @@ from reportlab.platypus import Image as RLImage, PageBreak, Paragraph, SimpleDoc
 from .anomalies import parse_timestamp
 from .models import EvidenceRecord
 from .validation_service import build_validation_metrics
-from app.config import APP_COPYRIGHT, APP_NAME, APP_VERSION, APP_BUILD_CHANNEL
+try:
+    from ..config import APP_COPYRIGHT, APP_NAME, APP_VERSION, APP_BUILD_CHANNEL
+except ImportError:  # pragma: no cover - fallback for direct script execution
+    from app.config import APP_COPYRIGHT, APP_NAME, APP_VERSION, APP_BUILD_CHANNEL
 from PIL import Image, ImageSequence
 
 
@@ -27,6 +31,27 @@ class ReportService:
     def __init__(self, export_dir: Path) -> None:
         self.export_dir = export_dir
         self.export_dir.mkdir(parents=True, exist_ok=True)
+
+    def _safe_path(self, path: Path | str, *, privacy_mode: bool = True) -> str:
+        path_obj = Path(path)
+        if not privacy_mode:
+            return str(path_obj)
+        parts = list(path_obj.parts)
+        if "case_data" in parts:
+            idx = parts.index("case_data")
+            return str(Path("[CASE_DATA]", *parts[idx + 1:]))
+        return str(Path("[REDACTED]", path_obj.name))
+
+    def _file_sha256(self, path: Path) -> str:
+        try:
+            digest = hashlib.sha256()
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            return digest.hexdigest()
+        except Exception:
+            return ""
+
 
     def _prepare_preview_asset(self, record: EvidenceRecord, max_size: tuple[int, int] = (900, 540)) -> Path | None:
         assets_dir = self.export_dir / "report_assets"
@@ -162,7 +187,7 @@ class ReportService:
                 )
         return output
 
-    def export_json(self, records: Iterable[EvidenceRecord]) -> Path:
+    def export_json(self, records: Iterable[EvidenceRecord], *, privacy_mode: bool = True) -> Path:
         output = self.export_dir / "evidence_summary.json"
         payload = []
         for record in records:
@@ -172,9 +197,10 @@ class ReportService:
                     "case_name": record.case_name,
                     "evidence_id": record.evidence_id,
                     "file_name": record.file_name,
-                    "file_path": str(record.file_path),
-                    "original_file_path": str(record.original_file_path),
-                    "working_copy_path": str(record.working_copy_path),
+                    "privacy_mode": privacy_mode,
+                    "file_path": self._safe_path(record.file_path, privacy_mode=privacy_mode),
+                    "original_file_path": self._safe_path(record.original_file_path, privacy_mode=privacy_mode),
+                    "working_copy_path": self._safe_path(record.working_copy_path, privacy_mode=privacy_mode),
                     "source_type": record.source_type,
                     "source_subtype": record.source_subtype,
                     "source_profile_confidence": record.source_profile_confidence,
@@ -193,6 +219,8 @@ class ReportService:
                     "format": record.format_name,
                     "signature_status": record.signature_status,
                     "format_trust": record.format_trust,
+                    "native_exif_count": len(record.exif),
+                    "container_metadata": record.container_metadata,
                     "dimensions": record.dimensions,
                     "gps": {
                         "display": record.gps_display,
@@ -251,8 +279,14 @@ class ReportService:
                     },
                     "acquisition": {
                         "imported_at": record.imported_at,
-                        "original_path": str(record.original_file_path),
-                        "working_copy_path": str(record.working_copy_path),
+                        "original_path": self._safe_path(record.original_file_path, privacy_mode=privacy_mode),
+                        "working_copy_path": self._safe_path(record.working_copy_path, privacy_mode=privacy_mode),
+                        "source_sha256": record.source_sha256,
+                        "source_md5": record.source_md5,
+                        "working_sha256": record.working_sha256,
+                        "working_md5": record.working_md5,
+                        "copy_verified": record.copy_verified,
+                        "acquisition_note": record.acquisition_note,
                         "custody_events_slice": record.custody_event_summary,
                     },
                     "time_candidates": record.time_candidates,
@@ -381,7 +415,21 @@ class ReportService:
 
     def export_package_manifest(self, payload: dict) -> Path:
         output = self.export_dir / "export_manifest.json"
-        output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        enriched: dict = {
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "privacy_note": "Exported paths are share-safe where supported; hashes verify report artifact integrity.",
+            "artifacts": {},
+        }
+        for key, value in payload.items():
+            artifact_path = Path(value)
+            enriched["artifacts"][key] = {
+                "path": self._safe_path(artifact_path, privacy_mode=True),
+                "file_name": artifact_path.name,
+                "exists": artifact_path.exists(),
+                "size_bytes": artifact_path.stat().st_size if artifact_path.exists() else 0,
+                "sha256": self._file_sha256(artifact_path) if artifact_path.exists() else "",
+            }
+        output.write_text(json.dumps(enriched, indent=2), encoding="utf-8")
         return output
 
     def export_courtroom_summary(self, records: List[EvidenceRecord], case_id: str, case_name: str) -> Path:

@@ -19,8 +19,15 @@ class EvidenceRecord:
     imported_at: str
     original_file_path: Path = Path(".")
     working_copy_path: Path = Path(".")
+    source_sha256: str = ""
+    source_md5: str = ""
+    working_sha256: str = ""
+    working_md5: str = ""
+    copy_verified: bool = False
+    acquisition_note: str = "Source/working-copy hash comparison has not been recorded yet."
     exif: Dict[str, str] = field(default_factory=dict)
     raw_exif: Dict[str, str] = field(default_factory=dict)
+    container_metadata: Dict[str, str] = field(default_factory=dict)
     exif_warning: str = ""
     timestamp: str = "Unknown"
     timestamp_source: str = "Unavailable"

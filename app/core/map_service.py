@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 from pathlib import Path
 from typing import Iterable
 
@@ -38,25 +39,36 @@ class MapService:
             latitude = _lat(record)
             longitude = _lon(record)
             points.append([latitude, longitude])
+            safe_file = html.escape(record.file_name)
+            safe_evidence_id = html.escape(record.evidence_id)
+            safe_timestamp = html.escape(record.timestamp)
+            safe_timestamp_source = html.escape(record.timestamp_source)
+            safe_risk = html.escape(record.risk_level)
+            safe_value_label = html.escape(record.evidentiary_label)
+            safe_device = html.escape(record.device_model)
+            safe_source = html.escape(record.source_type)
+            safe_gps = html.escape(record.gps_display)
+            safe_derived_geo = html.escape(record.derived_geo_display)
+            safe_sha = html.escape(f"{record.sha256[:16]}…{record.sha256[-12:]}")
             popup_html = f"""
             <div style='font-family:Segoe UI,Arial,sans-serif;min-width:270px;'>
-                <h4 style='margin:0 0 8px 0;'>#{idx:02d} • {record.evidence_id}</h4>
-                <b>File:</b> {record.file_name}<br>
-                <b>Time:</b> {record.timestamp} ({record.timestamp_source}, {record.timestamp_confidence}%)<br>
-                <b>Risk / Score:</b> {record.risk_level} ({record.suspicion_score})<br>
+                <h4 style='margin:0 0 8px 0;'>#{idx:02d} • {safe_evidence_id}</h4>
+                <b>File:</b> {safe_file}<br>
+                <b>Time:</b> {safe_timestamp} ({safe_timestamp_source}, {record.timestamp_confidence}%)<br>
+                <b>Risk / Score:</b> {safe_risk} ({record.suspicion_score})<br>
                 <b>Analytic confidence:</b> {record.confidence_score}%<br>
-                <b>Evidentiary value:</b> {record.evidentiary_value}% ({record.evidentiary_label})<br>
-                <b>Device:</b> {record.device_model}<br>
-                <b>Source:</b> {record.source_type}<br>
-                <b>Native GPS:</b> {record.gps_display}<br>
-                <b>Derived Geo:</b> {record.derived_geo_display}<br>
-                <b>SHA-256:</b> {record.sha256[:16]}…{record.sha256[-12:]}
+                <b>Evidentiary value:</b> {record.evidentiary_value}% ({safe_value_label})<br>
+                <b>Device:</b> {safe_device}<br>
+                <b>Source:</b> {safe_source}<br>
+                <b>Native GPS:</b> {safe_gps}<br>
+                <b>Derived Geo:</b> {safe_derived_geo}<br>
+                <b>SHA-256:</b> {safe_sha}
             </div>
             """
             folium.Marker(
                 [latitude, longitude],
                 popup=popup_html,
-                tooltip=f"#{idx:02d} • {record.evidence_id} • {record.file_name}",
+                tooltip=f"#{idx:02d} • {safe_evidence_id} • {safe_file}",
                 icon=folium.Icon(color=risk_colors.get(record.risk_level, "blue"), icon="camera" if record.has_gps else "map-pin", prefix="fa"),
             ).add_to(evidence_map)
             confidence_radius = 55 + (record.gps_confidence or record.derived_geo_confidence) * 2.8

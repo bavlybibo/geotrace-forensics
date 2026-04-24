@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 import re
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -205,7 +207,7 @@ def _score_ocr(lines: List[str], zone_hits: List[str], entities: Dict[str, List[
     return confidence, relevance
 
 
-def extract_visible_text_clues(file_path: Path, width: int, height: int, *, source_hint: str = "", force: bool = False) -> Dict[str, object]:
+def extract_visible_text_clues(file_path: Path, width: int, height: int, *, source_hint: str = "", force: bool = False, mode: str | None = None, cache_dir: Path | None = None) -> Dict[str, object]:
     default = {
         "lines": [],
         "excerpt": "",
@@ -222,6 +224,27 @@ def extract_visible_text_clues(file_path: Path, width: int, height: int, *, sour
         "ocr_username_entities": [],
         "ocr_map_labels": [],
     }
+    mode = (mode or os.getenv("GEOTRACE_OCR_MODE", "quick")).strip().lower()
+    if mode not in {"off", "quick", "deep"}:
+        mode = "quick"
+    if mode == "off" and not force:
+        default["ocr_note"] = "OCR skipped because GEOTRACE_OCR_MODE=off."
+        return default
+    if cache_dir is not None:
+        try:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            stat = file_path.stat()
+            cache_key = f"{file_path.name}.{stat.st_size}.{int(stat.st_mtime)}.{mode}.{force}.ocr.json"
+            cache_path = cache_dir / re.sub(r"[^A-Za-z0-9_.-]+", "_", cache_key)
+            if cache_path.exists():
+                cached = json.loads(cache_path.read_text(encoding="utf-8"))
+                if isinstance(cached, dict):
+                    cached["ocr_note"] = str(cached.get("ocr_note", "OCR loaded from cache.")) + " Cached result."
+                    return cached
+        except Exception:
+            cache_path = None
+    else:
+        cache_path = None
     if pytesseract is None:
         default["ocr_note"] = "OCR engine is unavailable in this environment."
         return default
@@ -241,11 +264,9 @@ def extract_visible_text_clues(file_path: Path, width: int, height: int, *, sour
             work = ImageOps.autocontrast(work)
             if max(work.size) < 1700:
                 work = work.resize((work.width * 2, work.height * 2))
-            zones = [
-                ("full", work, "--psm 11"),
-                ("top", work.crop((0, 0, work.width, max(180, int(work.height * 0.22)))), "--psm 6"),
-            ]
-            if force:
+            zones = [("full", work, "--psm 11")]
+            if mode == "deep" or force:
+                zones.append(("top", work.crop((0, 0, work.width, max(180, int(work.height * 0.22)))), "--psm 6"))
                 zones.append(("bottom", work.crop((0, int(work.height * 0.72), work.width, work.height)), "--psm 6"))
             for zone_name, candidate, config in zones:
                 try:
@@ -277,7 +298,7 @@ def extract_visible_text_clues(file_path: Path, width: int, height: int, *, sour
     app_detected = _detect_app(merged_text, entity_lines["app_names"])
     environment_profile = _detect_environment(file_path.name, width, height, merged_text, source_hint)
     zone_note = ", ".join(zone_hits[:4]) if zone_hits else "none"
-    return {
+    result = {
         "lines": lines[:28],
         "excerpt": excerpt,
         "raw_text": merged[:4000],
@@ -289,10 +310,16 @@ def extract_visible_text_clues(file_path: Path, width: int, height: int, *, sour
         "ocr_username_entities": entity_lines["usernames"],
         "ocr_map_labels": entity_lines["map_labels"],
         "environment_profile": environment_profile,
-        "ocr_note": f"OCR zones recovered from: {zone_note}.",
+        "ocr_note": f"OCR zones recovered from: {zone_note}. Mode={mode}.",
         "ocr_confidence": confidence,
         "ocr_analyst_relevance": relevance,
     }
+    if cache_path is not None:
+        try:
+            cache_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+    return result
 
 
 def parse_derived_geo(text_candidates: List[str], visible_urls: List[str], *, source_type: str = "Unknown") -> Dict[str, object]:
@@ -397,6 +424,9 @@ def infer_source_profile(
     software_l = software.lower()
     joined = " ".join((visible_urls or []) + (visible_lines or []) + (map_labels or [])).lower()
     suffix = file_path.suffix.lower()
+    if width <= 0 or height <= 0:
+        reasons.append("The image parser could not recover stable dimensions, so the item is treated as a malformed/graphic asset rather than a screenshot.")
+        return {"type": "Graphic Asset", "subtype": "Malformed Asset", "confidence": 74, "reasons": reasons}
     screenshot_like = source_type in {"Screenshot", "Screenshot / Export", "Messaging Export"} or "screenshot" in name or suffix in {".png", ".webp"}
     browser_like = bool(visible_urls) or "www." in joined or "http" in joined
     map_ui = app_detected in {"Google Maps", "Google Earth"} or any("google.com/maps" in url.lower() for url in visible_urls)
@@ -446,7 +476,7 @@ def infer_source_profile(
         return {"type": "Screenshot", "subtype": subtype, "confidence": min(confidence, 88), "reasons": reasons}
     if source_type == "Messaging Export":
         reasons.append("Thin metadata plus messaging-like cues suggest an exported chat/media artifact.")
-        return {"type": "Messaging Export", "subtype": "Chat Export", "confidence": 78, "reasons": reasons}
+        return {"type": "Messaging Export", "subtype": "Chat Screenshot / Export", "confidence": 78, "reasons": reasons}
     if file_path.suffix.lower() in {".gif", ".bmp"}:
         reasons.append("Container/extension pair is more consistent with a graphic asset than a camera original.")
         return {"type": "Graphic Asset", "subtype": "Graphic Asset", "confidence": 70, "reasons": reasons}

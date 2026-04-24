@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from dataclasses import fields
@@ -116,7 +117,8 @@ class CaseManager:
             if cancel_callback and cancel_callback():
                 raise AnalysisCancelled()
             if progress_callback:
-                progress_callback(max(5, int((index - 1) / max(total, 1) * 55)), f"Importing {file_path.name} ({index}/{total})")
+                batch_pos = index - start_index + 1
+                progress_callback(max(5, int(batch_pos / max(total, 1) * 55)), f"Importing {file_path.name} ({batch_pos}/{total})")
             collected.append(self._build_record(file_path, index))
 
         if progress_callback:
@@ -124,13 +126,14 @@ class CaseManager:
         combined = existing + collected
         assign_duplicate_groups(combined)
         assign_scene_groups(combined)
+        self._propagate_duplicate_context(combined)
         baseline_device = dominant_device(combined)
 
         for index, record in enumerate(combined, start=1):
             if cancel_callback and cancel_callback():
                 raise AnalysisCancelled()
             if progress_callback:
-                progress_callback(62 + int(index / max(total, 1) * 28), f"Scoring {record.evidence_id} ({index}/{total})")
+                progress_callback(62 + int(index / max(len(combined), 1) * 28), f"Scoring {record.evidence_id} ({index}/{len(combined)})")
             score, confidence, level, reasons, authenticity, metadata, technical, breakdown, contributors = detect_anomalies(
                 record,
                 baseline_device,
@@ -200,6 +203,13 @@ class CaseManager:
         return target
 
     def _carve_hidden_payloads(self, evidence_id: str, recoveries: List[dict]) -> List[str]:
+        """Recover suspicious appended payloads using inert file names.
+
+        The original detector may identify HTML, SVG, ZIP, PDF, or JSON-like payloads.
+        For analyst safety, recovered bytes are always written as .payload.bin and
+        the detected type/offset is stored in a JSON sidecar instead of giving the
+        payload an executable or auto-openable extension.
+        """
         if not recoveries:
             return []
         carved_root = self.case_root / self.active_case_id / "carved_payloads" / evidence_id
@@ -209,19 +219,36 @@ class CaseManager:
             blob = segment.get("bytes")
             if not isinstance(blob, (bytes, bytearray)) or not blob:
                 continue
-            ext = str(segment.get("extension", ".bin"))
-            ext = ext if ext.startswith(".") else f".{ext}"
             kind = re.sub(r"[^A-Za-z0-9_-]+", "_", str(segment.get("kind", "payload"))).strip("_") or "payload"
-            output = carved_root / f"{evidence_id}_segment_{index:02d}_{kind}{ext}"
+            output = carved_root / f"{evidence_id}_segment_{index:02d}_{kind}.payload.bin"
             output.write_bytes(bytes(blob))
+            metadata = {
+                "evidence_id": evidence_id,
+                "segment_index": index,
+                "detected_type": str(segment.get("kind", "payload")),
+                "original_extension_suggestion": str(segment.get("extension", ".bin")),
+                "offset": segment.get("offset"),
+                "length": segment.get("length"),
+                "label": str(segment.get("label", "Recovered payload segment")),
+                "safety_note": "Payload bytes are intentionally stored as .payload.bin to prevent accidental execution or unsafe browser rendering.",
+            }
+            output.with_suffix(output.suffix + ".metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
             carved_files.append(str(output))
         return carved_files
 
     def _build_record(self, file_path: Path, index: int) -> EvidenceRecord:
         original_path = file_path
         evidence_id = f"IMG-{index:03d}"
+        source_hashes = compute_hashes(original_path)
         staged_path = self._stage_evidence_file(original_path, evidence_id)
-        hashes = compute_hashes(staged_path)
+        working_hashes = compute_hashes(staged_path)
+        hashes = working_hashes
+        copy_verified = source_hashes.get("sha256") == working_hashes.get("sha256")
+        acquisition_note = (
+            "Source and working-copy SHA-256 hashes match; staged evidence copy verified."
+            if copy_verified
+            else "WARNING: source and working-copy SHA-256 hashes differ; re-acquire this evidence before relying on it."
+        )
         exif = extract_exif(staged_path)
         exif_warning = str(exif.get("__warning__", "")).strip()
         basic = extract_basic_image_info(staged_path)
@@ -232,6 +259,14 @@ class CaseManager:
         created_time, modified_time, created_time_note = extract_file_times(original_path)
         metadata = build_metadata_summary(exif)
         normalized_exif = {k: v for k, v in exif.items() if k not in {"__raw_tags__", "__warning__"}}
+        container_metadata = {
+            k: v for k, v in normalized_exif.items()
+            if k.startswith("ImageInfo ") or k.startswith("PNG ")
+        }
+        native_exif = {
+            k: v for k, v in normalized_exif.items()
+            if k not in container_metadata
+        }
         initial_source_type = classify_source(
             original_path,
             normalized_exif,
@@ -248,6 +283,7 @@ class CaseManager:
             int(basic["height"]),
             source_hint=initial_source_type,
             force=(initial_source_type in {"Screenshot", "Screenshot / Export", "Messaging Export"} or (not normalized_exif and file_path.suffix.lower() == ".png")),
+            cache_dir=self.case_root / self.active_case_id / "ocr_cache",
         )
         derived_geo = parse_derived_geo(
             list(visible.get("lines", [])) + list(embedded_scan.get("context_strings", [])),
@@ -289,14 +325,21 @@ class CaseManager:
             file_path=staged_path,
             original_file_path=original_path,
             working_copy_path=staged_path,
+            source_sha256=source_hashes.get("sha256", ""),
+            source_md5=source_hashes.get("md5", ""),
+            working_sha256=working_hashes.get("sha256", ""),
+            working_md5=working_hashes.get("md5", ""),
+            copy_verified=copy_verified,
+            acquisition_note=acquisition_note,
             file_name=original_path.name,
             sha256=hashes["sha256"],
             md5=hashes["md5"],
             perceptual_hash=compute_perceptual_hash(file_path),
             file_size=file_path.stat().st_size,
             imported_at=imported_at,
-            exif=normalized_exif,
+            exif=native_exif,
             raw_exif=normalized_exif,
+            container_metadata=container_metadata,
             exif_warning=exif_warning,
             timestamp=timestamp,
             timestamp_source=timestamp_source,
@@ -411,10 +454,46 @@ class CaseManager:
         if record.source_profile_reasons:
             record.osint_leads.append("Source-profile reasons: " + "; ".join(record.source_profile_reasons[:2]) + ".")
         record.osint_leads = record.osint_leads[:8]
-        self.db.log_action(record.case_id, record.evidence_id, "IMPORT", f"Imported {record.file_name}")
+        self.db.log_action(record.case_id, record.evidence_id, "IMPORT", f"Imported {record.file_name} | source_sha256={record.source_sha256} | working_sha256={record.working_sha256} | copy_verified={record.copy_verified}")
         return record
 
+    def _propagate_duplicate_context(self, records: List[EvidenceRecord]) -> None:
+        """Carry high-confidence contextual anchors across confirmed duplicate groups."""
+        groups: dict[str, list[EvidenceRecord]] = {}
+        for record in records:
+            if record.duplicate_group:
+                groups.setdefault(record.duplicate_group, []).append(record)
+        for group_records in groups.values():
+            geo_anchor = next(
+                (
+                    record for record in group_records
+                    if record.derived_geo_display != "Unavailable"
+                    and record.derived_latitude is not None
+                    and record.derived_longitude is not None
+                ),
+                None,
+            )
+            if geo_anchor is None:
+                continue
+            for record in group_records:
+                if record is geo_anchor or record.derived_geo_display != "Unavailable":
+                    continue
+                record.derived_latitude = geo_anchor.derived_latitude
+                record.derived_longitude = geo_anchor.derived_longitude
+                record.derived_geo_display = geo_anchor.derived_geo_display
+                record.derived_geo_source = f"Duplicate peer {geo_anchor.evidence_id}"
+                record.derived_geo_confidence = max(0, min(geo_anchor.derived_geo_confidence - 8, 70))
+                record.derived_geo_note = (
+                    f"Derived location context inherited from duplicate/near-duplicate peer {geo_anchor.evidence_id}; "
+                    "treat as contextual until manually corroborated."
+                )
+                record.possible_geo_clues = list(dict.fromkeys(record.possible_geo_clues + [geo_anchor.derived_geo_display]))
+                if record.geo_status == "No native GPS recovered.":
+                    record.geo_status = "No native GPS recovered, but duplicate-peer derived geo context is available."
+
     def _derive_integrity_status(self, record: EvidenceRecord) -> tuple[str, str]:
+        if record.source_sha256 and record.working_sha256 and not record.copy_verified:
+            return "Review Required", "Source/working-copy hashes do not match. Re-acquire the evidence before relying on this item."
         if record.parser_status != "Valid":
             return "Review Required", "Decoder could not fully parse the media. Treat structure validation as incomplete until a second parser confirms it."
         if record.signature_status == "Mismatch":
@@ -539,18 +618,25 @@ class CaseManager:
             return []
         loaded: List[EvidenceRecord] = []
         valid_fields = {field.name for field in fields(EvidenceRecord)}
+        path_fields = {"file_path", "original_file_path", "working_copy_path"}
         for raw in payload.get("records", []):
             prepared = {}
             for key, value in raw.items():
                 if key not in valid_fields:
                     continue
-                if key == "file_path":
+                if key in path_fields:
                     prepared[key] = Path(value) if value else Path(".")
                 else:
                     prepared[key] = value
             prepared.setdefault("case_id", case_id)
             prepared.setdefault("case_name", payload.get("case_name", self.active_case_name))
             prepared.setdefault("file_path", Path(prepared.get("file_name", "unknown")))
+            prepared.setdefault("original_file_path", prepared.get("file_path", Path(".")))
+            prepared.setdefault("working_copy_path", prepared.get("file_path", Path(".")))
+            if not prepared.get("working_sha256") and prepared.get("sha256"):
+                prepared["working_sha256"] = prepared.get("sha256", "")
+            if not prepared.get("working_md5") and prepared.get("md5"):
+                prepared["working_md5"] = prepared.get("md5", "")
             try:
                 loaded.append(EvidenceRecord(**prepared))
             except Exception:
@@ -638,4 +724,6 @@ class CaseManager:
                 else:
                     row[field.name] = value
             payload["records"].append(row)
-        snapshot_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        tmp_path = snapshot_path.with_suffix(".json.tmp")
+        tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(tmp_path, snapshot_path)
