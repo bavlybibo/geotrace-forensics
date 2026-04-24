@@ -84,10 +84,10 @@ QLabel#CardChip { color:#81d8ff; font-size:8.4pt; font-weight:700; padding:3px 8
 QLabel#PreviewMetaTitle { color:#89a8c0; font-size:8.8pt; font-weight:600; }
 QLabel#PreviewMetaValue { color:#f5fbff; font-size:10.4pt; font-weight:700; }
 QLabel#PreviewZoomPill { background-color: rgba(11,35,55,0.9); border:1px solid #214867; border-radius:11px; padding:5px 10px; color:#e8f7ff; font-weight:700; }
-QLabel#EvidenceCardTitle { font-size:10.2pt; font-weight:800; color:#f5fbff; }
-QLabel#EvidenceCardMeta { font-size:8.9pt; color:#b5cada; }
+QLabel#EvidenceCardTitle { font-size:10.8pt; font-weight:800; color:#f5fbff; }
+QLabel#EvidenceCardMeta { font-size:9pt; color:#d7edff; }
 QLabel#EvidenceCardBadges { font-size:8.5pt; color:#bfefff; }
-QLabel#EvidenceCardSupport { font-size:8.4pt; color:#8eb6ce; }
+QLabel#EvidenceCardSupport { font-size:8.4pt; color:#8fd4ff; }
 
 QProgressBar#ConfidenceBar { background-color:#06111b; border:1px solid #173652; border-radius:8px; min-height:8px; max-height:8px; margin-top:2px; margin-bottom:4px; }
 QProgressBar#ConfidenceBar::chunk { border-radius:8px; background:qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #16b0ff, stop:1 #67ecff); }
@@ -98,8 +98,8 @@ QTextEdit#NarrativeView, QPlainTextEdit#TerminalView { background-color:#06111b;
 QTextEdit#NarrativeView { color:#e9f5ff; }
 QPlainTextEdit#TerminalView { color:#ccecff; }
 
-QListWidget#EvidenceList { background-color:#05101a; border:1px solid #112638; border-radius:16px; padding:8px; }
-QListWidget#EvidenceList::item { border:none; padding:3px; }
+QListWidget#EvidenceList { background-color:#05101a; border:1px solid #112638; border-radius:16px; padding:10px; }
+QListWidget#EvidenceList::item { border:none; padding:4px; }
 QListWidget#EvidenceList::item:selected { background:transparent; }
 QFrame#EvidenceListCard { background-color:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #081621, stop:1 #0a1823); border:1px solid #133149; border-radius:16px; }
 QFrame#EvidenceListCard:hover { border-color:#3b698b; background-color:#0b1c2a; }
@@ -124,7 +124,7 @@ QFrame#FailurePanel { background-color:#08121b; border:1px solid #204564; border
 QTabWidget#ReviewTabs::pane { border:1px solid #11293b; border-radius:15px; top:-1px; background-color:#06111b; margin-top:2px; }
 QTabWidget#ReviewTabs QTabBar::tab {
     background-color:#091827; border:1px solid #14314a; color:#cbeeff; border-top-left-radius:11px; border-top-right-radius:11px;
-    padding:9px 14px; margin-right:6px; font-weight:700; min-width:0px;
+    padding:10px 16px 10px 16px; margin-right:6px; font-weight:700; font-size:10pt; min-width:92px; min-height:26px; qproperty-alignment: AlignCenter;
 }
 QTabWidget#ReviewTabs QTabBar::tab:selected { background-color:#10283d; border-color:#43d2ff; color:#8fe6ff; }
 QTabWidget#ReviewTabs QTabBar::tab:hover { border-color:#35cdff; background-color:#0b1d2d; }

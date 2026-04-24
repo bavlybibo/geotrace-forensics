@@ -21,7 +21,10 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from app.core.models import CaseInfo, EvidenceRecord
+try:
+    from ..core.models import CaseInfo, EvidenceRecord
+except ImportError:  # pragma: no cover - fallback for direct script execution
+    from app.core.models import CaseInfo, EvidenceRecord
 
 
 DIALOG_STYLESHEET = """
@@ -126,7 +129,9 @@ class OnboardingDialog(QDialog):
         hero_layout = QVBoxLayout(hero)
         hero_layout.setContentsMargins(14, 14, 14, 14)
         hero_layout.setSpacing(6)
-        hero_layout.addWidget(title)
+        hero_title = QLabel('Start a protected forensic case')
+        hero_title.setStyleSheet('font-size: 13pt; font-weight: 800; color: #e8f8ff;')
+        hero_layout.addWidget(hero_title)
         intro = QLabel('Control how the review workspace opens, where exports land you afterward, and whether onboarding or confirmation prompts stay visible.')
         intro.setWordWrap(True)
         intro.setProperty('role', 'muted')
@@ -207,7 +212,9 @@ class SettingsDialog(QDialog):
         hero_layout = QVBoxLayout(hero)
         hero_layout.setContentsMargins(14, 14, 14, 14)
         hero_layout.setSpacing(6)
-        hero_layout.addWidget(title)
+        hero_title = QLabel('Start a protected forensic case')
+        hero_title.setStyleSheet('font-size: 13pt; font-weight: 800; color: #e8f8ff;')
+        hero_layout.addWidget(hero_title)
         intro = QLabel('Control how the review workspace opens, where exports land you afterward, and whether onboarding or confirmation prompts stay visible.')
         intro.setWordWrap(True)
         intro.setProperty('role', 'muted')

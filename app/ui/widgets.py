@@ -253,8 +253,8 @@ class EvidenceListCard(QFrame):
         super().__init__()
         self.setObjectName("EvidenceListCard")
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(10)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(14)
 
         self.accent = QFrame()
         self.accent.setObjectName("EvidenceAccent")
@@ -262,16 +262,18 @@ class EvidenceListCard(QFrame):
 
         self.thumb = QLabel()
         self.thumb.setObjectName("EvidenceThumb")
-        self.thumb.setFixedSize(116, 78)
+        self.thumb.setFixedSize(148, 100)
         self.thumb.setAlignment(Qt.AlignCenter)
 
         body = QVBoxLayout()
-        body.setSpacing(5)
+        body.setSpacing(8)
         title_row = QHBoxLayout()
         title_row.setSpacing(6)
         self.title_label = QLabel("Awaiting evidence")
         self.title_label.setObjectName("EvidenceCardTitle")
         self.title_label.setWordWrap(True)
+        self.title_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.title_label.setMinimumHeight(34)
         self.score_label = QLabel("Score 0")
         self.score_label.setObjectName("EvidenceChip")
         title_row.addWidget(self.title_label, 1)
@@ -280,13 +282,18 @@ class EvidenceListCard(QFrame):
         self.meta_label = QLabel("No metadata yet")
         self.meta_label.setObjectName("EvidenceCardMeta")
         self.meta_label.setWordWrap(True)
+        self.meta_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.meta_label.setMinimumHeight(50)
         self.badge_label = QLabel("—")
         self.badge_label.setObjectName("EvidenceCardBadges")
         self.badge_label.setWordWrap(True)
+        self.badge_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.supporting_label = QLabel("")
         self.supporting_label.setObjectName("EvidenceCardSupport")
         self.supporting_label.setWordWrap(True)
+        self.supporting_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.supporting_label.setVisible(False)
+        self.setMinimumHeight(148)
         self.value_label = QLabel("Value Low")
         self.value_label.setObjectName("EvidenceChip")
         chips = QHBoxLayout()
@@ -354,7 +361,7 @@ class ChartCard(QFrame):
 
 
 class ScoreRing(QWidget):
-    def __init__(self, diameter: int = 138) -> None:
+    def __init__(self, diameter: int = 154) -> None:
         super().__init__()
         self._value = 0
         self._caption = "Evidence Score"
@@ -380,7 +387,7 @@ class ScoreRing(QWidget):
         center = ring_area.center()
         size = min(ring_area.width(), ring_area.height())
         ring_rect = QRectF(center.x() - size / 2, center.y() - size / 2, size, size)
-        painter.setPen(QPen(QColor("#15324d"), 11))
+        painter.setPen(QPen(QColor("#15324d"), 13))
         painter.setBrush(Qt.NoBrush)
         painter.drawEllipse(ring_rect)
         tone = QColor("#61e3a8")
@@ -390,12 +397,12 @@ class ScoreRing(QWidget):
             tone = QColor("#ffd166")
         elif self._value == 0:
             tone = QColor("#2ed2ff")
-        value_pen = QPen(tone, 11)
+        value_pen = QPen(tone, 13)
         value_pen.setCapStyle(Qt.RoundCap)
         painter.setPen(value_pen)
         painter.drawArc(ring_rect, 90 * 16, int(-360 * 16 * (self._value / 100.0)))
         painter.setPen(QColor("#ffffff"))
-        painter.setFont(QFont("Segoe UI", 24, QFont.Bold))
+        painter.setFont(QFont("Segoe UI", 28, QFont.Bold))
         painter.drawText(ring_rect.adjusted(0, -4, 0, -8), Qt.AlignCenter, str(self._value))
         footer = QRectF(rect.left(), ring_rect.bottom() - 2, rect.width(), footer_height)
         painter.setPen(QColor("#8bb0cb"))
