@@ -85,17 +85,19 @@ class CaseDatabase:
 
     def create_case(self, case_id: str, case_name: str, *, set_active: bool = True) -> None:
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        with self._connect() as connection:
-            if set_active:
-                connection.execute("UPDATE cases SET is_active = 0")
-            connection.execute(
-                """
-                INSERT OR REPLACE INTO cases(case_id, case_name, created_at, updated_at, is_active)
-                VALUES (?, COALESCE((SELECT case_name FROM cases WHERE case_id = ?), ?),
-                        COALESCE((SELECT created_at FROM cases WHERE case_id = ?), ?), ?, ?)
-                """,
-                (case_id, case_id, case_name, case_id, now, now, 1 if set_active else 0),
-            )
+        try:
+            with self._connect() as connection:
+                if set_active:
+                    connection.execute("UPDATE cases SET is_active = 0")
+                connection.execute(
+                    """
+                    INSERT INTO cases(case_id, case_name, created_at, updated_at, is_active)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (case_id, case_name, now, now, 1 if set_active else 0),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError(f"Case ID already exists and will not be overwritten: {case_id}") from exc
 
     def set_active_case(self, case_id: str) -> None:
         with self._connect() as connection:

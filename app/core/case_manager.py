@@ -4,13 +4,16 @@ import json
 import os
 import re
 import shutil
+import logging
 from dataclasses import fields
 from datetime import datetime, timezone
+from uuid import uuid4
 from pathlib import Path
 from typing import Callable, List, Optional
 
 from .anomalies import assign_duplicate_groups, assign_scene_groups, detect_anomalies, dominant_device, parse_timestamp
 from .case_db import CaseDatabase
+from .ai_engine import run_ai_batch_assessment
 from .exif_service import (
     build_metadata_summary,
     build_osint_leads,
@@ -47,6 +50,10 @@ class CaseManager:
         self.project_root = project_root
         self.case_root = project_root / "case_data"
         self.case_root.mkdir(parents=True, exist_ok=True)
+        self.logs_dir = project_root / "logs"
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        self.logger = logging.getLogger("geotrace.case_manager")
+        self.snapshot_warnings: List[str] = []
         self.db = CaseDatabase(self.case_root / "geotrace_case.db")
         self.records: List[EvidenceRecord] = []
         active = self.db.get_active_case()
@@ -67,10 +74,10 @@ class CaseManager:
         return self.db.list_cases()
 
     def new_case(self, case_name: Optional[str] = None) -> CaseInfo:
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
         case_name = (case_name or f"Case {timestamp}").strip() or f"Case {timestamp}"
         slug = re.sub(r"[^A-Z0-9]+", "-", case_name.upper()).strip("-")[:26] or "CASE"
-        case_id = f"GT-{datetime.now(timezone.utc).strftime('%Y')}-{slug}-{timestamp[-4:]}"
+        case_id = f"GT-{timestamp}-{slug}-{uuid4().hex[:6].upper()}"
         self.db.create_case(case_id, case_name, set_active=True)
         self.active_case = self.db.get_active_case() or CaseInfo(
             case_id,
@@ -127,18 +134,41 @@ class CaseManager:
         assign_duplicate_groups(combined)
         assign_scene_groups(combined)
         self._propagate_duplicate_context(combined)
+        if progress_callback:
+            progress_callback(66, "Running AI-assisted batch risk review…")
+        ai_findings = run_ai_batch_assessment(combined)
         baseline_device = dominant_device(combined)
 
         for index, record in enumerate(combined, start=1):
             if cancel_callback and cancel_callback():
                 raise AnalysisCancelled()
             if progress_callback:
-                progress_callback(62 + int(index / max(len(combined), 1) * 28), f"Scoring {record.evidence_id} ({index}/{len(combined)})")
+                progress_callback(70 + int(index / max(len(combined), 1) * 24), f"Scoring {record.evidence_id} ({index}/{len(combined)})")
             score, confidence, level, reasons, authenticity, metadata, technical, breakdown, contributors = detect_anomalies(
                 record,
                 baseline_device,
                 record.file_path,
             )
+            ai_result = ai_findings.get(record.evidence_id)
+            if ai_result is not None:
+                record.ai_provider = ai_result.provider
+                record.ai_score_delta = int(ai_result.score_delta)
+                record.ai_confidence = int(ai_result.confidence_delta)
+                record.ai_risk_label = ai_result.label
+                record.ai_summary = ai_result.summary
+                record.ai_flags = list(ai_result.flags)
+                record.ai_reasons = list(ai_result.reasons)
+                record.ai_breakdown = list(ai_result.breakdown)
+                if ai_result.score_delta:
+                    score = min(100, score + int(ai_result.score_delta))
+                    confidence = min(98, confidence + int(ai_result.confidence_delta))
+                    reasons = list(dict.fromkeys(reasons + ai_result.reasons))
+                    breakdown = breakdown + ai_result.breakdown
+                    contributors = list(dict.fromkeys(contributors + ai_result.contributors))
+                    recalculated_level = "High" if score >= 70 else "Medium" if score >= 35 else "Low"
+                    rank = {"Low": 0, "Medium": 1, "High": 2}
+                    level = recalculated_level if rank[recalculated_level] > rank.get(level, 0) else level
+
             record.suspicion_score = score
             record.confidence_score = confidence
             record.risk_level = level
@@ -169,7 +199,7 @@ class CaseManager:
                 record.case_id,
                 record.evidence_id,
                 "ANALYZE",
-                f"Risk={level}, Score={score}, Confidence={confidence}, Integrity={record.integrity_status}",
+                f"Risk={level}, Score={score}, Confidence={confidence}, AI_delta={record.ai_score_delta}, Integrity={record.integrity_status}",
             )
             record.custody_event_summary = self.db.summarize_evidence_events(record.case_id, record.evidence_id)
 
@@ -523,6 +553,8 @@ class CaseManager:
             evidence_bits.append(record.gps_ladder[min(1, len(record.gps_ladder) - 1)])
         if record.time_conflicts:
             evidence_bits.append(record.time_conflicts[0])
+        if record.ai_flags:
+            evidence_bits.append(record.ai_summary)
         evidence_bits = evidence_bits[:4]
         recommendation = record.metadata_recommendations[0] if record.metadata_recommendations else record.score_next_step
         return (
@@ -549,6 +581,8 @@ class CaseManager:
             limitations.append("No native GPS available; location claims require external corroboration.")
         if record.time_conflicts:
             limitations.append("Time candidates conflict materially across filename, visible, or filesystem anchors.")
+        if record.ai_flags:
+            limitations.append(f"AI-assisted batch review flagged: {', '.join(record.ai_flags[:3])}. Treat this as triage guidance until manually corroborated.")
         if record.parser_status != "Valid" or record.signature_status == "Mismatch":
             limitations.append("Structure/parser issues reduce courtroom confidence until a second parser confirms the file.")
         if record.hidden_code_indicators:
@@ -608,13 +642,44 @@ class CaseManager:
                 return record
         return None
 
+    def _record_snapshot_warning(self, message: str) -> None:
+        stamped = f"{datetime.now(timezone.utc).isoformat(timespec='seconds')} | {message}"
+        self.snapshot_warnings.append(stamped)
+        self.logger.warning(stamped)
+        try:
+            with (self.logs_dir / "snapshot_recovery.log").open("a", encoding="utf-8") as handle:
+                handle.write(stamped + "\n")
+        except Exception:
+            pass
+
     def load_case_snapshot(self, case_id: str) -> List[EvidenceRecord]:
         snapshot_path = self.case_root / case_id / "case_snapshot.json"
-        if not snapshot_path.exists():
-            return []
-        try:
-            payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
-        except Exception:
+        backup_path = snapshot_path.with_suffix(".json.bak")
+        payload = None
+        primary_error: Exception | None = None
+        for candidate in (snapshot_path, backup_path):
+            if not candidate.exists():
+                continue
+            try:
+                payload = json.loads(candidate.read_text(encoding="utf-8"))
+                if candidate == backup_path and primary_error is not None:
+                    self._record_snapshot_warning(
+                        f"Primary snapshot for {case_id} was unreadable; recovered records from backup {backup_path.name}. Error: {primary_error}"
+                    )
+                break
+            except Exception as exc:
+                if candidate == snapshot_path:
+                    primary_error = exc
+                    self._record_snapshot_warning(
+                        f"Primary snapshot for {case_id} is unreadable; attempting backup recovery. Error: {exc}"
+                    )
+                else:
+                    self._record_snapshot_warning(
+                        f"Backup snapshot for {case_id} is also unreadable. Error: {exc}"
+                    )
+        if payload is None:
+            if primary_error is not None:
+                self._record_snapshot_warning(f"No valid snapshot could be loaded for {case_id}; case opened with empty evidence list.")
             return []
         loaded: List[EvidenceRecord] = []
         valid_fields = {field.name for field in fields(EvidenceRecord)}
@@ -674,10 +739,11 @@ class CaseManager:
         derived_geo = sum(1 for record in self.records if record.derived_geo_display != "Unavailable" or record.possible_geo_clues)
         validation = build_validation_metrics(self.records)
         validation_line = validation.get("summary", "No linked validation dataset was found.")
+        ai_review = sum(1 for record in self.records if record.ai_flags)
         return (
             f"GPS strong anchors {gps_ok}/{len(self.records)} • Parser clean {parser_ok}/{len(self.records)} • "
             f"OCR/entity-rich items {ocr_entities}/{len(self.records)} • Derived geo leads {derived_geo}/{len(self.records)} • "
-            f"Hidden/code hits {hidden} • Integrity checked {integrity_ok}/{len(self.records)} • Custody chain {chain_state} • "
+            f"AI-reviewed flags {ai_review}/{len(self.records)} • Hidden/code hits {hidden} • Integrity checked {integrity_ok}/{len(self.records)} • Custody chain {chain_state} • "
             f"Validation: {validation_line}"
         )
 
@@ -724,6 +790,12 @@ class CaseManager:
                 else:
                     row[field.name] = value
             payload["records"].append(row)
+        backup_path = snapshot_path.with_suffix(".json.bak")
         tmp_path = snapshot_path.with_suffix(".json.tmp")
         tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        if snapshot_path.exists():
+            try:
+                shutil.copy2(snapshot_path, backup_path)
+            except Exception:
+                pass
         os.replace(tmp_path, snapshot_path)

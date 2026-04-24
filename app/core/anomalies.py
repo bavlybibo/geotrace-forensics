@@ -553,5 +553,5 @@ def detect_anomalies(
         level = "Low"
 
     if not reasons:
-        reasons.append("No major metadata anomalies were detected.")
+        breakdown.append("Status +0 — no major metadata anomaly was converted into an issue.")
     return score, confidence, level, reasons, authenticity, metadata, technical, breakdown, contributors

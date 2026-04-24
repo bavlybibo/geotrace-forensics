@@ -4,13 +4,14 @@ import csv
 import hashlib
 import html
 import json
+import re
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, List
+from typing import Any, Iterable, List
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -42,6 +43,74 @@ class ReportService:
             return str(Path("[CASE_DATA]", *parts[idx + 1:]))
         return str(Path("[REDACTED]", path_obj.name))
 
+    def _normalize_privacy_level(self, privacy_mode: bool, privacy_level: str | None) -> str:
+        if privacy_level:
+            normalized = privacy_level.strip().lower().replace("-", "_")
+            if normalized in {"full", "path_only", "redacted_text"}:
+                return normalized
+        return "redacted_text" if privacy_mode else "full"
+
+    def _redact_text(self, value: str, privacy_level: str) -> str:
+        if privacy_level != "redacted_text" or not value:
+            return value
+        redacted = re.sub(r"https?://\S+|www\.\S+", "[REDACTED_URL]", value)
+        redacted = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[REDACTED_EMAIL]", redacted)
+        redacted = re.sub(r"(?<![\w.])@[A-Za-z0-9_.-]{2,}", "[REDACTED_USERNAME]", redacted)
+        redacted = re.sub(r"\b-?\d{1,3}\.\d{4,}\s*,\s*-?\d{1,3}\.\d{4,}\b", "[REDACTED_COORDINATES]", redacted)
+        return redacted
+
+    def _redact_collection(self, values: Any, privacy_level: str, *, replacement: str | None = None) -> Any:
+        if privacy_level != "redacted_text":
+            return values
+        if values is None:
+            return values
+        if isinstance(values, dict):
+            return {key: self._redact_collection(value, privacy_level, replacement=replacement) for key, value in values.items()}
+        if isinstance(values, list):
+            if replacement:
+                return [replacement for _ in values]
+            return [self._redact_collection(value, privacy_level, replacement=replacement) for value in values]
+        if isinstance(values, str):
+            return replacement if replacement else self._redact_text(values, privacy_level)
+        return values
+
+    def _privacy_note(self, privacy_level: str) -> str:
+        if privacy_level == "redacted_text":
+            return "Privacy level: redacted_text — paths, OCR text, URLs, usernames, emails, and location/entity text are redacted from shareable outputs."
+        if privacy_level == "path_only":
+            return "Privacy level: path_only — filesystem paths are redacted, but recovered text/entities remain visible for analyst review."
+        return "Privacy level: full — no privacy redaction was applied."
+
+    def _safe_geo_display(self, value: str, privacy_level: str) -> str:
+        if privacy_level != "redacted_text":
+            return value
+        clean = (value or "").strip()
+        if not clean or clean.lower() in {"unavailable", "unknown", "no gps", "none", "absent"}:
+            return value
+        return "[REDACTED_LOCATION]"
+
+    def _redact_freeform_text(self, value: str, privacy_level: str, *, replacement: str = "[REDACTED_TEXT]") -> str:
+        if privacy_level == "redacted_text" and value:
+            return replacement
+        return value
+
+    def _join_redacted(
+        self,
+        values: list[str],
+        privacy_level: str,
+        *,
+        fallback: str = "None",
+        limit: int | None = None,
+        replacement: str | None = None,
+    ) -> str:
+        selected = list(values or [])
+        if limit is not None:
+            selected = selected[:limit]
+        if not selected:
+            return fallback
+        redacted = self._redact_collection(selected, privacy_level, replacement=replacement)
+        return ", ".join(str(item) for item in redacted)
+
     def _file_sha256(self, path: Path) -> str:
         try:
             digest = hashlib.sha256()
@@ -70,18 +139,18 @@ class ReportService:
         except Exception:
             return None
 
-    def _corroboration_checklist_lines(self, record: EvidenceRecord) -> list[str]:
+    def _corroboration_checklist_lines(self, record: EvidenceRecord, privacy_level: str = "full") -> list[str]:
         lines = [f"Preserve original path and hashes for {record.evidence_id} before sharing or re-exporting."]
         lines.append(f"Validate the selected time anchor ({record.timestamp_source}) against uploads, chats, logs, or witness accounts.")
         if record.has_gps:
-            lines.append(f"Verify native GPS coordinates externally around {record.gps_display} before making courtroom location claims.")
+            lines.append(f"Verify native GPS coordinates externally around {self._safe_geo_display(record.gps_display, privacy_level)} before making courtroom location claims.")
         elif record.derived_geo_display != "Unavailable":
-            lines.append(f"Treat derived geo ({record.derived_geo_display}) as contextual only until browser/app history confirms it.")
+            lines.append(f"Treat derived geo ({self._safe_geo_display(record.derived_geo_display, privacy_level)}) as contextual only until browser/app history confirms it.")
         else:
             lines.append("Use timeline, source profile, and surrounding case context because no GPS anchor was recovered.")
         if record.visible_text_excerpt:
             lines.append("Cross-check OCR clues with the source application, browser history, or visible conversation context.")
-        return lines[:4]
+        return [self._redact_text(line, privacy_level) for line in lines[:4]]
 
     def _build_static_map_chart(self, records: list[EvidenceRecord]) -> Path | None:
         gps_records = [r for r in records if r.has_gps or (r.derived_latitude is not None and r.derived_longitude is not None)]
@@ -125,6 +194,8 @@ class ReportService:
         parser_issue_count = sum(1 for record in records if record.parser_status != "Valid" or record.signature_status == "Mismatch")
         hidden_count = sum(1 for record in records if record.hidden_code_indicators or record.hidden_suspicious_embeds)
         validation = build_validation_metrics(records)
+        ai_flagged = sum(1 for record in records if record.ai_flags)
+        ai_total_delta = sum(int(record.ai_score_delta or 0) for record in records)
         return {
             "total": total,
             "gps_count": gps_count,
@@ -134,6 +205,8 @@ class ReportService:
             "dominant_source": dominant_source,
             "parser_issue_count": parser_issue_count,
             "hidden_count": hidden_count,
+            "ai_flagged": ai_flagged,
+            "ai_total_delta": ai_total_delta,
             "validation_summary": validation.get("summary", "No linked validation dataset was found."),
             "validation_pass_rate": validation.get("pass_rate", 0.0),
         }
@@ -159,6 +232,8 @@ class ReportService:
                     "Evidentiary Value",
                     "Courtroom Strength",
                     "Risk",
+                    "AI Flags",
+                    "AI Score Delta",
                     "Integrity",
                     "SHA-256",
                 ]
@@ -181,13 +256,17 @@ class ReportService:
                         record.evidentiary_value,
                         record.courtroom_strength,
                         record.risk_level,
+                        "; ".join(record.ai_flags),
+                        record.ai_score_delta,
                         record.integrity_status,
                         record.sha256,
                     ]
                 )
         return output
 
-    def export_json(self, records: Iterable[EvidenceRecord], *, privacy_mode: bool = True) -> Path:
+    def export_json(self, records: Iterable[EvidenceRecord], *, privacy_mode: bool = True, privacy_level: str | None = None) -> Path:
+        privacy_level = self._normalize_privacy_level(privacy_mode, privacy_level)
+        privacy_mode = privacy_level != "full"
         output = self.export_dir / "evidence_summary.json"
         payload = []
         for record in records:
@@ -198,15 +277,17 @@ class ReportService:
                     "evidence_id": record.evidence_id,
                     "file_name": record.file_name,
                     "privacy_mode": privacy_mode,
+                    "privacy_level": privacy_level,
+                    "privacy_notes": "Paths, OCR text, visible text, usernames, URLs, and location text are redacted." if privacy_level == "redacted_text" else "Only filesystem paths are redacted." if privacy_level == "path_only" else "Full analyst export; no privacy redaction applied.",
                     "file_path": self._safe_path(record.file_path, privacy_mode=privacy_mode),
                     "original_file_path": self._safe_path(record.original_file_path, privacy_mode=privacy_mode),
                     "working_copy_path": self._safe_path(record.working_copy_path, privacy_mode=privacy_mode),
                     "source_type": record.source_type,
                     "source_subtype": record.source_subtype,
                     "source_profile_confidence": record.source_profile_confidence,
-                    "source_profile_reasons": record.source_profile_reasons,
-                    "environment_profile": record.environment_profile,
-                    "app_detected": record.app_detected,
+                    "source_profile_reasons": self._redact_collection(record.source_profile_reasons, privacy_level),
+                    "environment_profile": self._redact_text(record.environment_profile, privacy_level),
+                    "app_detected": self._redact_text(record.app_detected, privacy_level),
                     "scene_group": record.scene_group,
                     "similarity_score": record.similarity_score,
                     "similarity_note": record.similarity_note,
@@ -220,61 +301,61 @@ class ReportService:
                     "signature_status": record.signature_status,
                     "format_trust": record.format_trust,
                     "native_exif_count": len(record.exif),
-                    "container_metadata": record.container_metadata,
+                    "container_metadata": self._redact_collection(record.container_metadata, privacy_level),
                     "dimensions": record.dimensions,
                     "gps": {
-                        "display": record.gps_display,
-                        "latitude": record.gps_latitude,
-                        "longitude": record.gps_longitude,
-                        "altitude": record.gps_altitude,
+                        "display": self._safe_geo_display(record.gps_display, privacy_level),
+                        "latitude": None if privacy_level == "redacted_text" else record.gps_latitude,
+                        "longitude": None if privacy_level == "redacted_text" else record.gps_longitude,
+                        "altitude": None if privacy_level == "redacted_text" else record.gps_altitude,
                         "source": record.gps_source,
                         "confidence": record.gps_confidence,
                         "verification": record.gps_verification,
                         "derived": {
-                            "display": record.derived_geo_display,
-                            "latitude": record.derived_latitude,
-                            "longitude": record.derived_longitude,
+                            "display": self._safe_geo_display(record.derived_geo_display, privacy_level),
+                            "latitude": None if privacy_level == "redacted_text" else record.derived_latitude,
+                            "longitude": None if privacy_level == "redacted_text" else record.derived_longitude,
                             "source": record.derived_geo_source,
                             "confidence": record.derived_geo_confidence,
-                            "note": record.derived_geo_note,
+                            "note": self._redact_freeform_text(record.derived_geo_note, privacy_level),
                         },
                         "status": record.geo_status,
                     },
-                    "anomaly_reasons": record.anomaly_reasons,
+                    "anomaly_reasons": self._redact_collection(record.anomaly_reasons, privacy_level),
                     "anomaly_contributors": record.anomaly_contributors,
-                    "osint_leads": record.osint_leads,
-                    "analyst_verdict": record.analyst_verdict,
-                    "courtroom_notes": record.courtroom_notes,
+                    "osint_leads": self._redact_collection(record.osint_leads, privacy_level),
+                    "analyst_verdict": self._redact_freeform_text(record.analyst_verdict, privacy_level),
+                    "courtroom_notes": self._redact_freeform_text(record.courtroom_notes, privacy_level),
                     "hidden": {
-                        "summary": record.hidden_code_summary,
-                        "overview": record.hidden_content_overview,
-                        "context_summary": record.hidden_context_summary,
+                        "summary": self._redact_freeform_text(record.hidden_code_summary, privacy_level),
+                        "overview": self._redact_freeform_text(record.hidden_content_overview, privacy_level),
+                        "context_summary": self._redact_freeform_text(record.hidden_context_summary, privacy_level),
                         "types": record.hidden_finding_types,
-                        "indicators": record.hidden_code_indicators,
-                        "suspicious_embeds": record.hidden_suspicious_embeds,
-                        "payload_markers": record.hidden_payload_markers,
-                        "readable_strings": record.extracted_strings,
-                        "urls": record.urls_found,
+                        "indicators": self._redact_collection(record.hidden_code_indicators, privacy_level),
+                        "suspicious_embeds": self._redact_collection(record.hidden_suspicious_embeds, privacy_level),
+                        "payload_markers": self._redact_collection(record.hidden_payload_markers, privacy_level),
+                        "readable_strings": self._redact_collection(record.extracted_strings, privacy_level, replacement="[REDACTED_TEXT]"),
+                        "urls": self._redact_collection(record.urls_found, privacy_level, replacement="[REDACTED_URL]"),
                         "stego_suspicion": record.stego_suspicion,
                     },
                     "visible_text": {
-                        "excerpt": record.visible_text_excerpt,
-                        "lines": record.visible_text_lines,
-                        "urls": record.visible_urls,
+                        "excerpt": self._redact_freeform_text(record.visible_text_excerpt, privacy_level),
+                        "lines": self._redact_collection(record.visible_text_lines, privacy_level, replacement="[REDACTED_TEXT]"),
+                        "urls": self._redact_collection(record.visible_urls, privacy_level, replacement="[REDACTED_URL]"),
                         "times": record.visible_time_strings,
-                        "locations": record.visible_location_strings,
+                        "locations": self._redact_collection(record.visible_location_strings, privacy_level, replacement="[REDACTED_LOCATION]"),
                     },
                     "ocr": {
-                        "raw_text": record.ocr_raw_text,
+                        "raw_text": self._redact_freeform_text(record.ocr_raw_text, privacy_level),
                         "confidence": record.ocr_confidence,
-                        "analyst_relevance": record.ocr_analyst_relevance,
+                        "analyst_relevance": self._redact_freeform_text(record.ocr_analyst_relevance, privacy_level),
                         "entities": {
                             "app_names": record.ocr_app_names,
-                            "locations": record.ocr_location_entities,
+                            "locations": self._redact_collection(record.ocr_location_entities, privacy_level, replacement="[REDACTED_LOCATION]"),
                             "times": record.ocr_time_entities,
-                            "urls": record.ocr_url_entities,
-                            "usernames": record.ocr_username_entities,
-                            "map_labels": record.ocr_map_labels,
+                            "urls": self._redact_collection(record.ocr_url_entities, privacy_level, replacement="[REDACTED_URL]"),
+                            "usernames": self._redact_collection(record.ocr_username_entities, privacy_level, replacement="[REDACTED_USERNAME]"),
+                            "map_labels": self._redact_collection(record.ocr_map_labels, privacy_level, replacement="[REDACTED_LOCATION]"),
                         },
                     },
                     "acquisition": {
@@ -286,14 +367,14 @@ class ReportService:
                         "working_sha256": record.working_sha256,
                         "working_md5": record.working_md5,
                         "copy_verified": record.copy_verified,
-                        "acquisition_note": record.acquisition_note,
+                        "acquisition_note": self._redact_text(record.acquisition_note, privacy_level),
                         "custody_events_slice": record.custody_event_summary,
                     },
                     "time_candidates": record.time_candidates,
                     "time_conflicts": record.time_conflicts,
-                    "integrity_note": record.integrity_note,
-                    "exif_warning": record.exif_warning,
-                    "created_time_note": record.created_time_note,
+                    "integrity_note": self._redact_freeform_text(record.integrity_note, privacy_level),
+                    "exif_warning": self._redact_freeform_text(record.exif_warning, privacy_level),
+                    "created_time_note": self._redact_freeform_text(record.created_time_note, privacy_level),
                     "suspicion_score": record.suspicion_score,
                     "confidence_score": record.confidence_score,
                     "evidentiary_value": record.evidentiary_value,
@@ -301,15 +382,15 @@ class ReportService:
                     "courtroom_strength": record.courtroom_strength,
                     "courtroom_label": record.courtroom_label,
                     "risk_level": record.risk_level,
-                    "tags": record.tags,
+                    "tags": self._redact_text(record.tags, privacy_level),
                     "bookmarked": record.bookmarked,
                     "sha256": record.sha256,
                     "md5": record.md5,
                     "perceptual_hash": record.perceptual_hash,
-                    "metadata_issues": record.metadata_issues,
+                    "metadata_issues": self._redact_collection(record.metadata_issues, privacy_level),
                     "metadata_strengths": record.metadata_strengths,
-                    "metadata_recommendations": record.metadata_recommendations,
-                    "metadata_issue_summary": record.metadata_issue_summary,
+                    "metadata_recommendations": self._redact_collection(record.metadata_recommendations, privacy_level),
+                    "metadata_issue_summary": self._redact_freeform_text(record.metadata_issue_summary, privacy_level),
                     "gps_ladder": record.gps_ladder,
                     "gps_primary_issue": record.gps_primary_issue,
                     "duplicate": {
@@ -320,10 +401,20 @@ class ReportService:
                         "distance": record.duplicate_distance,
                     },
                     "score_explainability": {
-                        "primary_issue": record.score_primary_issue,
-                        "reason": record.score_reason,
-                        "next_step": record.score_next_step,
-                        "summary": record.score_summary,
+                        "primary_issue": self._redact_freeform_text(record.score_primary_issue, privacy_level),
+                        "reason": self._redact_freeform_text(record.score_reason, privacy_level),
+                        "next_step": self._redact_freeform_text(record.score_next_step, privacy_level),
+                        "summary": self._redact_freeform_text(record.score_summary, privacy_level),
+                    },
+                    "ai_assessment": {
+                        "provider": record.ai_provider,
+                        "risk_label": record.ai_risk_label,
+                        "score_delta": record.ai_score_delta,
+                        "confidence_delta": record.ai_confidence,
+                        "summary": self._redact_freeform_text(record.ai_summary, privacy_level),
+                        "flags": record.ai_flags,
+                        "reasons": self._redact_collection(record.ai_reasons, privacy_level),
+                        "breakdown": record.ai_breakdown,
                     },
                     "validation": {
                         "hits": record.validation_hits,
@@ -334,7 +425,8 @@ class ReportService:
         output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return output
 
-    def export_executive_summary(self, records: List[EvidenceRecord], case_id: str, case_name: str) -> Path:
+    def export_executive_summary(self, records: List[EvidenceRecord], case_id: str, case_name: str, *, privacy_mode: bool = True, privacy_level: str | None = None) -> Path:
+        privacy_level = self._normalize_privacy_level(privacy_mode, privacy_level)
         output = self.export_dir / "executive_summary.txt"
         metrics = self._case_metrics(records)
         lines = [
@@ -343,11 +435,13 @@ class ReportService:
             f"Case Name: {case_name}",
             f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             f"Version: {APP_VERSION} ({APP_BUILD_CHANNEL})",
+            self._privacy_note(privacy_level),
             "",
             f"Total evidence items: {metrics['total']}",
             f"Native GPS items: {metrics['gps_count']}",
             f"Derived geo clues: {sum(1 for r in records if r.derived_geo_display != 'Unavailable')}",
             f"Review items (non-low risk): {metrics['anomaly_count']}",
+            f"AI-assisted flags: {metrics['ai_flagged']} item(s) / total AI delta {metrics['ai_total_delta']}",
             f"Parser/signature issues: {metrics['parser_issue_count']}",
             f"Hidden/code hits: {metrics['hidden_count']}",
             f"Duplicate clusters: {len(metrics['duplicate_groups'])}",
@@ -362,16 +456,18 @@ class ReportService:
                 [
                     f"- {record.evidence_id} | {record.file_name} | {record.risk_level} | Score {record.suspicion_score} | Confidence {record.confidence_score}% | Value {record.evidentiary_value}% | Courtroom {record.courtroom_strength}%",
                     f"  Time: {record.timestamp} ({record.timestamp_source}, {record.timestamp_confidence}%)",
-                    f"  GPS: {record.gps_display} ({record.gps_confidence}%) | Derived: {record.derived_geo_display} ({record.derived_geo_confidence}%)",
-                    f"  Primary issue: {record.score_primary_issue}",
-                    f"  Why it matters: {record.score_reason}",
-                    f"  Next step: {record.score_next_step}",
+                    f"  GPS: {self._safe_geo_display(record.gps_display, privacy_level)} ({record.gps_confidence}%) | Derived: {self._safe_geo_display(record.derived_geo_display, privacy_level)} ({record.derived_geo_confidence}%)",
+                    f"  AI: {self._redact_text(record.ai_risk_label, privacy_level)} | delta +{record.ai_score_delta} | flags: {self._join_redacted(record.ai_flags, privacy_level, fallback='none')}",
+                    f"  Primary issue: {self._redact_freeform_text(record.score_primary_issue, privacy_level)}",
+                    f"  Why it matters: {self._redact_freeform_text(record.score_reason, privacy_level)}",
+                    f"  Next step: {self._redact_freeform_text(record.score_next_step, privacy_level)}",
                 ]
             )
         output.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
         return output
 
-    def export_validation_summary(self, records: List[EvidenceRecord], case_id: str, case_name: str) -> Path:
+    def export_validation_summary(self, records: List[EvidenceRecord], case_id: str, case_name: str, *, privacy_mode: bool = True, privacy_level: str | None = None) -> Path:
+        privacy_level = self._normalize_privacy_level(privacy_mode, privacy_level)
         output = self.export_dir / "validation_summary.txt"
         total = len(records)
         parser_valid = sum(1 for record in records if record.parser_status == "Valid")
@@ -384,6 +480,7 @@ class ReportService:
             f"Case ID: {case_id}",
             f"Case Name: {case_name}",
             f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            self._privacy_note(privacy_level),
             "",
             f"Evidence count: {total}",
             f"Parser-success count: {parser_valid}/{total}",
@@ -391,6 +488,7 @@ class ReportService:
             f"Strong GPS anchors: {native_gps}/{total}",
             f"Derived geo clues: {sum(1 for record in records if record.derived_geo_display != 'Unavailable' or record.possible_geo_clues)}",
             f"Hidden/code detections: {hidden_hits}",
+            f"AI-assisted flagged items: {sum(1 for record in records if record.ai_flags)}/{total}",
             f"Courtroom-ready posture (>=60%): {sum(1 for record in records if record.courtroom_strength >= 60)}/{total}",
             f"OCR/entity-rich items: {sum(1 for record in records if (record.ocr_location_entities or record.ocr_time_entities or record.ocr_url_entities or record.ocr_username_entities))}/{total}",
             f"Validation dataset summary: {validation.get('summary', 'No linked validation dataset was found.')}",
@@ -402,6 +500,7 @@ class ReportService:
             "- Parser-success count = files rendered successfully by Pillow in the current workflow.",
             "- OCR/entity-rich items = screenshots or captures where OCR recovered apps, locations, URLs, times, usernames, or map labels.",
             "- Hidden/code detections are heuristic findings and still require analyst review.",
+            "- AI-assisted flags are batch-level triage signals; they help find outliers and timeline contradictions, but they do not replace manual forensic validation.",
         ]
         if validation.get('ground_truth_loaded'):
             lines.extend(["", "Per-file validation checks:"])
@@ -409,7 +508,7 @@ class ReportService:
                 if record.validation_hits or record.validation_misses:
                     lines.append(f"- {record.file_name}: hits={len(record.validation_hits)} misses={len(record.validation_misses)}")
                     if record.validation_misses:
-                        lines.extend([f"    miss: {item}" for item in record.validation_misses[:3]])
+                        lines.extend([f"    miss: {self._redact_text(item, privacy_level)}" for item in record.validation_misses[:3]])
         output.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
         return output
 
@@ -432,7 +531,8 @@ class ReportService:
         output.write_text(json.dumps(enriched, indent=2), encoding="utf-8")
         return output
 
-    def export_courtroom_summary(self, records: List[EvidenceRecord], case_id: str, case_name: str) -> Path:
+    def export_courtroom_summary(self, records: List[EvidenceRecord], case_id: str, case_name: str, *, privacy_mode: bool = True, privacy_level: str | None = None) -> Path:
+        privacy_level = self._normalize_privacy_level(privacy_mode, privacy_level)
         output = self.export_dir / "courtroom_summary.txt"
         metrics = self._case_metrics(records)
         ordered = sorted(records, key=lambda r: (-r.suspicion_score, r.evidence_id))
@@ -442,12 +542,14 @@ class ReportService:
             f"Case Name: {case_name}",
             f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             f"Version: {APP_VERSION} ({APP_BUILD_CHANNEL})",
+            self._privacy_note(privacy_level),
             "",
             "Executive Summary",
             "-----------------",
             f"Total evidence items: {metrics['total']}",
             f"High-risk items: {sum(1 for r in records if r.risk_level == 'High')}",
             f"GPS-bearing items: {metrics['gps_count']}",
+            f"AI-assisted flagged items: {metrics['ai_flagged']}",
             f"Duplicate clusters: {len(metrics['duplicate_groups'])}",
             "",
             "Courtroom Readiness",
@@ -458,19 +560,22 @@ class ReportService:
                 [
                     f"{record.evidence_id} | {record.file_name} | {record.risk_level} | Score {record.suspicion_score} | Value {record.evidentiary_value}% | Courtroom {record.courtroom_strength}%",
                     f"  Time: {record.timestamp} ({record.timestamp_source}, {record.timestamp_confidence}%)",
-                    f"  GPS: {record.gps_display} ({record.gps_confidence}%) | Derived: {record.derived_geo_display} ({record.derived_geo_confidence}%)",
+                    f"  GPS: {self._safe_geo_display(record.gps_display, privacy_level)} ({record.gps_confidence}%) | Derived: {self._safe_geo_display(record.derived_geo_display, privacy_level)} ({record.derived_geo_confidence}%)",
+                    f"  AI: {self._redact_text(record.ai_risk_label, privacy_level)} | delta +{record.ai_score_delta} | flags: {self._join_redacted(record.ai_flags, privacy_level, fallback='none')}",
                     f"  Parser: {record.parser_status} | Signature: {record.signature_status} | Trust: {record.format_trust}",
-                    f"  Primary issue: {record.score_primary_issue}",
-                    f"  Why it matters: {record.score_reason}",
-                    f"  Courtroom note: {record.courtroom_notes}",
-                    f"  Next step: {record.score_next_step}",
+                    f"  Primary issue: {self._redact_freeform_text(record.score_primary_issue, privacy_level)}",
+                    f"  Why it matters: {self._redact_freeform_text(record.score_reason, privacy_level)}",
+                    f"  Courtroom note: {self._redact_freeform_text(record.courtroom_notes, privacy_level)}",
+                    f"  Next step: {self._redact_freeform_text(record.score_next_step, privacy_level)}",
                     "",
                 ]
             )
         output.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
         return output
 
-    def export_html(self, records: List[EvidenceRecord], case_id: str, case_name: str, custody_log: str = "") -> Path:
+    def export_html(self, records: List[EvidenceRecord], case_id: str, case_name: str, custody_log: str = "", *, privacy_mode: bool = True, privacy_level: str | None = None) -> Path:
+        privacy_level = self._normalize_privacy_level(privacy_mode, privacy_level)
+        privacy_mode = privacy_level != "full"
         output = self.export_dir / "forensic_report.html"
         metrics = self._case_metrics(records)
         generated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -482,13 +587,13 @@ class ReportService:
             f"""
             <tr>
                 <td>{html.escape(record.evidence_id)}</td>
-                <td><strong>{html.escape(record.file_name)}</strong><br><span class='muted'>{html.escape(str(record.original_file_path))}</span></td>
+                <td><strong>{html.escape(record.file_name)}</strong><br><span class='muted'>{html.escape(self._safe_path(record.original_file_path, privacy_mode=privacy_mode))}</span></td>
                 <td>{html.escape(record.source_type)}</td>
                 <td>{html.escape(record.timestamp)}<br><span class='muted'>{html.escape(record.timestamp_source)} • {record.timestamp_confidence}%</span></td>
                 <td>{html.escape(record.device_model)}</td>
-                <td>{html.escape(record.gps_display)}<br><span class='muted'>Native {record.gps_confidence}% • Derived {record.derived_geo_confidence}%</span><br><span class='muted'>{html.escape(record.derived_geo_display)}</span></td>
-                <td>{record.suspicion_score}</td>
-                <td>{record.confidence_score}%</td>
+                <td>{html.escape(self._safe_geo_display(record.gps_display, privacy_level))}<br><span class='muted'>Native {record.gps_confidence}% • Derived {record.derived_geo_confidence}%</span><br><span class='muted'>{html.escape(self._safe_geo_display(record.derived_geo_display, privacy_level))}</span></td>
+                <td>{record.suspicion_score}<br><span class='muted'>AI +{record.ai_score_delta}</span></td>
+                <td>{record.confidence_score}%<br><span class='muted'>{html.escape(record.ai_risk_label)}</span></td>
                 <td>{record.evidentiary_value}%</td>
                 <td>{record.courtroom_strength}%</td>
                 <td>{html.escape(record.parser_status)} / {html.escape(record.signature_status)}</td>
@@ -513,30 +618,32 @@ class ReportService:
                     <div class="pill-row">
                         <span class="pill">{html.escape(record.source_type)}</span>
                         <span class="pill">{html.escape(record.timestamp_source)} • {record.timestamp_confidence}%</span>
-                        <span class="pill">Native GPS {html.escape(record.gps_display)} • {record.gps_confidence}%</span>
-                        <span class="pill">Derived Geo {html.escape(record.derived_geo_display)} • {record.derived_geo_confidence}%</span>
+                        <span class="pill">Native GPS {html.escape(self._safe_geo_display(record.gps_display, privacy_level))} • {record.gps_confidence}%</span>
+                        <span class="pill">Derived Geo {html.escape(self._safe_geo_display(record.derived_geo_display, privacy_level))} • {record.derived_geo_confidence}%</span>
                         <span class="pill">Signature {html.escape(record.signature_status)}</span>
                         <span class="pill">Trust {html.escape(record.format_trust)}</span>
                         <span class="pill">Score {record.suspicion_score}</span>
                         <span class="pill">Value {record.evidentiary_value}%</span>
                         <span class="pill">Courtroom {record.courtroom_strength}%</span>
                     </div>
-                    <p><strong>Why this matters:</strong> {html.escape(record.analyst_verdict)}</p>
-                    <p><strong>Courtroom note:</strong> {html.escape(record.courtroom_notes)}</p>
-                    <p><strong>GPS verification:</strong> {html.escape(record.gps_verification)}</p>
-                    <p><strong>Derived geo:</strong> {html.escape(record.derived_geo_note)}</p>
-                    <p><strong>Hidden/content summary:</strong> {html.escape(record.hidden_code_summary)}</p>
-                    <p><strong>OCR analyst relevance:</strong> {html.escape(record.ocr_analyst_relevance)}</p>
-                    <p><strong>OCR entities:</strong> Apps {html.escape(', '.join(record.ocr_app_names) if record.ocr_app_names else 'None')} • Locations {html.escape(', '.join(record.ocr_location_entities[:3]) if record.ocr_location_entities else 'None')} • Times {html.escape(', '.join(record.ocr_time_entities[:3]) if record.ocr_time_entities else 'None')} • URLs {html.escape(', '.join(record.ocr_url_entities[:2]) if record.ocr_url_entities else 'None')} • Usernames {html.escape(', '.join(record.ocr_username_entities[:3]) if record.ocr_username_entities else 'None')}</p>
-                    <p><strong>Acquisition:</strong> Original path {html.escape(str(record.original_file_path))} • Working copy {html.escape(str(record.working_copy_path))} • Imported {html.escape(record.imported_at)}</p>
+                    <p><strong>Why this matters:</strong> {html.escape(self._redact_freeform_text(record.analyst_verdict, privacy_level))}</p>
+                    <p><strong>Courtroom note:</strong> {html.escape(self._redact_freeform_text(record.courtroom_notes, privacy_level))}</p>
+                    <p><strong>GPS verification:</strong> {html.escape(self._redact_freeform_text(record.gps_verification, privacy_level))}</p>
+                    <p><strong>Derived geo:</strong> {html.escape(self._redact_freeform_text(record.derived_geo_note, privacy_level))}</p>
+                    <p><strong>Hidden/content summary:</strong> {html.escape(self._redact_freeform_text(record.hidden_code_summary, privacy_level))}</p>
+                    <p><strong>OCR analyst relevance:</strong> {html.escape(self._redact_freeform_text(record.ocr_analyst_relevance, privacy_level))}</p>
+                    <p><strong>OCR entities:</strong> Apps {html.escape(self._join_redacted(record.ocr_app_names, privacy_level))} • Locations {html.escape(self._join_redacted(record.ocr_location_entities, privacy_level, limit=3, replacement='[REDACTED_LOCATION]'))} • Times {html.escape(self._join_redacted(record.ocr_time_entities, privacy_level, limit=3))} • URLs {html.escape(self._join_redacted(record.ocr_url_entities, privacy_level, limit=2, replacement='[REDACTED_URL]'))} • Usernames {html.escape(self._join_redacted(record.ocr_username_entities, privacy_level, limit=3, replacement='[REDACTED_USERNAME]'))}</p>
+                    <p><strong>AI-assisted review:</strong> {html.escape(self._redact_freeform_text(record.ai_summary, privacy_level))} Flags: {html.escape(self._join_redacted(record.ai_flags, privacy_level))}.</p>
+                    <p><strong>Acquisition:</strong> Original path {html.escape(self._safe_path(record.original_file_path, privacy_mode=privacy_mode))} • Working copy {html.escape(self._safe_path(record.working_copy_path, privacy_mode=privacy_mode))} • Imported {html.escape(record.imported_at)}</p>
                     <p><strong>Corroboration checklist:</strong></p>
-                    <ul>{''.join(f'<li>{html.escape(lead)}</li>' for lead in self._corroboration_checklist_lines(record))}</ul>
+                    <ul>{''.join(f'<li>{html.escape(lead)}</li>' for lead in self._corroboration_checklist_lines(record, privacy_level))}</ul>
                 </div>
                 """
             )
         custody_html = "<br>".join(html.escape(line) for line in custody_log.splitlines()[:50]) if custody_log else "No custody actions logged."
 
-        self._build_static_map_chart(records)
+        if privacy_level != "redacted_text":
+            self._build_static_map_chart(records)
         chart_blocks = []
         for file_name, title in [
             ("chart_map.png", "Map Intelligence"),
@@ -547,9 +654,31 @@ class ReportService:
             ("chart_relationships.png", "Evidence Relationship Graph"),
         ]:
             chart_path = self.export_dir / file_name
+            if privacy_level == "redacted_text" and file_name == "chart_map.png":
+                continue
             if chart_path.exists():
                 chart_blocks.append(f"<div class='chart-card'><h3>{html.escape(title)}</h3><img src='{html.escape(file_name)}' alt='{html.escape(title)}'></div>")
         charts_html = "\n".join(chart_blocks) or "<p class='muted'>No charts were available at report generation time.</p>"
+
+        ai_records = [record for record in records if record.ai_flags]
+        if ai_records:
+            ai_blocks = []
+            for record in sorted(ai_records, key=lambda item: (-item.ai_score_delta, item.evidence_id)):
+                ai_blocks.append(
+                    f"""
+                    <div class='ai-card'>
+                        <div class='ai-head'>
+                            <strong>{html.escape(record.evidence_id)} — {html.escape(record.file_name)}</strong>
+                            <span class='ai-delta'>AI +{record.ai_score_delta}</span>
+                        </div>
+                        <p>{html.escape(self._redact_freeform_text(record.ai_summary, privacy_level))}</p>
+                        <p class='muted'>Provider: {html.escape(record.ai_provider)} • Flags: {html.escape(self._join_redacted(record.ai_flags, privacy_level))}</p>
+                    </div>
+                    """
+                )
+            ai_section_html = "\n".join(ai_blocks)
+        else:
+            ai_section_html = "<p class='muted'>AI-assisted batch review ran successfully and did not identify cross-evidence outliers in this export.</p>"
 
         html_doc = f"""
         <!doctype html>
@@ -582,13 +711,17 @@ class ReportService:
                 .detail-card {{ background:#06111d; border:1px solid #173b60; border-radius:18px; padding:18px; }}
                 .pill-row {{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }}
                 .pill {{ background:#10243f; border:1px solid #27547f; border-radius:999px; padding:4px 10px; color:#dff5ff; font-size:13px; }}
+                .ai-grid {{ display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; }}
+                .ai-card {{ background:linear-gradient(135deg,#071827,#0d2036); border:1px solid #2a608e; border-radius:18px; padding:16px; box-shadow:0 14px 35px rgba(0,0,0,0.22); }}
+                .ai-head {{ display:flex; align-items:center; justify-content:space-between; gap:12px; }}
+                .ai-delta {{ background:#172f4d; color:#9fe9ff; border:1px solid #36739e; border-radius:999px; padding:4px 10px; font-weight:800; }}
                 code {{ font-family:Consolas, monospace; color:#b9f2ff; }}
             </style>
         </head>
         <body>
             <section class="hero">
                 <h1>{APP_NAME} — Investigation Report</h1>
-                <p class="muted">Case: {html.escape(case_id)} | {html.escape(case_name)} | Generated: {generated} | Version: {APP_VERSION} ({APP_BUILD_CHANNEL})</p>
+                <p class="muted">Case: {html.escape(case_id)} | {html.escape(case_name)} | Generated: {generated} | Version: {APP_VERSION} ({APP_BUILD_CHANNEL})</p>\n                <p class="muted">{html.escape(self._privacy_note(privacy_level))}</p>
                 <p>This report is structured as executive summary, evidence matrix, OCR/entity findings, forensic appendix, custody review, and courtroom-strength posture.</p>
                 <div class="metrics">
                     <div class="metric"><div class="value">{metrics['total']}</div><div>Images</div></div>
@@ -596,6 +729,7 @@ class ReportService:
                     <div class="metric"><div class="value">{metrics['anomaly_count']}</div><div>Review Items</div></div>
                     <div class="metric"><div class="value">{len(metrics['duplicate_groups'])}</div><div>Duplicate Clusters</div></div>
                     <div class="metric"><div class="value">{metrics['avg_score']}</div><div>Average Score</div></div>
+                    <div class="metric"><div class="value">{metrics['ai_flagged']}</div><div>AI Flags</div></div>
                     <div class="metric"><div class="value">{sum(1 for r in records if r.courtroom_strength >= 60)}</div><div>Courtroom-Ready</div></div>
                 </div>
             </section>
@@ -603,13 +737,19 @@ class ReportService:
             <section class="card">
                 <h2>Executive Summary</h2>
                 <p>The current case contains <strong>{metrics['total']}</strong> evidence item(s). <strong>{metrics['gps_count']}</strong> item(s) contain native GPS, <strong>{sum(1 for r in records if r.derived_geo_display != 'Unavailable')}</strong> item(s) expose screenshot-derived geo clues, <strong>{len(metrics['duplicate_groups'])}</strong> duplicate cluster(s) were detected, and the dominant profile is <strong>{html.escape(metrics['dominant_source'])}</strong>.</p>
-                <p>Parser/signature alerts: <strong>{metrics['parser_issue_count']}</strong>. Hidden/code alerts: <strong>{metrics['hidden_count']}</strong>. OCR/entity recovery is preserved separately from raw strings so that map labels, usernames, URLs, and visible times remain analyst-friendly.</p>
+                <p>Parser/signature alerts: <strong>{metrics['parser_issue_count']}</strong>. Hidden/code alerts: <strong>{metrics['hidden_count']}</strong>. AI-assisted flagged items: <strong>{metrics['ai_flagged']}</strong>. OCR/entity recovery is preserved separately from raw strings so that map labels, usernames, URLs, and visible times remain analyst-friendly.</p>
                 <p><strong>Validation:</strong> {html.escape(str(metrics['validation_summary']))}</p>
             </section>
 
             <section class="card">
                 <h2>Operational Dashboards</h2>
                 <div class="grid-charts">{charts_html}</div>
+            </section>
+
+            <section class="card">
+                <h2>AI-Assisted Risk Review</h2>
+                <p class="muted">This section summarizes batch-level outlier, timeline/geography, and metadata-authenticity signals. These findings are triage guidance and must be corroborated by the analyst.</p>
+                <div class="ai-grid">{ai_section_html}</div>
             </section>
 
             <section class="card">
@@ -642,7 +782,7 @@ class ReportService:
 
             <section class="card">
                 <h2>Corroboration Checklist</h2>
-                <ul>{''.join(f"<li><strong>{html.escape(record.evidence_id)}</strong>: {'; '.join(html.escape(item) for item in self._corroboration_checklist_lines(record))}</li>" for record in records)}</ul>
+                <ul>{''.join(f"<li><strong>{html.escape(record.evidence_id)}</strong>: {'; '.join(html.escape(item) for item in self._corroboration_checklist_lines(record, privacy_level))}</li>" for record in records)}</ul>
             </section>
 
             <section class="card">
@@ -651,7 +791,7 @@ class ReportService:
             </section>
             <section class="card">
                 <h2>Methodology, Limits & Report Identity</h2>
-                <p><strong>Workflow:</strong> Acquire → Verify → Extract → Correlate → Score → Report. Scores combine authenticity, metadata, and technical checks; they do not replace human validation.</p>
+                <p><strong>Workflow:</strong> Acquire → Verify → Extract → Correlate → AI-Assisted Review → Score → Report. Scores combine authenticity, metadata, technical, and conservative AI-batch checks; they do not replace human validation.</p>
                 <p><strong>Explainability model:</strong> every reviewed item now carries a primary issue, why-it-matters rationale, GPS verification ladder, and recommended next step so the score is not presented as a blind number.</p>
                 <p><strong>Known limits:</strong> Filesystem timestamps may drift after copy/export operations. Missing GPS can be entirely normal for screenshots, graphics, or messaging exports. Parser failures require secondary validation before courtroom reliance.</p>
                 <p class="muted">Generated by {APP_NAME} {APP_VERSION} ({APP_BUILD_CHANNEL}) • {APP_COPYRIGHT}</p>
@@ -662,7 +802,8 @@ class ReportService:
         output.write_text(html_doc, encoding="utf-8")
         return output
 
-    def export_pdf(self, records: List[EvidenceRecord], case_id: str, case_name: str) -> Path:
+    def export_pdf(self, records: List[EvidenceRecord], case_id: str, case_name: str, *, privacy_mode: bool = True, privacy_level: str | None = None) -> Path:
+        privacy_level = self._normalize_privacy_level(privacy_mode, privacy_level)
         output = self.export_dir / "forensic_report.pdf"
         doc = SimpleDocTemplate(str(output), pagesize=A4, leftMargin=28, rightMargin=28, topMargin=28, bottomMargin=28)
         styles = getSampleStyleSheet()
@@ -670,11 +811,12 @@ class ReportService:
         heading = ParagraphStyle("HeadingBlue", parent=styles["Heading2"], textColor=colors.HexColor("#1976d2"), spaceAfter=8)
         body = ParagraphStyle("Body", parent=styles["BodyText"], leading=15, spaceAfter=6)
         timeline_chart = self.export_dir / "chart_timeline.png"
-        map_chart = self._build_static_map_chart(records)
+        map_chart = None if privacy_level == "redacted_text" else self._build_static_map_chart(records)
         story = [
             Paragraph(f"{APP_NAME} — Investigation Report", title),
             Paragraph(f"Case: {html.escape(case_id)} — {html.escape(case_name)}", body),
             Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Version: {APP_VERSION} ({APP_BUILD_CHANNEL})", body),
+            Paragraph(html.escape(self._privacy_note(privacy_level)), body),
             Spacer(1, 10),
             Paragraph("Executive Summary", heading),
             Paragraph(
@@ -690,7 +832,7 @@ class ReportService:
                 record.evidence_id,
                 record.file_name,
                 f"{record.timestamp} ({record.timestamp_confidence}%)",
-                f"{record.gps_display} ({record.gps_confidence}%)",
+                f"{self._safe_geo_display(record.gps_display, privacy_level)} ({record.gps_confidence}%)",
                 str(record.suspicion_score),
                 record.risk_level,
             ])
@@ -724,9 +866,9 @@ class ReportService:
                 pass
         story.extend([
             Paragraph("Validation, Methodology & Limits", heading),
-            Paragraph("Workflow: Acquire → Verify → Extract → Correlate → Score → Report. Scores are triage aids and must be confirmed with analyst review.", body),
-            Paragraph(f"Validation posture: parser-clean {sum(1 for r in records if r.parser_status == 'Valid')}/{len(records)} • courtroom-ready {sum(1 for r in records if r.courtroom_strength >= 60)}/{len(records)} • native GPS {sum(1 for r in records if r.gps_confidence >= 80)}/{len(records)}.", body),
-            Paragraph("Limits: filesystem times can drift, missing GPS may be normal for exports/screenshots, and parser failures require secondary validation.", body),
+            Paragraph("Workflow: Acquire → Verify → Extract → Correlate → AI-Assisted Review → Score → Report. Scores are triage aids and must be confirmed with analyst review.", body),
+            Paragraph(f"Validation posture: parser-clean {sum(1 for r in records if r.parser_status == 'Valid')}/{len(records)} • courtroom-ready {sum(1 for r in records if r.courtroom_strength >= 60)}/{len(records)} • native GPS {sum(1 for r in records if r.gps_confidence >= 80)}/{len(records)} • AI-assisted flags {sum(1 for r in records if r.ai_flags)}/{len(records)}.", body),
+            Paragraph("Limits: filesystem times can drift, missing GPS may be normal for exports/screenshots, AI flags are batch triage signals, and parser failures require secondary validation.", body),
             Paragraph(f"Build identity: {APP_NAME} {APP_VERSION} ({APP_BUILD_CHANNEL})", body),
             PageBreak(),
             Paragraph("Deep Technical Appendix", heading),
@@ -747,11 +889,12 @@ class ReportService:
                 except Exception:
                     pass
             story.extend([
-                Paragraph(f"Primary issue: {html.escape(record.score_primary_issue)}", body),
-                Paragraph(f"Why it matters: {html.escape(record.score_reason)}", body),
-                Paragraph(f"Next step: {html.escape(record.score_next_step)}", body),
-                Paragraph(html.escape(record.courtroom_notes), body),
-                Paragraph("Corroboration checklist: " + html.escape(" | ".join(self._corroboration_checklist_lines(record))), body),
+                Paragraph(f"Primary issue: {html.escape(self._redact_freeform_text(record.score_primary_issue, privacy_level))}", body),
+                Paragraph(f"AI-assisted review: {html.escape(self._redact_freeform_text(record.ai_summary, privacy_level))}", body),
+                Paragraph(f"Why it matters: {html.escape(self._redact_freeform_text(record.score_reason, privacy_level))}", body),
+                Paragraph(f"Next step: {html.escape(self._redact_freeform_text(record.score_next_step, privacy_level))}", body),
+                Paragraph(html.escape(self._redact_freeform_text(record.courtroom_notes, privacy_level)), body),
+                Paragraph("Corroboration checklist: " + html.escape(" | ".join(self._corroboration_checklist_lines(record, privacy_level))), body),
                 Spacer(1, 8),
             ])
 

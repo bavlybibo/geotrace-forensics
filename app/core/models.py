@@ -122,6 +122,14 @@ class EvidenceRecord:
     score_reason: str = "No score reason generated."
     score_next_step: str = "No next step generated."
     score_summary: str = "No explainability summary generated."
+    ai_provider: str = "Not evaluated"
+    ai_score_delta: int = 0
+    ai_confidence: int = 0
+    ai_risk_label: str = "Not evaluated"
+    ai_summary: str = "AI batch assessment has not run for this evidence."
+    ai_flags: List[str] = field(default_factory=list)
+    ai_reasons: List[str] = field(default_factory=list)
+    ai_breakdown: List[str] = field(default_factory=list)
     validation_hits: List[str] = field(default_factory=list)
     validation_misses: List[str] = field(default_factory=list)
     extracted_strings: List[str] = field(default_factory=list)
