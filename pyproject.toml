@@ -1,0 +1,17 @@
+[project]
+name = "geotrace-forensics-x"
+version = "12.9.2"
+description = "Offline image forensics, geolocation triage, OCR, and AI-assisted case reporting workspace."
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "I", "UP", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

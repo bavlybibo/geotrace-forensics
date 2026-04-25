@@ -1,10 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""Production PyInstaller spec for GeoTrace Forensics X.
+"""Demo PyInstaller spec for GeoTrace Forensics X.
 
-Production releases use a one-folder bundle so Qt/report/map assets stay easy to
-inspect and the release script can smoke-test dist\GeoTraceForensicsX\GeoTraceForensicsX.exe.
-Demo evidence is intentionally excluded from this production build. Use
-geotrace_forensics_x_demo.spec for classroom/demo bundles.
+This build includes demo_evidence for classroom walkthroughs and recordings.
+Do not use this spec for public production releases.
 """
 from PyInstaller.utils.hooks import collect_submodules
 
@@ -21,7 +19,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('assets', 'assets'), ('data', 'data')],
+    datas=[('assets', 'assets'), ('data', 'data'), ('demo_evidence', 'demo_evidence')],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
@@ -35,7 +33,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='GeoTraceForensicsX',
+    name='GeoTraceForensicsX-Demo',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -50,5 +48,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='GeoTraceForensicsX',
+    name='GeoTraceForensicsX-Demo',
 )
