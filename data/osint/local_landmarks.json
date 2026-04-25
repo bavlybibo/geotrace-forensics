@@ -1,0 +1,771 @@
+[
+  {
+    "name": "Cairo Tower",
+    "country": "Egypt",
+    "city": "Cairo",
+    "level": "poi",
+    "aliases": [
+      "cairo tower",
+      "برج القاهرة",
+      "برج القاهره"
+    ],
+    "visual_tags": [
+      "tower",
+      "nile",
+      "skyline"
+    ]
+  },
+  {
+    "name": "Egyptian Museum",
+    "country": "Egypt",
+    "city": "Cairo",
+    "level": "poi",
+    "aliases": [
+      "egyptian museum",
+      "المتحف المصري",
+      "المتحف المصرى"
+    ],
+    "visual_tags": [
+      "museum",
+      "tahrir",
+      "red facade"
+    ]
+  },
+  {
+    "name": "Grand Egyptian Museum",
+    "country": "Egypt",
+    "city": "Giza",
+    "level": "poi",
+    "aliases": [
+      "grand egyptian museum",
+      "gem museum",
+      "المتحف المصري الكبير",
+      "المتحف المصرى الكبير"
+    ],
+    "visual_tags": [
+      "museum",
+      "pyramids",
+      "modern facade"
+    ]
+  },
+  {
+    "name": "Tahrir Square",
+    "country": "Egypt",
+    "city": "Cairo",
+    "level": "area",
+    "aliases": [
+      "tahrir",
+      "tahrir square",
+      "التحرير",
+      "ميدان التحرير"
+    ],
+    "visual_tags": [
+      "square",
+      "downtown"
+    ]
+  },
+  {
+    "name": "Pyramids of Giza",
+    "country": "Egypt",
+    "city": "Giza",
+    "level": "poi",
+    "aliases": [
+      "pyramids",
+      "giza pyramids",
+      "pyramids of giza",
+      "الأهرامات",
+      "الاهرامات",
+      "الهرم"
+    ],
+    "visual_tags": [
+      "pyramid",
+      "desert",
+      "camel"
+    ]
+  },
+  {
+    "name": "Great Sphinx of Giza",
+    "country": "Egypt",
+    "city": "Giza",
+    "level": "poi",
+    "aliases": [
+      "sphinx",
+      "great sphinx",
+      "أبو الهول",
+      "ابو الهول"
+    ],
+    "visual_tags": [
+      "sphinx",
+      "desert",
+      "pyramid"
+    ]
+  },
+  {
+    "name": "Qaitbay Citadel",
+    "country": "Egypt",
+    "city": "Alexandria",
+    "level": "poi",
+    "aliases": [
+      "qaitbay",
+      "qaitbay citadel",
+      "قلعة قايتباي",
+      "قلعه قايتباي",
+      "قايتباي"
+    ],
+    "visual_tags": [
+      "citadel",
+      "sea",
+      "fort"
+    ]
+  },
+  {
+    "name": "Bibliotheca Alexandrina",
+    "country": "Egypt",
+    "city": "Alexandria",
+    "level": "poi",
+    "aliases": [
+      "bibliotheca alexandrina",
+      "alexandria library",
+      "مكتبة الاسكندرية",
+      "مكتبه الاسكندريه"
+    ],
+    "visual_tags": [
+      "library",
+      "sea",
+      "corniche"
+    ]
+  },
+  {
+    "name": "Stanley Bridge",
+    "country": "Egypt",
+    "city": "Alexandria",
+    "level": "poi",
+    "aliases": [
+      "stanley bridge",
+      "stanley",
+      "ستانلي",
+      "ستانلى",
+      "كوبري ستانلي",
+      "كوبرى ستانلى"
+    ],
+    "visual_tags": [
+      "bridge",
+      "sea",
+      "corniche"
+    ]
+  },
+  {
+    "name": "Cairo International Stadium",
+    "country": "Egypt",
+    "city": "Cairo",
+    "level": "poi",
+    "aliases": [
+      "cairo stadium",
+      "cairo international stadium",
+      "استاد القاهرة",
+      "ستاد القاهرة"
+    ],
+    "visual_tags": [
+      "stadium",
+      "sports"
+    ]
+  },
+  {
+    "name": "Borg El Arab Stadium",
+    "country": "Egypt",
+    "city": "Alexandria",
+    "level": "poi",
+    "aliases": [
+      "borg el arab stadium",
+      "برج العرب",
+      "استاد برج العرب",
+      "ستاد برج العرب"
+    ],
+    "visual_tags": [
+      "stadium",
+      "sports"
+    ]
+  },
+  {
+    "name": "Alexandria Corniche",
+    "country": "Egypt",
+    "city": "Alexandria",
+    "level": "area",
+    "aliases": [
+      "alexandria corniche",
+      "corniche alexandria",
+      "كورنيش الاسكندرية",
+      "كورنيش الإسكندرية"
+    ],
+    "visual_tags": [
+      "sea",
+      "corniche",
+      "coast"
+    ]
+  },
+  {
+    "name": "Nile Corniche Cairo",
+    "country": "Egypt",
+    "city": "Cairo",
+    "level": "area",
+    "aliases": [
+      "nile corniche",
+      "corniche el nile",
+      "كورنيش النيل",
+      "النيل"
+    ],
+    "visual_tags": [
+      "nile",
+      "river",
+      "bridge"
+    ]
+  },
+  {
+    "name": "Cairo University",
+    "country": "Egypt",
+    "city": "Giza",
+    "level": "poi",
+    "aliases": [
+      "cairo university",
+      "جامعة القاهرة",
+      "جامعه القاهره"
+    ],
+    "visual_tags": [
+      "university",
+      "campus",
+      "dome"
+    ]
+  },
+  {
+    "name": "Alexandria University",
+    "country": "Egypt",
+    "city": "Alexandria",
+    "level": "poi",
+    "aliases": [
+      "alexandria university",
+      "جامعة الاسكندرية",
+      "جامعة الإسكندرية"
+    ],
+    "visual_tags": [
+      "university",
+      "campus"
+    ]
+  },
+  {
+    "name": "Al-Azhar Mosque",
+    "country": "Egypt",
+    "city": "Cairo",
+    "level": "poi",
+    "aliases": [
+      "al azhar mosque",
+      "al-azhar mosque",
+      "الأزهر",
+      "الازهر",
+      "جامع الأزهر"
+    ],
+    "visual_tags": [
+      "mosque",
+      "minaret",
+      "islamic architecture"
+    ]
+  },
+  {
+    "name": "Hanging Church",
+    "country": "Egypt",
+    "city": "Cairo",
+    "level": "poi",
+    "aliases": [
+      "hanging church",
+      "الكنيسة المعلقة",
+      "الكنيسه المعلقه"
+    ],
+    "visual_tags": [
+      "church",
+      "coptic",
+      "old cairo"
+    ]
+  },
+  {
+    "name": "Khan el-Khalili",
+    "country": "Egypt",
+    "city": "Cairo",
+    "level": "area",
+    "aliases": [
+      "khan el khalili",
+      "khan el-khalili",
+      "خان الخليلي",
+      "خان الخليلى"
+    ],
+    "visual_tags": [
+      "market",
+      "bazaar",
+      "old cairo"
+    ]
+  },
+  {
+    "name": "Mall of Egypt",
+    "country": "Egypt",
+    "city": "Giza",
+    "level": "poi",
+    "aliases": [
+      "mall of egypt",
+      "مول مصر"
+    ],
+    "visual_tags": [
+      "mall",
+      "shopping"
+    ]
+  },
+  {
+    "name": "Citystars Heliopolis",
+    "country": "Egypt",
+    "city": "Cairo",
+    "level": "poi",
+    "aliases": [
+      "citystars",
+      "city stars",
+      "سيتي ستارز",
+      "سيتى ستارز"
+    ],
+    "visual_tags": [
+      "mall",
+      "shopping"
+    ]
+  },
+  {
+    "name": "Suez Canal",
+    "country": "Egypt",
+    "city": "Suez/Ismailia/Port Said",
+    "level": "area",
+    "aliases": [
+      "suez canal",
+      "قناة السويس",
+      "قناه السويس"
+    ],
+    "visual_tags": [
+      "canal",
+      "ships",
+      "waterway"
+    ]
+  },
+  {
+    "name": "Luxor Temple",
+    "country": "Egypt",
+    "city": "Luxor",
+    "level": "poi",
+    "aliases": [
+      "luxor temple",
+      "معبد الأقصر",
+      "معبد الاقصر"
+    ],
+    "visual_tags": [
+      "temple",
+      "ancient",
+      "columns"
+    ]
+  },
+  {
+    "name": "Karnak Temple",
+    "country": "Egypt",
+    "city": "Luxor",
+    "level": "poi",
+    "aliases": [
+      "karnak",
+      "karnak temple",
+      "معبد الكرنك",
+      "الكرنك"
+    ],
+    "visual_tags": [
+      "temple",
+      "ancient",
+      "columns"
+    ]
+  },
+  {
+    "name": "Abu Simbel Temples",
+    "country": "Egypt",
+    "city": "Aswan",
+    "level": "poi",
+    "aliases": [
+      "abu simbel",
+      "أبو سمبل",
+      "ابو سمبل"
+    ],
+    "visual_tags": [
+      "temple",
+      "statues",
+      "ancient"
+    ]
+  },
+  {
+    "name": "Aswan High Dam",
+    "country": "Egypt",
+    "city": "Aswan",
+    "level": "poi",
+    "aliases": [
+      "aswan high dam",
+      "high dam",
+      "السد العالي",
+      "السد العالى"
+    ],
+    "visual_tags": [
+      "dam",
+      "nile",
+      "water"
+    ]
+  },
+  {
+    "name": "Burj Khalifa",
+    "country": "United Arab Emirates",
+    "city": "Dubai",
+    "level": "poi",
+    "aliases": [
+      "burj khalifa",
+      "برج خليفة",
+      "برج خليفه"
+    ],
+    "visual_tags": [
+      "skyscraper",
+      "tower",
+      "dubai"
+    ]
+  },
+  {
+    "name": "Eiffel Tower",
+    "country": "France",
+    "city": "Paris",
+    "level": "poi",
+    "aliases": [
+      "eiffel tower",
+      "tour eiffel",
+      "برج ايفل"
+    ],
+    "visual_tags": [
+      "tower",
+      "paris",
+      "landmark"
+    ]
+  },
+  {
+    "name": "Big Ben / Palace of Westminster",
+    "country": "United Kingdom",
+    "city": "London",
+    "level": "poi",
+    "aliases": [
+      "big ben",
+      "palace of westminster",
+      "westminster"
+    ],
+    "visual_tags": [
+      "clock tower",
+      "london",
+      "river"
+    ]
+  },
+  {
+    "name": "Times Square",
+    "country": "United States",
+    "city": "New York",
+    "level": "area",
+    "aliases": [
+      "times square",
+      "تايمز سكوير"
+    ],
+    "visual_tags": [
+      "billboards",
+      "city",
+      "nyc"
+    ]
+  },
+  {
+    "name": "Cairo Festival City Mall",
+    "country": "Egypt",
+    "city": "Cairo",
+    "level": "poi",
+    "aliases": [
+      "cairo festival city",
+      "festival city mall",
+      "كايرو فيستيفال",
+      "مول كايرو فيستيفال"
+    ],
+    "visual_tags": [
+      "mall",
+      "shopping",
+      "new cairo"
+    ]
+  },
+  {
+    "name": "New Administrative Capital",
+    "country": "Egypt",
+    "city": "Cairo/New Capital",
+    "level": "area",
+    "aliases": [
+      "new administrative capital",
+      "العاصمة الإدارية",
+      "العاصمه الاداريه",
+      "العاصمة الادارية الجديدة"
+    ],
+    "visual_tags": [
+      "government district",
+      "modern city",
+      "skyscraper"
+    ]
+  },
+  {
+    "name": "Al Masa Capital Hotel",
+    "country": "Egypt",
+    "city": "New Administrative Capital",
+    "level": "poi",
+    "aliases": [
+      "al masa capital",
+      "almasa capital",
+      "فندق الماسة العاصمة",
+      "الماسة العاصمة"
+    ],
+    "visual_tags": [
+      "hotel",
+      "modern facade"
+    ]
+  },
+  {
+    "name": "Mohamed Ali Mosque / Cairo Citadel",
+    "country": "Egypt",
+    "city": "Cairo",
+    "level": "poi",
+    "aliases": [
+      "mohamed ali mosque",
+      "muhammad ali mosque",
+      "cairo citadel",
+      "قلعة صلاح الدين",
+      "مسجد محمد علي",
+      "مسجد محمد على"
+    ],
+    "visual_tags": [
+      "mosque",
+      "citadel",
+      "minaret",
+      "dome"
+    ]
+  },
+  {
+    "name": "Baron Empain Palace",
+    "country": "Egypt",
+    "city": "Cairo",
+    "level": "poi",
+    "aliases": [
+      "baron palace",
+      "baron empain",
+      "قصر البارون"
+    ],
+    "visual_tags": [
+      "palace",
+      "heliopolis",
+      "historic facade"
+    ]
+  },
+  {
+    "name": "Azhar Park",
+    "country": "Egypt",
+    "city": "Cairo",
+    "level": "area",
+    "aliases": [
+      "azhar park",
+      "حديقة الأزهر",
+      "حديقه الازهر"
+    ],
+    "visual_tags": [
+      "park",
+      "green",
+      "old cairo"
+    ]
+  },
+  {
+    "name": "Montaza Palace",
+    "country": "Egypt",
+    "city": "Alexandria",
+    "level": "poi",
+    "aliases": [
+      "montaza palace",
+      "montazah palace",
+      "قصر المنتزه",
+      "المنتزه"
+    ],
+    "visual_tags": [
+      "palace",
+      "sea",
+      "garden"
+    ]
+  },
+  {
+    "name": "Sidi Gaber Station",
+    "country": "Egypt",
+    "city": "Alexandria",
+    "level": "poi",
+    "aliases": [
+      "sidi gaber",
+      "sidi gaber station",
+      "محطة سيدي جابر",
+      "محطه سيدى جابر"
+    ],
+    "visual_tags": [
+      "station",
+      "railway"
+    ]
+  },
+  {
+    "name": "Raml Station Alexandria",
+    "country": "Egypt",
+    "city": "Alexandria",
+    "level": "area",
+    "aliases": [
+      "raml station",
+      "محطة الرمل",
+      "محطه الرمل"
+    ],
+    "visual_tags": [
+      "tram",
+      "station",
+      "downtown"
+    ]
+  },
+  {
+    "name": "Mansoura University",
+    "country": "Egypt",
+    "city": "Mansoura",
+    "level": "poi",
+    "aliases": [
+      "mansoura university",
+      "جامعة المنصورة",
+      "جامعه المنصوره"
+    ],
+    "visual_tags": [
+      "university",
+      "campus"
+    ]
+  },
+  {
+    "name": "Assiut University",
+    "country": "Egypt",
+    "city": "Assiut",
+    "level": "poi",
+    "aliases": [
+      "assiut university",
+      "جامعة أسيوط",
+      "جامعه اسيوط"
+    ],
+    "visual_tags": [
+      "university",
+      "campus"
+    ]
+  },
+  {
+    "name": "Sohag University",
+    "country": "Egypt",
+    "city": "Sohag",
+    "level": "poi",
+    "aliases": [
+      "sohag university",
+      "جامعة سوهاج",
+      "جامعه سوهاج"
+    ],
+    "visual_tags": [
+      "university",
+      "campus"
+    ]
+  },
+  {
+    "name": "Petra",
+    "country": "Jordan",
+    "city": "Petra",
+    "level": "poi",
+    "aliases": [
+      "petra",
+      "البتراء"
+    ],
+    "visual_tags": [
+      "ancient",
+      "desert",
+      "rock facade"
+    ]
+  },
+  {
+    "name": "Kaaba / Masjid al-Haram",
+    "country": "Saudi Arabia",
+    "city": "Mecca",
+    "level": "poi",
+    "aliases": [
+      "kaaba",
+      "masjid al haram",
+      "المسجد الحرام",
+      "الكعبة",
+      "الكعبه"
+    ],
+    "visual_tags": [
+      "mosque",
+      "pilgrimage",
+      "black cube"
+    ]
+  },
+  {
+    "name": "Colosseum",
+    "country": "Italy",
+    "city": "Rome",
+    "level": "poi",
+    "aliases": [
+      "colosseum",
+      "colosseo",
+      "الكولوسيوم"
+    ],
+    "visual_tags": [
+      "roman",
+      "ancient",
+      "amphitheater"
+    ]
+  },
+  {
+    "name": "Louvre Museum",
+    "country": "France",
+    "city": "Paris",
+    "level": "poi",
+    "aliases": [
+      "louvre",
+      "louvre museum",
+      "متحف اللوفر"
+    ],
+    "visual_tags": [
+      "museum",
+      "glass pyramid",
+      "paris"
+    ]
+  },
+  {
+    "name": "Sydney Opera House",
+    "country": "Australia",
+    "city": "Sydney",
+    "level": "poi",
+    "aliases": [
+      "sydney opera house",
+      "دار أوبرا سيدني"
+    ],
+    "visual_tags": [
+      "opera house",
+      "harbor",
+      "sails"
+    ]
+  },
+  {
+    "name": "Tokyo Tower",
+    "country": "Japan",
+    "city": "Tokyo",
+    "level": "poi",
+    "aliases": [
+      "tokyo tower",
+      "برج طوكيو"
+    ],
+    "visual_tags": [
+      "tower",
+      "tokyo",
+      "red white"
+    ]
+  }
+]
