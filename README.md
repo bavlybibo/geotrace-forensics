@@ -1,161 +1,199 @@
 <div align="center">
 
+<img src="assets/app_icon.png" width="96" alt="GeoTrace Forensics X logo" />
+
 # GeoTrace Forensics X
 
-### Offline Image Forensics • Geolocation Triage • OSINT Intelligence • AI-Assisted Case Reporting
+### AI-Assisted Image Forensics, Geolocation Triage & OSINT Case Reporting
 
-**Version 12.9.2 — AI Guardian v5 / Deep Context Reasoner**  
-**Public Release Candidate**
+**v12.9.2 — AI Guardian v5 / Deep Context Reasoner**  
+**Public Release Candidate • Offline-first • Analyst-controlled • Evidence-safe**
 
-[![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](#requirements)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#quick-start)
-[![UI](https://img.shields.io/badge/UI-PyQt5-success.svg)](#project-architecture)
-[![Forensics](https://img.shields.io/badge/Focus-Digital%20Forensics-critical.svg)](#core-capabilities)
-[![AI](https://img.shields.io/badge/AI-Offline%20First-purple.svg)](#ai-guardian-v5)
-[![Privacy](https://img.shields.io/badge/Privacy-Manual%20External%20Search-orange.svg)](#privacy-and-safety-model)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+<br />
 
-> **GeoTrace Forensics X** is a professional desktop workspace for analyzing image evidence, extracting metadata, investigating GPS and map clues, building OSINT hypotheses, detecting timeline and authenticity anomalies, preserving chain of custody, and exporting analyst-ready forensic reports.
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](#quick-start)
+[![PyQt5](https://img.shields.io/badge/UI-PyQt5-41CD52?style=for-the-badge&logo=qt&logoColor=white)](#interface-map)
+[![Forensics](https://img.shields.io/badge/Focus-Image%20Forensics-critical?style=for-the-badge)](#core-capabilities)
+[![OSINT](https://img.shields.io/badge/OSINT-Map%20%26%20Location%20Intel-7B61FF?style=for-the-badge)](#osint--map-intelligence)
+[![Privacy](https://img.shields.io/badge/Privacy-Offline%20First-111827?style=for-the-badge)](#privacy-safety--responsible-use)
+[![License](https://img.shields.io/badge/License-MIT-16A34A?style=for-the-badge)](LICENSE)
+
+<br />
+
+> **GeoTrace Forensics X** is a desktop investigation workspace for analyzing image evidence, extracting metadata, detecting location clues, building OSINT hypotheses, preserving chain of custody, and exporting professional forensic reports without turning weak clues into false certainty.
+
+<br />
+
+**Not a magic “find the exact location” button.**  
+**A serious analyst cockpit for evidence, confidence, contradiction, and reporting.**
 
 </div>
 
 ---
 
-## Table of Contents
+## Contents
 
-- [Why GeoTrace Exists](#why-geotrace-exists)
-- [What Makes This Build Special](#what-makes-this-build-special)
+- [Product Vision](#product-vision)
+- [Why This Project Stands Out](#why-this-project-stands-out)
 - [Core Capabilities](#core-capabilities)
 - [AI Guardian v5](#ai-guardian-v5)
-- [OSINT and Map Intelligence](#osint-and-map-intelligence)
-- [Evidence Strength Model](#evidence-strength-model)
-- [Privacy and Safety Model](#privacy-and-safety-model)
-- [Screenshots](#screenshots)
+- [OSINT & Map Intelligence](#osint--map-intelligence)
+- [Evidence Confidence System](#evidence-confidence-system)
+- [Interface Map](#interface-map)
+- [Investigation Workflow](#investigation-workflow)
+- [Demo Storyline](#demo-storyline)
 - [Quick Start](#quick-start)
 - [OCR / Tesseract Setup](#ocr--tesseract-setup)
-- [Recommended Investigation Workflow](#recommended-investigation-workflow)
-- [Report and Export System](#report-and-export-system)
-- [Project Architecture](#project-architecture)
-- [Testing](#testing)
-- [Windows Packaging](#windows-packaging)
-- [Demo Corpus](#demo-corpus)
+- [Testing & Quality Gates](#testing--quality-gates)
+- [Build Windows EXE](#build-windows-exe)
+- [Reports & Export Modes](#reports--export-modes)
+- [Architecture](#architecture)
+- [Security Model](#security-model)
 - [Limitations](#limitations)
 - [Roadmap](#roadmap)
-- [Security, Privacy, and Responsible Use](#security-privacy-and-responsible-use)
+- [Repository Checklist](#repository-checklist)
 - [License](#license)
 
 ---
 
-## Why GeoTrace Exists
+## Product Vision
 
-Modern image investigations rarely depend on a single piece of evidence. A photo may contain native EXIF GPS, visible map labels, OCR text, filenames, social-media UI fragments, hidden strings, edited timestamps, duplicate variants, and privacy-sensitive pivots. Each signal has a different level of forensic strength.
+Modern image investigations are messy. A single case can contain:
 
-GeoTrace Forensics X was built to help analysts answer questions like:
+- a real camera photo with native GPS,
+- a screenshot of Google Maps,
+- a social-media image with stripped metadata,
+- OCR text in Arabic or English,
+- hidden strings or suspicious payload markers,
+- duplicate images with conflicting context,
+- timestamps from EXIF, filenames, filesystem metadata, and chat exports,
+- privacy-sensitive URLs, usernames, emails, coordinates, and local paths.
 
-- Does this image contain native GPS coordinates, derived map clues, or only weak visual hints?
-- Are there contradictions between timestamp, GPS, duplicate groups, and source context?
-- Is a screenshot showing a place, searching for a place, or proving the device was physically there?
-- Which evidence item is strong enough for reporting, and which item needs corroboration?
-- Can a clean forensic package be exported without leaking private paths, OCR text, usernames, URLs, or sensitive location pivots?
+Most tools show raw metadata. GeoTrace tries to answer the harder analyst question:
 
-GeoTrace is not a black-box verdict engine. It is an **explainable investigation assistant** that keeps the analyst in control.
+> **What does this evidence actually prove, what does it merely suggest, and what must be verified before reporting?**
+
+GeoTrace Forensics X is built around **conservative forensic reasoning**. It helps the analyst move from raw image files to structured findings, while keeping every conclusion explainable, reviewable, and export-safe.
 
 ---
 
-## What Makes This Build Special
+## Why This Project Stands Out
 
-### v12.9.2 — AI Guardian v5 / Deep Context Reasoner
-
-This release strengthens the AI-assisted layer without breaking the original forensics foundation.
-
-| Area | Upgrade |
-|---|---|
-| AI reasoning | Deep context reasoning across GPS, OCR, map URLs, duplicates, timestamps, hidden-content signals, and privacy pivots. |
-| OSINT intelligence | Stronger CTF GeoLocator workflow, region-aware clue extraction, query builder v2, local landmark matching, and structured hypotheses. |
-| Map safety | Map screenshots and route overlays are treated as **displayed/searched-place leads**, not device-location proof unless corroborated. |
-| Evidence language | Clear separation between **proof**, **lead**, and **weak signal** to avoid overstating conclusions. |
-| Report safety | Privacy-aware report modes with manifest integrity checks and courtroom package verification. |
-| Release cleanup | Unified versioning, organized patch notes, improved packaging, screenshot checklist, and production/demo PyInstaller specs. |
+| Layer | What GeoTrace Does | Why It Matters |
+|---|---|---|
+| **Forensic extraction** | Reads EXIF, GPS, timestamps, file signatures, hidden strings, OCR text, duplicates, and source hints. | Gives the case a technical foundation instead of relying on screenshots only. |
+| **Location reasoning** | Separates native GPS from map screenshots, OCR labels, visual landmarks, filename hints, and search/displayed-place clues. | Prevents the classic mistake: treating a map screenshot as proof of physical presence. |
+| **AI Guardian** | Adds explainable risk flags, confidence basis, contradiction checks, next-best actions, and courtroom-readiness hints. | Makes the tool feel intelligent without becoming a black box. |
+| **OSINT workbench** | Builds entities, hypotheses, search pivots, local landmark matches, candidate places, and privacy reviews. | Turns scattered clues into an investigation workflow. |
+| **Reporting engine** | Produces HTML/PDF/JSON/CSV/executive/courtroom packages with redaction-aware modes and manifests. | Makes results usable for coursework, demos, internal review, and controlled case packages. |
+| **Safety posture** | Offline-first, no automatic reverse image search, no automatic evidence upload, manual external OSINT gating. | Protects evidence, privacy, and legal boundaries. |
 
 ---
 
 ## Core Capabilities
 
-### Image Forensics
+### 1. Image Forensics Engine
 
-- EXIF and native metadata extraction.
-- GPS coordinate decoding.
-- Timestamp recovery and normalization.
-- Camera/software/source-profile hints.
+- EXIF metadata extraction.
+- Native GPS decoding.
+- Timestamp discovery from EXIF, filenames, and filesystem context.
+- Image signature and parser-failure handling.
 - Hidden-content and embedded-string triage.
-- File signature and structural anomaly detection.
-- Source hash and staged working-copy hash verification.
-- Duplicate and near-duplicate grouping using perceptual and contextual checks.
+- Duplicate and near-duplicate grouping.
+- Source/staged SHA-256 hashing.
+- Evidence record persistence with chain-of-custody events.
 
-### Geolocation and Map Analysis
+### 2. Geolocation Triage
 
-- Native GPS extraction and map visualization.
-- Google Maps-style URL parsing.
+- Native GPS map visualization.
+- Google Maps URL parsing.
 - `geo:` URI parsing.
 - DMS coordinate parsing.
 - Plus Code signal detection.
-- OCR-based map-label extraction.
-- Candidate place ranking.
-- Country and region classification.
-- CTF-style location solvability scoring.
+- Map screenshot detection.
+- Route/path context detection.
+- OCR-based place-label extraction.
+- Candidate city/place ranking.
+- Country/region hints from Arabic and English clues.
 
-### OSINT Workbench
+### 3. OSINT Workbench
 
-- Structured OSINT entities.
-- Structured location hypotheses.
-- Corroboration matrix.
-- Analyst verification decisions.
-- Search pivot generation.
-- Privacy review before external lookup.
+- Structured `OSINTEntity` extraction.
+- Structured `OSINTHypothesis` cards.
+- OCR query builder v2.
+- Local landmark dataset matching.
+- Image existence intelligence profile.
+- Optional local CLIP-style extension point.
+- Analyst decision states: `needs_review`, `verified`, `rejected`.
 - OSINT appendix export.
+- Privacy review before external lookup.
 
-### Case Management
+### 4. AI Guardian v5
 
-- Case creation and switching.
-- Evidence staging.
-- Chain-of-custody logging.
-- Snapshot backup and restore.
-- Report package generation.
-- Release-ready manifest validation.
+- Deep context reasoning across evidence signals.
+- Contradiction detection.
+- Evidence-ladder explanation.
+- Corroboration planning.
+- Case narrator output.
+- Courtroom readiness scoring.
+- Privacy guardian checks.
+- Next-best-action recommendations.
 
-### Reporting
+### 5. Reporting & Packaging
 
-- HTML report.
+- HTML technical report.
 - PDF report.
-- JSON export.
-- CSV export.
+- JSON evidence export.
+- CSV summary export.
 - Executive summary.
 - Validation summary.
-- Courtroom package.
 - OSINT appendix.
-- SHA-256 manifest verification.
+- Courtroom package verifier.
+- Manifest hashing for exported assets.
+- Privacy-aware export modes.
 
 ---
 
 ## AI Guardian v5
 
-AI Guardian is GeoTrace's local reasoning layer. It does not replace the analyst. It reviews the evidence context, highlights risky patterns, and explains why an item deserves attention.
+AI Guardian is the intelligence layer of GeoTrace. It does **not** replace the analyst, and it does **not** claim final truth. It reads the case context and produces structured, explainable guidance.
 
-### AI Guardian reviews
+### What AI Guardian Reviews
 
-- Location outliers.
-- Impossible travel patterns.
-- Timeline contradictions.
-- Duplicate context conflicts.
-- Metadata authenticity clusters.
-- Hidden-content indicators.
-- Map/OCR-derived location ambiguity.
-- Privacy-sensitive export pivots.
-- Courtroom readiness gaps.
+```mermaid
+mindmap
+  root((AI Guardian v5))
+    Location
+      Native GPS
+      Map screenshot
+      OCR place labels
+      Route overlays
+      Filename hints
+    Time
+      EXIF timestamp
+      Filename timestamp
+      Filesystem dates
+      Timeline conflicts
+    Integrity
+      Parser failures
+      Edited/exported images
+      Duplicate mismatch
+      Hidden markers
+    OSINT
+      Entities
+      Hypotheses
+      Search pivots
+      Privacy risks
+    Reporting
+      Evidence strength
+      Missing corroboration
+      Courtroom readiness
+      Export redaction
+```
 
-### AI output stored per evidence item
+### AI Guardian Output Style
 
-Each analyzed evidence record can include:
+A good forensic assistant should say **why** something matters. GeoTrace stores AI reasoning fields per evidence item, including:
 
 ```text
 ai_provider
@@ -168,116 +206,124 @@ ai_reasons
 ai_breakdown
 ```
 
-These values appear in the UI, score breakdowns, analyst notes, HTML/PDF/JSON/CSV exports, executive summaries, validation summaries, and courtroom packages.
-
-### Example AI reasoning style
+Example output style:
 
 ```text
-AI-assisted review: Review recommended
-Score delta: +22
-Flags: impossible_travel, derived_location_only
-Reason: The item contains a map-derived location clue and a timestamp that conflicts with nearby GPS-confirmed evidence. Treat as a location lead until source-app records or native GPS corroborate it.
+Review recommended
+Reason: The image appears to show a map/search interface and contains OCR-derived place clues, but no native GPS exists.
+Evidence strength: Lead
+Next action: Verify the displayed place using source context or another GPS-confirmed item before reporting it as location evidence.
 ```
 
-### Offline-first design
+### Offline-first AI
 
-The default AI layer is deterministic and local. Optional ML components can be installed for enhanced geospatial outlier detection, but the application does not upload evidence automatically.
-
----
-
-## OSINT and Map Intelligence
-
-GeoTrace separates location evidence into different trust levels. This is critical because a screenshot of a map is not the same thing as a camera photo with native GPS.
-
-### Location evidence priority
-
-| Priority | Signal Type | Interpretation |
-|---:|---|---|
-| 1 | Native GPS EXIF | Strongest built-in location signal. Still requires acquisition and device context. |
-| 2 | Source-app location record | Strong when backed by app/cloud acquisition logs. |
-| 3 | Map URL / coordinates shown in content | Strong lead, but may represent a searched/displayed place. |
-| 4 | OCR place labels | Useful lead requiring corroboration. |
-| 5 | Visual landmark/context | Useful for OSINT triage, weaker without confirmation. |
-| 6 | Filename-only hints | Weak triage clue only. Never treated as proof. |
-
-### CTF GeoLocator workspace
-
-The CTF GeoLocator page is designed for authorized CTF, GeoGuessr-style training, and controlled OSINT practice.
-
-It provides:
-
-- `CTFClue` cards.
-- Ranked `GeoCandidate` entries.
-- Location Solvability Score.
-- Manual search pivots.
-- Local landmark matching.
-- Candidate verification actions.
-- CTF writeup export.
-
-### OCR Search Query Builder v2
-
-The query builder extracts and combines useful OSINT pivots from:
-
-- Arabic phrases.
-- English phrases.
-- Map labels.
-- Domains.
-- Phone-like strings.
-- Coordinates.
-- Place candidates.
-- Region hints.
-
-External searches remain manual and privacy-gated.
+The default assistant is deterministic and local. Optional AI/ML packages may enhance specific features, but GeoTrace is designed so the core workflow remains usable without remote services.
 
 ---
 
-## Evidence Strength Model
+## OSINT & Map Intelligence
 
-GeoTrace uses conservative language to reduce false confidence.
+GeoTrace treats location as a **confidence problem**, not a single answer.
 
-| Strength | Meaning |
+### Location Signal Ladder
+
+| Rank | Signal | Strength | Reporting Language |
+|---:|---|---|---|
+| 1 | Native GPS EXIF | Strong indicator / proof candidate | “The image metadata contains GPS coordinates…” |
+| 2 | Verified source-app location record | Strong when acquisition is documented | “The source record indicates…” |
+| 3 | Map URL / coordinates visible in content | Lead | “The image displays/searched a location…” |
+| 4 | OCR place names / map labels | Lead | “OCR suggests a possible place…” |
+| 5 | Visual landmark / region clue | Weak-to-medium lead | “Visual context may be consistent with…” |
+| 6 | Filename-only hint | Weak signal | “Filename contains a possible clue; not proof.” |
+
+### Why This Matters
+
+A map screenshot can show Cairo, London, or Tokyo without the device being there. GeoTrace intentionally avoids exaggerating this type of evidence.
+
+```mermaid
+flowchart LR
+    A[Image contains location clue] --> B{Native GPS?}
+    B -- Yes --> C[Strong GPS signal]
+    B -- No --> D{Map / OCR / visual clue?}
+    D -- Map URL or coordinates --> E[Displayed-place lead]
+    D -- OCR label --> F[Text-derived OSINT lead]
+    D -- Landmark clue --> G[Visual hypothesis]
+    D -- Filename only --> H[Weak triage clue]
+    C --> I[Ask analyst to corroborate]
+    E --> I
+    F --> I
+    G --> I
+    H --> I
+```
+
+### CTF GeoLocator Mode
+
+For authorized OSINT practice, CTF training, and demo scenarios, GeoTrace includes a dedicated CTF GeoLocator workflow:
+
+- clue cards,
+- ranked `GeoCandidate` entries,
+- location solvability score,
+- manual verification buttons,
+- rejected-candidate suppression,
+- local landmark matching,
+- live writeup support,
+- CTF-style export.
+
+---
+
+## Evidence Confidence System
+
+GeoTrace uses conservative language throughout the UI and reports.
+
+| Label | Meaning | Example |
+|---|---|---|
+| **Proof / Strong Indicator** | High-value technical signal that may support a conclusion when acquisition is valid. | Native GPS EXIF from original camera media. |
+| **Lead** | Useful investigative direction that needs corroboration. | OCR text showing a city name inside a map screenshot. |
+| **Weak Signal** | Low-confidence clue that should not drive conclusions alone. | Filename contains `cairo` but metadata is missing. |
+
+### Confidence Is Based On Multiple Factors
+
+```mermaid
+flowchart TD
+    A[Evidence Record] --> B[Metadata Confidence]
+    A --> C[GPS Confidence]
+    A --> D[OCR Confidence]
+    A --> E[Map Context Confidence]
+    A --> F[Duplicate Context]
+    A --> G[Timeline Consistency]
+    A --> H[Privacy Sensitivity]
+    B --> I[Evidence Strength]
+    C --> I
+    D --> I
+    E --> I
+    F --> I
+    G --> I
+    H --> J[Export Safety Review]
+```
+
+---
+
+## Interface Map
+
+GeoTrace is organized like an investigation cockpit.
+
+| Area | Purpose |
 |---|---|
-| Proof | Strong forensic signal such as native GPS or verified source metadata. Still subject to analyst validation. |
-| Lead | Useful investigative direction such as OCR place names, map URLs, route overlays, or repeated contextual clues. |
-| Weak Signal | Filename hints, vague visual context, low-confidence OCR, or uncorroborated assumptions. |
+| **Dashboard** | Case overview, counts, risk summary, and quick navigation. |
+| **Evidence Queue** | Imported items, status, hashes, summaries, and review state. |
+| **Review Panel** | Metadata, OCR, GPS, hidden-content, duplicates, and source context. |
+| **Geo / Map Intelligence** | Native GPS map, derived map clues, possible places, confidence labels. |
+| **AI Guardian** | Risk explanation, contradiction checks, confidence basis, next actions. |
+| **OSINT Workbench** | Entities, hypotheses, candidate places, privacy review, OSINT appendix. |
+| **CTF GeoLocator** | Training workflow for authorized geolocation challenges. |
+| **Reports** | HTML/PDF/JSON/CSV/executive/courtroom exports. |
+| **Verifier** | Checks exported packages, hashes, redaction rules, and unsafe assets. |
 
-This model is used across AI Guardian, Map Intelligence, OSINT Workbench, and report output.
+### Screenshot Plan
 
----
+Before publishing publicly, add real screenshots under `screenshots/`:
 
-## Privacy and Safety Model
-
-GeoTrace is designed around a strict investigation posture:
-
-- Offline-first by default.
-- No automatic reverse-image upload.
-- No automatic online search.
-- Manual privacy review before external OSINT pivots.
-- Redaction-aware exports.
-- Separate production and demo packaging.
-- Courtroom package verification for manifest hashes and leakage checks.
-
-### Export privacy levels
-
-GeoTrace supports privacy-aware reporting so sensitive evidence context can be reduced before sharing.
-
-Examples of protected data classes:
-
-- Local file paths.
-- OCR text.
-- URLs.
-- Usernames.
-- Emails.
-- Location entities.
-- Source-machine identifiers.
-
----
-
-## Screenshots
-
-Add real screenshots before publishing the final public repository.
-
-| Screen | Suggested path |
+| Screenshot | Suggested File |
 |---|---|
 | Dashboard | `screenshots/dashboard.png` |
 | Evidence Review | `screenshots/evidence_review.png` |
@@ -288,7 +334,78 @@ Add real screenshots before publishing the final public repository.
 | Report Export | `screenshots/report_export.png` |
 | Courtroom Verifier | `screenshots/courtroom_verifier.png` |
 
-> Do not publish placeholder images as final screenshots. Use `screenshots/README.md` as the capture checklist.
+> Keep placeholders out of the final public README. Use real screenshots captured from the production EXE or a clean source run.
+
+---
+
+## Investigation Workflow
+
+```mermaid
+flowchart TD
+    A[Create / open case] --> B[Import image evidence]
+    B --> C[Stage working copy]
+    C --> D[Hash original and staged files]
+    D --> E[Extract EXIF, GPS, timestamps, OCR, URLs, hidden strings]
+    E --> F[Build timeline, duplicates, source profile, map clues]
+    F --> G[Run AI Guardian]
+    G --> H[Review evidence strength and contradictions]
+    H --> I[Open OSINT Workbench]
+    I --> J[Verify or reject candidate hypotheses]
+    J --> K[Choose export mode]
+    K --> L[Generate report package]
+    L --> M[Run courtroom/package verifier]
+```
+
+### Recommended Analyst Flow
+
+1. Create a clean case.
+2. Import all related images together, not one by one.
+3. Review source hash and staged hash.
+4. Check native metadata first.
+5. Review GPS, map clues, OCR, and hidden-content signals.
+6. Let AI Guardian identify contradictions and next actions.
+7. Treat OSINT candidates as hypotheses until verified.
+8. Export an internal report first.
+9. Export shareable/courtroom packages only after privacy review.
+10. Run the verifier before sending anything outside the machine.
+
+---
+
+## Demo Storyline
+
+Use the included `demo_evidence/` corpus for a strong live demo.
+
+### Recommended Demo Set
+
+| File | What It Demonstrates |
+|---|---|
+| `cairo_scene.jpg` | Native EXIF + GPS anchor. |
+| `giza_scene.jpg` | Second geo anchor for timeline/map correlation. |
+| `edited_scene.jpg` | Edited/exported workflow comparison. |
+| `no_exif.png` | Metadata-thin image handling. |
+| `no_exif_duplicate.png` | Duplicate/near-duplicate review. |
+| `IMG_20260413_170405_hidden_payload.png` | Hidden-content review candidate. |
+| `broken_animation.gif` | Parser/fallback safety behavior. |
+| `Screenshot 2026-04-14 120501_Map_Cairo.png` | Map screenshot as a lead, not proof. |
+
+### 5-Minute Demo Script
+
+```text
+1. Launch GeoTrace Forensics X.
+2. Create a case named Demo Investigation.
+3. Import the full demo_evidence set.
+4. Open a GPS-bearing image and show metadata/GPS/map.
+5. Open the map screenshot and show why it is only a displayed-place lead.
+6. Open AI Guardian and highlight contradiction/next-action cards.
+7. Open OSINT Workbench and verify/reject a candidate.
+8. Export Internal Full report.
+9. Export Shareable Redacted or Courtroom Redacted report.
+10. Run the verifier and show manifest/hash validation.
+```
+
+### Demo Message
+
+> “GeoTrace does not simply extract metadata. It explains evidence strength, separates proof from leads, identifies contradictions, protects privacy during export, and gives the analyst a structured path from raw images to a defensible report.”
 
 ---
 
@@ -296,12 +413,13 @@ Add real screenshots before publishing the final public repository.
 
 ### Requirements
 
-- Python 3.11 or newer.
-- Windows 10/11, Linux, or macOS.
-- Tesseract OCR installed separately for OCR features.
-- Optional: `scikit-learn` for enhanced ML-backed geo-outlier detection.
+- Python **3.11+**
+- Windows 10/11 recommended for final EXE workflow
+- Linux/macOS supported for source execution where PyQt5 dependencies are available
+- Tesseract OCR installed separately for OCR features
+- Optional: AI/ML dependencies from `requirements-ai.txt`
 
-### Run from source
+### Run From Source — Windows PowerShell
 
 ```powershell
 python -m venv .venv
@@ -311,28 +429,26 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-### Windows convenience scripts
+### Windows Setup Script
 
 ```powershell
 setup_windows.bat
 run_windows.bat
 ```
 
-### Optional AI / ML backend
+### Optional AI / ML Dependencies
 
 ```powershell
 python -m pip install -r requirements-ai.txt
 ```
 
-If the optional backend is unavailable, GeoTrace falls back to transparent rule-based heuristics.
+If optional AI dependencies are missing, the application falls back to deterministic local logic.
 
 ---
 
 ## OCR / Tesseract Setup
 
-GeoTrace uses `pytesseract` as the Python bridge, but the native Tesseract engine must be installed on the operating system.
-
-Without Tesseract, the app still runs, but OCR-derived text, map labels, usernames, domains, and location clues will be limited.
+GeoTrace uses `pytesseract`, but the native Tesseract executable must be installed on the operating system.
 
 ### Windows
 
@@ -342,7 +458,7 @@ Install Tesseract and keep the default path when possible:
 C:\Program Files\Tesseract-OCR\tesseract.exe
 ```
 
-Then add the folder to your `PATH` and verify:
+Then verify:
 
 ```powershell
 tesseract --version
@@ -363,116 +479,20 @@ brew install tesseract
 tesseract --version
 ```
 
----
+### OCR Modes
 
-## Recommended Investigation Workflow
-
-```mermaid
-flowchart TD
-    A[Create or open case] --> B[Import images or evidence folder]
-    B --> C[Stage working copies]
-    C --> D[Hash source and staged files]
-    D --> E[Extract metadata, GPS, OCR, URLs, hidden strings]
-    E --> F[Build timeline, duplicate groups, map clues]
-    F --> G[Run AI Guardian batch review]
-    G --> H[Review confidence, contradictions, and next actions]
-    H --> I[Verify OSINT candidates manually]
-    I --> J[Export privacy-aware report package]
-    J --> K[Verify courtroom package manifest]
-```
-
-### Practical analyst flow
-
-1. Create or select a case.
-2. Import images or a folder.
-3. Review source/staged hashes.
-4. Inspect EXIF, timestamps, GPS, OCR, URLs, and hidden strings.
-5. Open Geo / Map Intelligence for location interpretation.
-6. Use AI Guardian to identify contradictions and priority actions.
-7. Use OSINT Workbench for hypotheses, entities, and privacy review.
-8. Export the correct report mode: internal, shareable, or courtroom.
-9. Verify the exported package using the Courtroom Verifier.
-
----
-
-## Report and Export System
-
-GeoTrace can generate multiple report formats depending on audience and privacy requirements.
-
-| Export | Purpose |
+| Mode | Purpose |
 |---|---|
-| HTML report | Rich technical report for analyst review. |
-| PDF report | Portable report for academic or case submission. |
-| JSON export | Machine-readable evidence data. |
-| CSV export | Spreadsheet-friendly summary. |
-| Executive summary | High-level, non-technical overview. |
-| Validation summary | Test/demo validation and expected-output comparison. |
-| Courtroom package | Integrity-focused package with manifest and verifier checks. |
-| OSINT appendix | Structured OSINT hypotheses, entities, candidates, and analyst decisions. |
-
-### Package integrity
-
-Report packages include SHA-256 integrity metadata so exported assets can be checked after transfer.
+| Quick OCR | Fast text extraction for general triage. |
+| Deep OCR | Better for map labels, screenshots, and difficult text. |
+| Map Deep OCR | Focused on map screenshots and location labels. |
+| Cached OCR | Avoids repeated processing of unchanged images. |
 
 ---
 
-## Project Architecture
+## Testing & Quality Gates
 
-```text
-GeoTrace Forensics X
-├── app/
-│   ├── agents/                  Local agent contracts and rule-based assistant bridge
-│   ├── config.py                App identity, version, channel, and release flavor
-│   ├── core/
-│   │   ├── ai/                  AI Guardian, confidence, evidence graph, context reasoning
-│   │   ├── case_manager/        Case pipeline and snapshot orchestration
-│   │   ├── cases/               Evidence staging helpers
-│   │   ├── exif/                Image signature and metadata helpers
-│   │   ├── map/                 Map evidence strength helpers
-│   │   ├── osint/               OSINT entities, hypotheses, CTF candidates, query builder
-│   │   ├── reports/             Privacy modes, package assets, verifier, OSINT appendix
-│   │   ├── vision/              Deterministic visual/map cue helpers
-│   │   ├── anomalies.py         Forensic anomaly scoring
-│   │   ├── case_db.py           Case persistence
-│   │   ├── exif_service.py      Metadata/OCR/hidden-content extraction
-│   │   ├── map_intelligence.py  Location and map clue processing
-│   │   └── validation_service.py
-│   ├── ui/
-│   │   ├── controllers/         Navigation/controller helpers
-│   │   ├── mixins/              Split main-window behavior modules
-│   │   ├── pages/               AI Guardian, OSINT Workbench, CTF GeoLocator
-│   │   ├── dialogs.py
-│   │   ├── main_window.py
-│   │   ├── splash.py
-│   │   ├── styles.py
-│   │   └── widgets.py
-│   └── __init__.py
-├── assets/                      App icon and splash screen
-├── data/osint/                  Local landmark dataset
-├── demo_evidence/               Demo corpus for classroom/testing
-├── docs/releases/               Organized patch notes
-├── screenshots/                 Real screenshot capture area
-├── tests/                       Unit, regression, smoke, report, AI, OSINT tests
-├── main.py                      Application entry point
-├── make_release.bat             Release gate and packaging script
-├── geotrace_forensics_x.spec    Production PyInstaller spec
-└── geotrace_forensics_x_demo.spec
-```
-
-### Internal design principles
-
-- Keep forensic extraction deterministic.
-- Keep AI explainable and reviewable.
-- Treat OSINT as hypothesis building, not automatic proof.
-- Separate production packages from demo/classroom assets.
-- Make reports privacy-aware by default.
-- Keep future AI-agent integration possible through clear contracts.
-
----
-
-## Testing
-
-Run the full test suite:
+Run all tests:
 
 ```powershell
 python -m pytest -q
@@ -484,210 +504,323 @@ Run compile checks:
 python -m compileall -q app tests main.py
 ```
 
-Run linting if enabled in your environment:
+Optional linting:
 
 ```powershell
 python -m ruff check .
 ```
 
-Important test groups include:
+### Test Coverage Focus
 
-- AI engine and deep context reasoning.
-- AI Guardian verifier checks.
-- OSINT structured output.
-- OSINT image intelligence.
-- Map intelligence hardening.
-- CTF candidate actions.
-- Report smoke tests.
-- Release readiness tests.
-- UI import smoke tests.
+| Test Area | What It Protects |
+|---|---|
+| AI deep context | Map-like layouts, displayed-location warnings, duplicate context mismatch. |
+| AI Guardian | Evidence graph, readiness scoring, package verifier. |
+| OSINT structured pipeline | Entities, hypotheses, map URL parsing, local gazetteer behavior. |
+| Map intelligence | Visual-only score caps, OCR candidate lifting, false-positive reduction. |
+| Privacy export | Redaction of OCR, URLs, filenames, device data, GPS, sensitive map assets. |
+| Release readiness | Version sync, required docs, production spec, manifest hashes. |
+| UI smoke imports | Ensures refactored UI modules import correctly. |
+| Core forensics | GPS conversion, timestamp parsing, hidden content, duplicates, staging. |
 
 ---
 
-## Windows Packaging
+## Build Windows EXE
 
-### Production release build
-
-Use the production release script:
+### Production Build
 
 ```powershell
 make_release.bat
 ```
 
-The release script is intended to:
+Expected release checks include:
 
-1. Clean cache/build/temp artifacts.
-2. Run compile checks.
-3. Run tests.
-4. Build the production EXE.
-5. Create a release ZIP.
-6. Write `SHA256SUMS.txt`.
+1. removing cache/build/temp artifacts,
+2. running compile checks,
+3. running tests,
+4. building with the production PyInstaller spec,
+5. excluding demo evidence from the production package,
+6. generating release hashes.
 
-### Manual EXE build
+### Manual EXE Smoke Test
 
-```powershell
-.\build_windows_exe.bat
-```
-
-Then test:
+After building:
 
 ```powershell
 dist\GeoTraceForensicsX\GeoTraceForensicsX.exe
 ```
 
-### Demo build
+Then verify:
 
-Use the demo spec only for classroom/demo builds:
-
-```powershell
-.\build_windows_demo_exe.bat
-```
-
-Production packages should use:
-
-```text
-geotrace_forensics_x.spec
-```
-
-Demo/classroom packages may use:
-
-```text
-geotrace_forensics_x_demo.spec
-```
+- the app launches,
+- a case can be created,
+- image import works,
+- quick analysis works,
+- OCR behavior is safe with and without Tesseract,
+- Dashboard, Evidence Queue, Geo, AI Guardian, OSINT, Reports open correctly,
+- Internal Full export works,
+- Shareable Redacted export works,
+- Courtroom Redacted export works,
+- verifier detects unsafe package contents when expected.
 
 ---
 
-## Demo Corpus
+## Reports & Export Modes
 
-The repository includes `demo_evidence/` for controlled testing and presentations.
+GeoTrace supports multiple outputs for different audiences.
 
-Demo scenarios include:
-
-- EXIF and GPS recovery.
-- Map screenshot interpretation.
-- Duplicate detection.
-- Missing metadata triage.
-- Hidden-content scan.
-- Timeline conflict example.
-- OSINT and CTF geolocation workflow.
-
-> Do not treat demo evidence as real case data. It exists for validation, screenshots, demos, and academic presentation only.
-
----
-
-## Build Identity
-
-| Field | Value |
+| Export | Best For |
 |---|---|
-| App | GeoTrace Forensics X |
-| Version | `12.9.2` |
-| Channel | `Public Release Candidate` |
-| Release flavor | `AI Guardian v5 / Deep Context Reasoner` |
-| Organization | `Cyber Forensics Team` |
-| Default analyst | `Lead Analyst` |
-| Primary use | Academic digital-forensics investigation, controlled OSINT practice, CTF geolocation triage, and report generation |
+| HTML Technical Report | Full analyst review with rich structure. |
+| PDF Report | Portable academic or case deliverable. |
+| JSON Export | Machine-readable evidence archive. |
+| CSV Export | Spreadsheet review and quick triage. |
+| Executive Summary | Non-technical overview. |
+| Validation Summary | Demo/testing comparison and sanity checks. |
+| OSINT Appendix | Hypotheses, entities, candidate places, analyst decisions. |
+| Courtroom Package | Integrity-focused package with manifest and verifier checks. |
+
+### Export Modes
+
+| Mode | Description |
+|---|---|
+| **Internal Full** | Maximum detail for the analyst or internal team. |
+| **Shareable Redacted** | Reduces sensitive fields before sharing. |
+| **Courtroom Redacted** | Stronger package discipline, manifest checks, and leakage verification. |
+
+### Redaction Targets
+
+- local file paths,
+- raw OCR text,
+- URLs,
+- usernames,
+- emails,
+- device/source details,
+- GPS coordinates,
+- sensitive map assets,
+- AI/internal notes where inappropriate for external sharing.
+
+---
+
+## Architecture
+
+```text
+GeoTrace Forensics X
+├── app/
+│   ├── agents/
+│   │   ├── contracts.py              # Agent interface contracts
+│   │   ├── factory.py                # Local/optional agent selection
+│   │   └── rule_based_agent.py       # Safe local assistant behavior
+│   ├── config.py                     # App identity, version, channel, release flavor
+│   ├── core/
+│   │   ├── ai/
+│   │   │   ├── case_narrator.py
+│   │   │   ├── confidence.py
+│   │   │   ├── context_reasoner.py
+│   │   │   ├── evidence_graph.py
+│   │   │   ├── evidence_strength.py
+│   │   │   ├── osint_content.py
+│   │   │   ├── osint_scene.py
+│   │   │   ├── planning.py
+│   │   │   ├── privacy_guardian.py
+│   │   │   └── visual_semantics.py
+│   │   ├── case_manager/
+│   │   ├── cases/
+│   │   ├── exif/
+│   │   ├── map/
+│   │   ├── osint/
+│   │   ├── reports/
+│   │   ├── vision/
+│   │   ├── anomalies.py
+│   │   ├── case_db.py
+│   │   ├── exif_service.py
+│   │   ├── map_intelligence.py
+│   │   ├── map_service.py
+│   │   ├── ocr_modes.py
+│   │   ├── ocr_runtime.py
+│   │   └── validation_service.py
+│   ├── ui/
+│   │   ├── controllers/
+│   │   ├── mixins/
+│   │   ├── pages/
+│   │   │   ├── ai_guardian_page.py
+│   │   │   ├── ctf_geolocator_page.py
+│   │   │   └── osint_workbench_page.py
+│   │   ├── dialogs.py
+│   │   ├── main_window.py
+│   │   ├── splash.py
+│   │   ├── styles.py
+│   │   └── widgets.py
+│   └── __init__.py
+├── assets/
+├── data/osint/
+├── demo_evidence/
+├── docs/releases/
+├── screenshots/
+├── tests/
+├── main.py
+├── make_release.bat
+├── geotrace_forensics_x.spec
+└── geotrace_forensics_x_demo.spec
+```
+
+### Design Principles
+
+1. **Forensics first** — extraction and hashing must remain deterministic.
+2. **AI as assistant, not judge** — AI suggests, explains, and prioritizes.
+3. **OSINT as hypothesis** — external clues need verification.
+4. **Privacy by design** — exports must reduce sensitive leakage.
+5. **Reportability** — every finding should be understandable in a report.
+6. **Future-agent ready** — agent contracts allow later local/remote LLM integration without rewriting the core.
+
+---
+
+## Security Model
+
+GeoTrace is a forensic triage application, so the security model focuses on safe local evidence handling.
+
+### Current Safety Controls
+
+- Offline-first default behavior.
+- No automatic reverse image search.
+- No automatic upload of evidence.
+- Manual privacy review before external OSINT pivots.
+- Safe ZIP extraction protection.
+- Redacted package asset filtering.
+- Courtroom package verifier.
+- Manifest hashing for exported assets.
+- Production/demo PyInstaller separation.
+- Logging instead of silent failures in sensitive paths.
+
+### Responsible Use
+
+Use GeoTrace only on evidence you are authorized to examine. The tool is suitable for:
+
+- digital forensics coursework,
+- CTF/OSINT training,
+- internal investigation labs,
+- controlled demo cases,
+- authorized security research documentation.
+
+It must not be used for stalking, doxxing, harassment, unauthorized surveillance, or unlawful tracking.
+
+---
+
+## Privacy, Safety & Responsible Use
+
+GeoTrace can extract sensitive information from images, including locations, usernames, URLs, and OCR text. Treat all generated reports as sensitive by default.
+
+Before sharing any export, review:
+
+- whether raw GPS should be removed,
+- whether OCR text contains private names or messages,
+- whether local file paths expose analyst machine details,
+- whether map screenshots reveal sensitive locations,
+- whether report screenshots include private previews,
+- whether the recipient needs internal details or a redacted package.
+
+See:
+
+- [`PRIVACY.md`](PRIVACY.md)
+- [`SECURITY.md`](SECURITY.md)
+- [`DISCLAIMER.md`](DISCLAIMER.md)
 
 ---
 
 ## Limitations
 
-GeoTrace is designed for triage, analysis, and reporting support. It should not be treated as a single-source authority.
+GeoTrace is intentionally conservative. It should not be presented as a guaranteed attribution engine.
 
-Important limitations:
-
-- OCR quality depends on image quality and Tesseract language packs.
-- Map screenshots may show searched/displayed places, not device location.
-- Filename hints are weak and can be misleading.
-- Native metadata may be absent, modified, or stripped by platforms.
-- Optional ML output is assistive and must be reviewed.
-- OSINT pivots require manual validation and privacy review.
-- Courtroom use requires proper acquisition process, legal context, and independent verification.
+| Limitation | Explanation |
+|---|---|
+| No automatic truth verdict | The tool provides evidence, confidence, and reasoning; final interpretation belongs to the analyst. |
+| Map screenshots are not proof of presence | They may show searched/displayed places. Native GPS or source records are needed for stronger claims. |
+| OCR may be wrong | Arabic/English OCR depends on image quality, installed language packs, and preprocessing. |
+| Visual landmark detection is limited | Local heuristics and datasets can suggest leads, not final identification. |
+| EXIF can be missing or modified | Metadata must be interpreted with acquisition context and chain-of-custody records. |
+| Optional AI/ML is not required | The core workflow remains deterministic when optional packages are unavailable. |
 
 ---
 
 ## Roadmap
 
-### Near-term hardening
+### Near-term Polish
 
-- More UI smoke tests.
-- Stronger map-label OCR preprocessing.
-- Better Arabic/English OCR profiles.
-- More validation corpus coverage.
-- More report verifier rules.
-- Wider test coverage for export privacy modes.
+- Add final real screenshots for public README.
+- Improve UI spacing and responsive card layout.
+- Expand demo script with before/after report examples.
+- Add more regression tests for OCR/map false positives.
+- Strengthen release checklist automation.
 
-### OSINT and AI expansion
+### OSINT Intelligence
 
 - Larger offline landmark dataset.
-- Stronger country/region classifier.
-- More structured entity graph views.
-- Analyst feedback loop for candidate ranking.
+- Better country/region classifier.
+- Stronger Arabic map-label extraction.
+- More robust route/path detection.
+- Improved local image-existence intelligence.
+- Richer corroboration matrix.
+
+### AI Guardian
+
+- More detailed next-best-action planner.
+- Better contradiction explanation.
+- Stronger courtroom readiness model.
 - Optional local vision model integration.
-- Stronger local CLIP-style backend support.
+- Analyst-tunable confidence thresholds.
 
-### Product polish
+### Reporting
 
-- More professional screenshots.
-- Improved onboarding/demo walkthrough.
-- Better packaged release notes.
-- UI refinements for evidence cards and AI reasoning panels.
-- More print-friendly executive reports.
-
----
-
-## Security, Privacy, and Responsible Use
-
-GeoTrace Forensics X is intended for:
-
-- Academic digital-forensics projects.
-- Authorized investigations.
-- CTF and training environments.
-- Internal evidence triage.
-- Controlled OSINT learning.
-
-Do not use GeoTrace to stalk, harass, deanonymize, or investigate people without authorization. Always follow applicable laws, platform rules, evidence-handling requirements, and privacy obligations.
-
-Read the included documents before public release:
-
-- [`SECURITY.md`](SECURITY.md)
-- [`PRIVACY.md`](PRIVACY.md)
-- [`DISCLAIMER.md`](DISCLAIMER.md)
-- [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)
-- [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md)
+- More polished PDF design.
+- Print-friendly executive report.
+- Appendix-level evidence traceability.
+- Stronger manifest visualization.
+- Report signing workflow.
 
 ---
 
-## Contributing
+## Repository Checklist
 
-Suggested contribution areas:
+Before publishing or submitting:
 
-- OCR preprocessing improvements.
-- Arabic/English location extraction.
-- Report formatting.
-- Test coverage.
-- Demo corpus improvements.
-- Privacy verifier rules.
-- Offline landmark dataset expansion.
-- UI polish and accessibility.
+- [ ] `APP_VERSION` in `app/config.py` matches README.
+- [ ] `pyproject.toml` version matches README.
+- [ ] `APP_BUILD_CHANNEL` matches README.
+- [ ] `LICENSE`, `PRIVACY.md`, `SECURITY.md`, `DISCLAIMER.md`, and `THIRD_PARTY_NOTICES.md` exist.
+- [ ] No `__pycache__`, `.pytest_cache`, `build`, `dist`, `.temp`, private case data, or real evidence are committed.
+- [ ] Real screenshots are added under `screenshots/`.
+- [ ] `python -m compileall -q app tests main.py` passes.
+- [ ] `python -m pytest -q` passes.
+- [ ] Production EXE launches from `dist`.
+- [ ] Demo evidence is excluded from production release.
+- [ ] Redacted/courtroom packages do not include sensitive map assets.
+- [ ] Courtroom verifier passes on expected package.
 
-Before submitting changes:
+---
 
-```powershell
-python -m compileall -q app tests main.py
-python -m pytest -q
+## Version
+
+```text
+Application: GeoTrace Forensics X
+Version:     12.9.2
+Channel:     Public Release Candidate
+Flavor:      AI Guardian v5 / Deep Context Reasoner
+Python:      3.11+
+UI:          PyQt5
 ```
 
 ---
 
 ## License
 
-This project is released under the MIT License. See [`LICENSE`](LICENSE) for details.
+This project is released under the MIT License. See [`LICENSE`](LICENSE).
 
 ---
 
 <div align="center">
 
-**GeoTrace Forensics X**  
-Evidence first. AI explained. Privacy respected.
+### GeoTrace Forensics X
+
+**Extract carefully. Reason conservatively. Report professionally.**
 
 </div>
