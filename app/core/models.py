@@ -6,6 +6,53 @@ from typing import Dict, List, Optional
 
 
 @dataclass
+class GeoProfile:
+    gps_latitude: Optional[float] = None
+    gps_longitude: Optional[float] = None
+    gps_altitude: Optional[float] = None
+    gps_display: str = "Unavailable"
+    gps_source: str = "Unavailable"
+    gps_confidence: int = 0
+    derived_geo_display: str = "Unavailable"
+    derived_geo_source: str = "Unavailable"
+    derived_geo_confidence: int = 0
+    geo_status: str = "No native GPS recovered."
+    map_confidence: int = 0
+    possible_place: str = "Unavailable"
+    evidence_strength: str = "weak_signal"
+
+
+@dataclass
+class OCRProfile:
+    raw_text: str = ""
+    note: str = "OCR not attempted."
+    confidence: int = 0
+    analyst_relevance: str = "OCR not attempted."
+    visible_lines: List[str] = field(default_factory=list)
+    urls: List[str] = field(default_factory=list)
+    times: List[str] = field(default_factory=list)
+    locations: List[str] = field(default_factory=list)
+    usernames: List[str] = field(default_factory=list)
+    map_labels: List[str] = field(default_factory=list)
+
+
+@dataclass
+class AIProfile:
+    provider: str = "Not evaluated"
+    risk_label: str = "Not evaluated"
+    confidence: int = 0
+    score_delta: int = 0
+    summary: str = "AI batch assessment has not run for this evidence."
+    flags: List[str] = field(default_factory=list)
+    reasons: List[str] = field(default_factory=list)
+    action_plan: List[str] = field(default_factory=list)
+    evidence_strength: str = "weak_signal"
+    courtroom_readiness: str = "Ready for courtroom: Pending AI review."
+    next_best_action: str = "No AI next-best-action generated yet."
+    privacy_audit: str = "AI privacy auditor has not run yet."
+
+
+@dataclass
 class EvidenceRecord:
     case_id: str
     case_name: str
@@ -130,11 +177,80 @@ class EvidenceRecord:
     ai_flags: List[str] = field(default_factory=list)
     ai_reasons: List[str] = field(default_factory=list)
     ai_breakdown: List[str] = field(default_factory=list)
+    ai_action_plan: List[str] = field(default_factory=list)
+    ai_corroboration_matrix: List[str] = field(default_factory=list)
+    ai_case_links: List[str] = field(default_factory=list)
+    ai_evidence_graph: List[str] = field(default_factory=list)
+    ai_contradiction_explainer: List[str] = field(default_factory=list)
+    ai_courtroom_readiness: str = "Ready for courtroom: Pending AI review."
+    ai_next_best_action: str = "No AI next-best-action generated yet."
+    ai_privacy_audit: str = "AI privacy auditor has not run yet."
+    ai_executive_note: str = "No AI priority note generated yet."
+    ai_priority_rank: int = 0
+    evidence_strength_label: str = "weak_signal"
+    evidence_strength_score: int = 0
+    evidence_strength_reasons: List[str] = field(default_factory=list)
+    evidence_strength_limitations: List[str] = field(default_factory=list)
+    osint_scene_label: str = "Unclassified"
+    osint_scene_confidence: int = 0
+    osint_scene_summary: str = "OSINT AI content read has not been generated yet."
+    osint_scene_reasons: List[str] = field(default_factory=list)
+    osint_content_label: str = "Unclassified image content"
+    osint_content_confidence: int = 0
+    osint_content_summary: str = "OSINT Content v2 has not been generated yet."
+    osint_content_tags: List[str] = field(default_factory=list)
+    osint_visual_cues: List[str] = field(default_factory=list)
+    osint_text_cues: List[str] = field(default_factory=list)
+    osint_location_hypotheses: List[str] = field(default_factory=list)
+    osint_source_context: str = "Unknown"
+    osint_content_limitations: List[str] = field(default_factory=list)
+    osint_next_actions: List[str] = field(default_factory=list)
+    osint_entities: List[Dict[str, object]] = field(default_factory=list)
+    osint_hypothesis_cards: List[Dict[str, object]] = field(default_factory=list)
+    osint_corroboration_matrix: List[Dict[str, object]] = field(default_factory=list)
+    osint_analyst_decisions: List[Dict[str, object]] = field(default_factory=list)
+    osint_privacy_review: Dict[str, object] = field(default_factory=dict)
+    osint_cache_status: str = "OSINT cache not written yet."
+    ocr_region_signals: List[Dict[str, object]] = field(default_factory=list)
+    detected_map_context: str = "No clear map/location context was recovered from the current evidence item."
+    possible_place: str = "Unavailable"
+    map_confidence: int = 0
+    map_app_detected: str = "Unknown"
+    map_type: str = "Unknown"
+    route_overlay_detected: bool = False
+    route_confidence: int = 0
+    candidate_city: str = "Unavailable"
+    candidate_area: str = "Unavailable"
+    landmarks_detected: List[str] = field(default_factory=list)
+    place_candidates: List[str] = field(default_factory=list)
+    map_intelligence_confidence: int = 0
+    map_ocr_language_hint: str = "Unknown"
+    map_intelligence_summary: str = "No map intelligence generated yet."
+    map_intelligence_reasons: List[str] = field(default_factory=list)
+    map_evidence_basis: List[str] = field(default_factory=list)
+    map_evidence_strength: str = "weak_signal"
+    map_limitations: List[str] = field(default_factory=list)
+    map_recommended_actions: List[str] = field(default_factory=list)
+    map_evidence_ladder: List[str] = field(default_factory=list)
+    place_candidate_rankings: List[str] = field(default_factory=list)
+    filename_location_hints: List[str] = field(default_factory=list)
+    ctf_clues: List[Dict[str, object]] = field(default_factory=list)
+    geo_candidates: List[Dict[str, object]] = field(default_factory=list)
+    ctf_search_queries: List[str] = field(default_factory=list)
+    location_solvability_score: int = 0
+    location_solvability_label: str = "No useful geo clue"
+    ctf_country_region_profile: str = "Unknown"
+    ctf_landmark_matches: List[Dict[str, object]] = field(default_factory=list)
+    ctf_writeup: str = "CTF geolocation writeup has not been generated yet."
+    ctf_online_mode_status: str = "Offline-only. External/reverse-image searches require explicit analyst action and privacy review."
+    ctf_image_existence_profile: Dict[str, object] = field(default_factory=dict)
+    ctf_online_privacy_review: Dict[str, object] = field(default_factory=dict)
     validation_hits: List[str] = field(default_factory=list)
     validation_misses: List[str] = field(default_factory=list)
     extracted_strings: List[str] = field(default_factory=list)
     visible_text_lines: List[str] = field(default_factory=list)
     ocr_raw_text: str = ""
+    ocr_note: str = "OCR not attempted."
     ocr_confidence: int = 0
     ocr_analyst_relevance: str = "OCR not attempted."
     ocr_app_names: List[str] = field(default_factory=list)
@@ -163,6 +279,18 @@ class EvidenceRecord:
     time_candidates: List[str] = field(default_factory=list)
     time_conflicts: List[str] = field(default_factory=list)
     custody_event_summary: List[str] = field(default_factory=list)
+
+    @property
+    def geo_profile(self) -> GeoProfile:
+        return GeoProfile(gps_latitude=self.gps_latitude, gps_longitude=self.gps_longitude, gps_altitude=self.gps_altitude, gps_display=self.gps_display, gps_source=self.gps_source, gps_confidence=self.gps_confidence, derived_geo_display=self.derived_geo_display, derived_geo_source=self.derived_geo_source, derived_geo_confidence=self.derived_geo_confidence, geo_status=self.geo_status, map_confidence=max(self.map_confidence, self.map_intelligence_confidence), possible_place=self.possible_place, evidence_strength=self.map_evidence_strength)
+
+    @property
+    def ocr_profile(self) -> OCRProfile:
+        return OCRProfile(raw_text=self.ocr_raw_text, note=self.ocr_note, confidence=self.ocr_confidence, analyst_relevance=self.ocr_analyst_relevance, visible_lines=list(self.visible_text_lines), urls=list(self.ocr_url_entities or self.visible_urls), times=list(self.ocr_time_entities or self.visible_time_strings), locations=list(self.ocr_location_entities or self.visible_location_strings), usernames=list(self.ocr_username_entities), map_labels=list(self.ocr_map_labels))
+
+    @property
+    def ai_profile(self) -> AIProfile:
+        return AIProfile(provider=self.ai_provider, risk_label=self.ai_risk_label, confidence=self.ai_confidence, score_delta=self.ai_score_delta, summary=self.ai_summary, flags=list(self.ai_flags), reasons=list(self.ai_reasons), action_plan=list(self.ai_action_plan), evidence_strength=self.evidence_strength_label, courtroom_readiness=self.ai_courtroom_readiness, next_best_action=self.ai_next_best_action, privacy_audit=self.ai_privacy_audit)
 
     @property
     def has_gps(self) -> bool:

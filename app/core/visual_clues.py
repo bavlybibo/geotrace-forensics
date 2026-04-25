@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import logging
 import os
 import re
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageFilter, ImageOps
+
+from .ocr_runtime import configure_pytesseract
+from .ocr_modes import OCRCacheKey, normalize_ocr_mode, read_ocr_cache, write_ocr_cache
+from .osint.map_url_parser import parse_map_url_signals
+from .osint.region_ocr import classify_ocr_regions
+
+LOGGER = logging.getLogger("geotrace.visual_clues")
 
 try:  # pragma: no cover - optional runtime dependency
     import pytesseract
@@ -27,10 +36,18 @@ TIME_PATTERNS = [
 ]
 
 LOCATION_KEYWORDS = (
+    # English venue/location indicators
     "street", "road", "hospital", "airport", "park", "mall", "city", "district", "bridge",
     "mosque", "church", "metro", "university", "school", "tower", "square", "station",
-    "cairo", "giza", "heliopolis", "alexandria", "restaurant", "cafe", "venue",
-    "مطار", "مستشفى", "مدينة", "شارع", "طريق", "مول", "حديقة", "الزيتون", "المرج",
+    "cairo", "giza", "heliopolis", "alexandria", "restaurant", "cafe", "venue", "hotel",
+    "museum", "bank", "river", "nile", "corniche", "zamalek", "dokki", "tahrir", "nasr city",
+    # Arabic venue/location indicators. Keep these as Unicode literals; OCR on Egypt/Arabic maps often
+    # returns useful place names even when coordinates are absent.
+    "مطار", "مستشفى", "مستشفي", "مدينة", "شارع", "طريق", "مول", "حديقة", "الزيتون", "المرج",
+    "القاهرة", "الجيزة", "القاهره", "جيزة", "الزمالك", "الدقي", "التحرير", "قصر", "النيل",
+    "كوبري", "كوبرى", "محطة", "محطه", "مترو", "ميدان", "مسجد", "كنيسة", "كنيسه", "جامعة",
+    "جامعه", "مدرسة", "مدرسه", "فندق", "مطعم", "كافيه", "مقهى", "بنك", "متحف", "نادي",
+    "نادى", "كورنيش", "وسط البلد", "مدينة نصر", "الهرم", "المهندسين", "المعادي", "الزمالك",
 )
 
 PLACE_SUFFIXES = (
@@ -39,8 +56,14 @@ PLACE_SUFFIXES = (
     "hotel", "corridor",
 )
 
+MAP_UI_KEYWORDS = (
+    "google maps", "maps.google", "google.com/maps", "maps/@", "directions", "street view",
+    "route overview", "nearby", "satellite", "خرائط", "خريطة", "خريطه", "المسار", "اتجاهات",
+    "موقع", "أماكن", "اماكن", "جوجل ماب", "google maps",
+)
+
 APP_PATTERNS = [
-    ("Google Maps", ["google maps", "maps/@", "google.com/maps", "maps.google", "street view", "directions", "satellite", "route overview", "nearby"]),
+    ("Google Maps", ["google maps", "maps/@", "google.com/maps", "maps.google", "street view", "directions", "satellite", "route overview", "nearby", "خرائط", "خريطة", "خريطه", "اتجاهات", "جوجل ماب"]),
     ("Google Earth", ["google earth", "earth.google"]),
     ("WhatsApp", ["whatsapp", "wa.me", "last seen", "typing", "online"]),
     ("Telegram", ["telegram", "t.me", "forwarded message", "joined telegram"]),
@@ -77,6 +100,128 @@ def _normalize_text(text: str) -> str:
     return text.strip()
 
 
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except Exception:
+        return "unavailable"
+
+
+def _contains_arabic(text: str) -> bool:
+    return any("\u0600" <= ch <= "\u06ff" or "\u0750" <= ch <= "\u077f" or "\u08a0" <= ch <= "\u08ff" for ch in text or "")
+
+
+def _has_map_ui_signal(text: str) -> bool:
+    lower = (text or "").lower()
+    return any(token in lower for token in MAP_UI_KEYWORDS)
+
+
+def _is_probable_place_label(text: str) -> bool:
+    cleaned = re.sub(r"\s+", " ", text or "").strip(" -:|•·")
+    if len(cleaned) < 4:
+        return False
+    letters = sum(ch.isalpha() for ch in cleaned)
+    arabic = _contains_arabic(cleaned)
+    digits = sum(ch.isdigit() for ch in cleaned)
+    # Reject OCR/date/id noise such as "001 2026", "IMG 001", or pure timestamp fragments.
+    if letters == 0 and not arabic:
+        return False
+    if digits > letters * 2 and not arabic:
+        return False
+    lower = cleaned.lower()
+    if lower in {"google maps", "google map", "maps", "map", "خرائط", "خريطة", "خريطه", "جوجل ماب"}:
+        return False
+    blocked = {"img", "image", "screenshot", "screen", "capture", "png", "jpg", "jpeg", "2026", "2025", "2024"}
+    tokens = [token.strip(".,:;()[]{}") for token in lower.split()]
+    if tokens and all(token in blocked or token.isdigit() for token in tokens):
+        return False
+    return True
+
+
+def _filename_map_labels(file_path: Path) -> List[str]:
+    stem = re.sub(r"[_-]+", " ", file_path.stem or "")
+    stem = re.sub(r"\b(?:img|image|screenshot|screen|capture|copy|duplicate|edited|export)\b", " ", stem, flags=re.IGNORECASE)
+    stem = re.sub(r"\b\d{4}(?:[-_]?\d{2}){2}\b", " ", stem)
+    stem = re.sub(r"\b\d{6,}\b", " ", stem)
+    parts = [part.strip() for part in re.split(r"\s+", stem) if part.strip()]
+    labels: List[str] = []
+    capture: List[str] = []
+    for token in parts:
+        lower = token.lower().strip(".,:;()[]{}")
+        if lower in {"map", "maps", "location", "route", "directions", "geo", "google", "venue"}:
+            continue
+        if lower.isdigit():
+            continue
+        if len(token) <= 2 and not _contains_arabic(token):
+            continue
+        capture.append(token)
+    candidate = " ".join(capture[:4])
+    if candidate and _is_probable_place_label(candidate):
+        labels.append(candidate)
+    return _dedupe(labels, limit=4)
+
+
+def _ocr_language_candidates() -> List[str | None]:
+    configured = os.getenv("GEOTRACE_OCR_LANG", "eng+ara").strip()
+    ordered: List[str | None] = []
+    # Try the requested bilingual pack first, then safe fallbacks. Avoid long cascades over
+    # unavailable languages on large map screenshots.
+    for item in [configured, "eng", None]:
+        if item == "":
+            item = None
+        if item not in ordered:
+            ordered.append(item)
+    return ordered
+
+
+def _ocr_image_to_string(candidate, *, config: str, timeout: float) -> str:
+    if pytesseract is None:
+        return ""
+    configure_pytesseract(pytesseract)
+    last_error: Exception | None = None
+    for lang in _ocr_language_candidates():
+        try:
+            if lang is None:
+                return pytesseract.image_to_string(candidate, config=config, timeout=timeout)
+            return pytesseract.image_to_string(candidate, lang=lang, config=config, timeout=timeout)
+        except Exception as exc:  # fallback when a language pack is not installed. Do not cascade timeouts.
+            last_error = exc
+            if "timeout" in str(exc).lower():
+                raise exc
+            continue
+    if last_error is not None:
+        raise last_error
+    return ""
+
+
+
+def _ocr_preprocess_variants(work: Image.Image, *, mode: str) -> list[tuple[str, Image.Image]]:
+    """Return OCR preprocessing variants.
+
+    quick/deep keep a small set for speed. map_deep adds high-contrast and sharpened
+    versions because map screenshots often contain small Arabic/English place labels.
+    """
+    variants: list[tuple[str, Image.Image]] = [("gray", work)]
+    if mode in {"deep", "map_deep"}:
+        variants.append(("sharp", work.filter(ImageFilter.SHARPEN)))
+    if mode == "map_deep":
+        try:
+            threshold = work.point(lambda p: 255 if p > 172 else 0)
+            variants.append(("threshold", threshold))
+        except Exception:
+            pass
+        try:
+            high_contrast = ImageOps.autocontrast(work.filter(ImageFilter.SHARPEN))
+            variants.append(("high_contrast", high_contrast))
+        except Exception:
+            pass
+    return variants[:4]
+
+
 def _extract_urls(text: str) -> List[str]:
     urls = re.findall(r"https?://[^\s\"'<>]+", text, flags=re.IGNORECASE)
     compact = text.replace(" ", "")
@@ -100,12 +245,13 @@ def _looks_like_readable_line(line: str) -> bool:
     letters = sum(ch.isalpha() for ch in line)
     digits = sum(ch.isdigit() for ch in line)
     spaces = sum(ch.isspace() for ch in line)
-    printable = sum(32 <= ord(ch) <= 126 or ch.isspace() for ch in line)
-    if printable / max(len(line), 1) < 0.92:
+    # Keep Arabic/Unicode OCR. The old ASCII-printable ratio discarded useful Arabic map labels.
+    if letters + digits + spaces < max(3, int(len(line) * 0.35)):
         return False
-    if letters + digits + spaces < max(3, int(len(line) * 0.45)):
+    if re.fullmatch(r"[\W_]+", line, flags=re.UNICODE):
         return False
-    if re.fullmatch(r"[\W_]+", line):
+    # Drop common one-character OCR noise while preserving real Arabic/English labels.
+    if len(line) <= 4 and letters <= 1 and digits == 0:
         return False
     return True
 
@@ -113,27 +259,39 @@ def _looks_like_readable_line(line: str) -> bool:
 def _extract_location_like_lines(lines: List[str]) -> List[str]:
     out: List[str] = []
     for line in lines:
-        lower = line.lower()
+        cleaned = re.sub(r"\s+", " ", line or "").strip()
+        lower = cleaned.lower()
         if any(keyword in lower for keyword in LOCATION_KEYWORDS):
-            out.append(line)
+            out.append(cleaned)
             continue
-        if re.search(r"\b(?:st\.?|street|rd\.?|road|ave\.?|avenue|blvd\.?|district|city|park|mall|bridge|tower|station)\b", lower):
-            out.append(line)
-    return _dedupe(out, limit=10)
+        if re.search(r"\b(?:st\.?|street|rd\.?|road|ave\.?|avenue|blvd\.?|district|city|park|mall|bridge|tower|station|hotel|hospital|metro|square)\b", lower):
+            out.append(cleaned)
+            continue
+        if _contains_arabic(cleaned) and re.search(r"(شارع|طريق|ميدان|كوبري|كوبرى|محطة|محطه|مستشفى|مستشفي|فندق|مطعم|كافيه|مول|جامعة|جامعه|مسجد|كنيسة|كنيسه|القاهرة|القاهره|الجيزة|الزمالك|الدقي|النيل|التحرير)", cleaned):
+            out.append(cleaned)
+    return _dedupe(out, limit=12)
 
 
 def _extract_map_labels(lines: List[str]) -> List[str]:
     out: List[str] = []
     for line in lines:
-        cleaned = re.sub(r"\s+", " ", line).strip(" -:|")
+        cleaned = re.sub(r"\s+", " ", line or "").strip(" -:|•·")
+        if not cleaned:
+            continue
         lower = cleaned.lower()
-        if any(keyword in lower for keyword in LOCATION_KEYWORDS):
+        if any(keyword in lower for keyword in LOCATION_KEYWORDS) and _is_probable_place_label(cleaned):
+            out.append(cleaned)
+            continue
+        if _has_map_ui_signal(cleaned) and _is_probable_place_label(cleaned):
             out.append(cleaned)
             continue
         words = cleaned.split()
-        if len(words) >= 2 and any(words[-1].lower().strip(".,") == suffix for suffix in PLACE_SUFFIXES):
+        if len(words) >= 2 and any(words[-1].lower().strip(".,") == suffix for suffix in PLACE_SUFFIXES) and _is_probable_place_label(cleaned):
             out.append(cleaned)
-    return _dedupe(out, limit=8)
+            continue
+        if _contains_arabic(cleaned) and len(cleaned) >= 4 and re.search(r"(القاهرة|القاهره|الجيزة|النيل|كوبري|كوبرى|ميدان|شارع|طريق|مستشفى|مستشفي|فندق|مطعم|كافيه|مول|مترو|مسجد|جامعة|جامعه|الزمالك|الدقي|التحرير)", cleaned):
+            out.append(cleaned)
+    return _dedupe(out, limit=12)
 
 
 def _extract_entity_lines(lines: List[str], merged_text: str) -> Dict[str, List[str]]:
@@ -148,7 +306,7 @@ def _extract_entity_lines(lines: List[str], merged_text: str) -> Dict[str, List[
             for match in pattern.finditer(line):
                 times.append(match.group(0))
         lower = line.lower()
-        if any(keyword in lower for keyword in LOCATION_KEYWORDS):
+        if any(keyword in lower for keyword in LOCATION_KEYWORDS) or (_contains_arabic(line) and any(keyword in line for keyword in LOCATION_KEYWORDS)):
             locations.append(line)
     app_names = []
     lower = merged_text.lower()
@@ -177,7 +335,7 @@ def _detect_app(text: str, app_names: List[str]) -> str:
 
 def _detect_environment(file_name: str, width: int, height: int, text: str, source_type: str) -> str:
     lower = text.lower()
-    if any(token in lower for token in ["google maps", "http", "www.", ".com", "search google maps", "directions", "street view"]):
+    if _has_map_ui_signal(text) or any(token in lower for token in ["http", "www.", ".com", "search google maps"]):
         return "Desktop Browser Capture" if width >= height else "Mobile Browser Capture"
     if any(token in lower for token in ["telegram", "whatsapp", "messenger", "discord", "instagram", "x.com", "twitter"]):
         return "Chat / Social Screenshot"
@@ -208,6 +366,8 @@ def _score_ocr(lines: List[str], zone_hits: List[str], entities: Dict[str, List[
 
 
 def extract_visible_text_clues(file_path: Path, width: int, height: int, *, source_hint: str = "", force: bool = False, mode: str | None = None, cache_dir: Path | None = None) -> Dict[str, object]:
+    filename_map_labels = _filename_map_labels(file_path)
+    filename_has_map_signal = _has_map_ui_signal(file_path.name)
     default = {
         "lines": [],
         "excerpt": "",
@@ -222,29 +382,34 @@ def extract_visible_text_clues(file_path: Path, width: int, height: int, *, sour
         "ocr_confidence": 0,
         "ocr_analyst_relevance": "OCR not attempted.",
         "ocr_username_entities": [],
-        "ocr_map_labels": [],
+        "ocr_map_labels": filename_map_labels,
+        "ocr_language": os.getenv("GEOTRACE_OCR_LANG", "eng+ara"),
+        "ocr_map_context": "Map/place context hinted by filename." if (filename_has_map_signal or filename_map_labels) else "No map/place context detected.",
     }
-    mode = (mode or os.getenv("GEOTRACE_OCR_MODE", "quick")).strip().lower()
-    if mode not in {"off", "quick", "deep"}:
-        mode = "quick"
-    if mode == "off" and not force:
-        default["ocr_note"] = "OCR skipped because GEOTRACE_OCR_MODE=off."
+    mode = normalize_ocr_mode(mode)
+    if mode == "off":
+        default["ocr_note"] = "OCR skipped because GEOTRACE_OCR_MODE=off. Forced OCR cannot override an explicit off setting."
         return default
+    cache_key_obj = None
     if cache_dir is not None:
         try:
             cache_dir.mkdir(parents=True, exist_ok=True)
-            stat = file_path.stat()
-            cache_key = f"{file_path.name}.{stat.st_size}.{int(stat.st_mtime)}.{mode}.{force}.ocr.json"
-            cache_path = cache_dir / re.sub(r"[^A-Za-z0-9_.-]+", "_", cache_key)
-            if cache_path.exists():
-                cached = json.loads(cache_path.read_text(encoding="utf-8"))
-                if isinstance(cached, dict):
-                    cached["ocr_note"] = str(cached.get("ocr_note", "OCR loaded from cache.")) + " Cached result."
-                    return cached
+            cache_key_obj = OCRCacheKey(
+                file_sha256=_file_sha256(file_path),
+                mode=mode,
+                force=force,
+                language=os.getenv("GEOTRACE_OCR_LANG", "eng+ara"),
+            )
+            cached = read_ocr_cache(cache_dir, cache_key_obj)
+            if cached is not None:
+                if (filename_has_map_signal or filename_map_labels) and not cached.get("ocr_map_labels"):
+                    cached["ocr_map_labels"] = filename_map_labels
+                if (filename_has_map_signal or filename_map_labels) and str(cached.get("ocr_map_context", "")).startswith("No map"):
+                    cached["ocr_map_context"] = "Map/place context hinted by filename."
+                cached["ocr_note"] = str(cached.get("ocr_note", "OCR loaded from cache.")) + " Cached result."
+                return cached
         except Exception:
-            cache_path = None
-    else:
-        cache_path = None
+            cache_key_obj = None
     if pytesseract is None:
         default["ocr_note"] = "OCR engine is unavailable in this environment."
         return default
@@ -257,6 +422,7 @@ def extract_visible_text_clues(file_path: Path, width: int, height: int, *, sour
 
     zone_hits: List[str] = []
     text_blocks: List[str] = []
+    region_text_blocks: Dict[str, List[str]] = {}
     try:
         with Image.open(file_path) as image:
             image.load()
@@ -264,31 +430,49 @@ def extract_visible_text_clues(file_path: Path, width: int, height: int, *, sour
             work = ImageOps.autocontrast(work)
             if max(work.size) < 1700:
                 work = work.resize((work.width * 2, work.height * 2))
-            zones = [("full", work, "--psm 11")]
-            if mode == "deep" or force:
-                zones.append(("top", work.crop((0, 0, work.width, max(180, int(work.height * 0.22)))), "--psm 6"))
-                zones.append(("bottom", work.crop((0, int(work.height * 0.72), work.width, work.height)), "--psm 6"))
-            for zone_name, candidate, config in zones:
-                try:
-                    block = pytesseract.image_to_string(candidate, config=config, timeout=1.2)
-                except Exception:
-                    continue
-                if block and block.strip():
-                    text_blocks.append(block)
-                    zone_hits.append(zone_name)
+            full_box = (0, 0, work.width, work.height)
+            zone_specs: List[tuple[str, tuple[int, int, int, int], str]] = [("full", full_box, "--psm 11")]
+            if force and mode not in {"deep", "map_deep"}:
+                zone_specs.append(("top", (0, 0, work.width, max(180, int(work.height * 0.22))), "--psm 6"))
+                zone_specs.append(("right", (int(work.width * 0.68), 0, work.width, work.height), "--psm 6"))
+            if mode in {"deep", "map_deep"}:
+                zone_specs.append(("top", (0, 0, work.width, max(180, int(work.height * 0.22))), "--psm 6"))
+                zone_specs.append(("bottom", (0, int(work.height * 0.72), work.width, work.height), "--psm 6"))
+                zone_specs.append(("left", (0, 0, max(240, int(work.width * 0.28)), work.height), "--psm 6"))
+                zone_specs.append(("right", (int(work.width * 0.68), 0, work.width, work.height), "--psm 6"))
+                zone_specs.append(("center", (int(work.width * 0.22), int(work.height * 0.18), int(work.width * 0.78), int(work.height * 0.82)), "--psm 11"))
+            if mode == "map_deep":
+                zone_specs.append(("map_search_bar", (0, 0, work.width, max(160, int(work.height * 0.16))), "--psm 6"))
+                zone_specs.append(("map_bottom_sheet", (0, int(work.height * 0.62), work.width, work.height), "--psm 6"))
+
+            variants = _ocr_preprocess_variants(work, mode=mode)
+            for zone_name, box, config in zone_specs:
+                for variant_name, variant_base in variants:
+                    candidate = variant_base.crop(box) if box != full_box else variant_base
+                    try:
+                        timeout = float(os.getenv("GEOTRACE_OCR_TIMEOUT", "1.4"))
+                        block = _ocr_image_to_string(candidate, config=config, timeout=timeout)
+                    except Exception:
+                        continue
+                    if block and block.strip():
+                        text_blocks.append(block)
+                        region_text_blocks.setdefault(zone_name, []).append(block)
+                        zone_hits.append(f"{zone_name}/{variant_name}")
     except Exception as exc:
         default["ocr_note"] = f"OCR failed: {exc.__class__.__name__}."
         return default
 
     merged = "\n".join(block for block in text_blocks if block).strip()
     if not merged:
-        default["ocr_note"] = "OCR completed but no stable on-screen text was recovered."
+        default["ocr_note"] = f"OCR attempted in mode={mode}, but no stable on-screen text was recovered."
+        default["ocr_analyst_relevance"] = "OCR attempted but returned no stable analyst-readable text."
         return default
 
     raw_lines = [line for block in text_blocks for line in block.splitlines() if line.strip()]
     lines = _dedupe([line for line in raw_lines if _looks_like_readable_line(line)], limit=28)
     if not lines:
-        default["ocr_note"] = "OCR completed but only low-value structural text was recovered."
+        default["ocr_note"] = f"OCR attempted in mode={mode}, but only low-value structural text was recovered."
+        default["ocr_analyst_relevance"] = "OCR attempted but recovered only low-value structural/noisy text."
         default["raw_text"] = merged[:2500]
         return default
     excerpt = _normalize_text(" ".join(lines[:6]))[:280]
@@ -298,6 +482,9 @@ def extract_visible_text_clues(file_path: Path, width: int, height: int, *, sour
     app_detected = _detect_app(merged_text, entity_lines["app_names"])
     environment_profile = _detect_environment(file_path.name, width, height, merged_text, source_hint)
     zone_note = ", ".join(zone_hits[:4]) if zone_hits else "none"
+    merged_map_labels = _dedupe(list(entity_lines["map_labels"]) + filename_map_labels, limit=10)
+    map_context = "Map/place context detected." if (merged_map_labels or _has_map_ui_signal(merged_text) or filename_has_map_signal) else "No map/place context detected."
+    region_signals = classify_ocr_regions({key: "\n".join(value) for key, value in region_text_blocks.items()})
     result = {
         "lines": lines[:28],
         "excerpt": excerpt,
@@ -308,17 +495,20 @@ def extract_visible_text_clues(file_path: Path, width: int, height: int, *, sour
         "app_detected": app_detected,
         "app_names": entity_lines["app_names"],
         "ocr_username_entities": entity_lines["usernames"],
-        "ocr_map_labels": entity_lines["map_labels"],
+        "ocr_map_labels": merged_map_labels,
         "environment_profile": environment_profile,
-        "ocr_note": f"OCR zones recovered from: {zone_note}. Mode={mode}.",
+        "ocr_note": f"OCR zones recovered from: {zone_note}. Mode={mode}. Lang={os.getenv('GEOTRACE_OCR_LANG', 'eng+ara')}",
+        "ocr_language": os.getenv("GEOTRACE_OCR_LANG", "eng+ara"),
+        "ocr_map_context": map_context,
         "ocr_confidence": confidence,
         "ocr_analyst_relevance": relevance,
+        "ocr_region_signals": [signal.to_dict() for signal in region_signals],
     }
-    if cache_path is not None:
+    if cache_dir is not None and cache_key_obj is not None:
         try:
-            cache_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
-        except Exception:
-            pass
+            write_ocr_cache(cache_dir, cache_key_obj, result)
+        except Exception as exc:
+            LOGGER.debug("Could not write OCR cache for %s: %s", file_path, exc)
     return result
 
 
@@ -337,6 +527,28 @@ def parse_derived_geo(text_candidates: List[str], visible_urls: List[str], *, so
             "note": "No screenshot-derived geolocation clue recovered.",
             "possible_geo_clues": [],
         }
+    map_url_signals = parse_map_url_signals(haystacks, source="visible-text")
+    coordinate_signal = next((signal for signal in map_url_signals if signal.coordinates is not None), None)
+    if coordinate_signal is not None and coordinate_signal.coordinates is not None:
+        lat, lon = coordinate_signal.coordinates
+        display = f"{lat:.6f}, {lon:.6f}"
+        confidence = min(88, coordinate_signal.confidence + (6 if source_type in {"Map Screenshot", "Browser Screenshot", "Screenshot", "Screenshot / Export"} else 0))
+        note = (
+            f"Derived geolocation clue parsed from {coordinate_signal.provider} visible map/coordinate text; "
+            "corroborate it with browser history, saved links, or surrounding case context before courtroom use."
+        )
+        if coordinate_signal.zoom != "Unavailable":
+            note += f" Zoom/context marker: {coordinate_signal.zoom}."
+        return {
+            "latitude": lat,
+            "longitude": lon,
+            "display": display,
+            "source": coordinate_signal.provider,
+            "confidence": confidence,
+            "note": note,
+            "possible_geo_clues": [display],
+        }
+
     compact = joined.replace(" ", "")
     for pattern in MAP_COORD_PATTERNS:
         match = pattern.search(compact)
@@ -370,22 +582,23 @@ def parse_derived_geo(text_candidates: List[str], visible_urls: List[str], *, so
             "possible_geo_clues": [display],
         }
     lower_joined = joined.lower()
+    map_ui_detected = _has_map_ui_signal(joined) or source_type in {"Map Screenshot", "Browser Screenshot"}
     map_labels = _extract_map_labels([line for line in joined.splitlines() if line.strip()])
     location_hits = _extract_location_like_lines([line for line in joined.splitlines() if line.strip()])
     possible_geo_clues = _dedupe(map_labels + location_hits, limit=6)
     if possible_geo_clues:
         best = possible_geo_clues[0]
-        confidence = 34 if any(token in lower_joined for token in ["google maps", "directions", "street view", "route overview", "nearby", "satellite"]) else 22
+        confidence = 44 if map_ui_detected else 30
         return {
             "latitude": None,
             "longitude": None,
             "display": f"Possible geo clue: {best}",
-            "source": "OCR place label",
+            "source": "OCR map/place label",
             "confidence": confidence,
-            "note": "Visible map/place labels suggest a possible geo lead, but no stable coordinates were parsed. Preserve OCR text and application context for manual venue reasoning.",
+            "note": "Visible map/place labels suggest a possible location lead, but no stable coordinates were parsed. Preserve OCR text, map labels, browser history, and application context for manual venue reasoning.",
             "possible_geo_clues": possible_geo_clues,
         }
-    if any(token in lower_joined for token in ["google maps", "directions", "street view", "nearby", "route overview", "satellite"]):
+    if map_ui_detected:
         return {
             "latitude": None,
             "longitude": None,

@@ -200,6 +200,21 @@ class CaseDatabase:
                 (datetime.now(timezone.utc).isoformat(timespec="seconds"), record.case_id),
             )
 
+    def delete_evidence(self, case_id: str, evidence_ids: List[str]) -> None:
+        ids = [item for item in evidence_ids if item]
+        if not ids:
+            return
+        placeholders = ",".join("?" for _ in ids)
+        with self._connect() as connection:
+            connection.execute(
+                f"DELETE FROM evidence_records WHERE case_id = ? AND evidence_id IN ({placeholders})",
+                [case_id, *ids],
+            )
+            connection.execute(
+                "UPDATE cases SET updated_at = ? WHERE case_id = ?",
+                (datetime.now(timezone.utc).isoformat(timespec="seconds"), case_id),
+            )
+
     def _latest_case_hash(self, connection: sqlite3.Connection, case_id: str) -> str:
         row = connection.execute(
             "SELECT event_hash FROM custody_log_case WHERE case_id = ? ORDER BY id DESC LIMIT 1",
