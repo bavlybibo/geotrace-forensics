@@ -85,6 +85,7 @@ class ReportWorker(QObject):
             executive_path = package_service.export_executive_summary(self.records, self.case_id, self.case_name, privacy_level=self.privacy_level)
             validation_path = package_service.export_validation_summary(self.records, self.case_id, self.case_name, privacy_level=self.privacy_level)
             ai_guardian_path = package_service.export_ai_guardian_summary(self.records, self.case_id, self.case_name, privacy_level=self.privacy_level)
+            osint_appendix_path = package_service.export_osint_appendix(self.records, self.case_id, self.case_name, privacy_level=self.privacy_level)
             payload = {
                 "html": str(html_path),
                 "pdf": str(pdf_path),
@@ -95,6 +96,7 @@ class ReportWorker(QObject):
                 "validation": str(validation_path),
                 "ai_guardian": str(ai_guardian_path),
                 "privacy_guardian": str(privacy_guardian_path),
+                "osint_appendix": str(osint_appendix_path),
             }
             manifest_path = package_service.export_package_manifest(payload, privacy_level=self.privacy_level)
             payload["manifest"] = str(manifest_path)

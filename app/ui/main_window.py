@@ -65,6 +65,8 @@ from .dialogs import CompareDialog, DuplicateReviewDialog, OnboardingDialog, Rec
 from .widgets import AutoHeightNarrativeView, CaseListCard, ChartCard, CustodyTimelineWidget, EvidenceListCard, ResizableImageLabel, ScoreRing, SmoothScrollArea, StatCard, TerminalView
 from .workers import AnalysisWorker, ReportWorker
 from .pages.ai_guardian_page import build_ai_guardian_page, refresh_ai_guardian_page
+from .pages.osint_workbench_page import build_osint_workbench_page, refresh_osint_workbench_page
+from .pages.ctf_geolocator_page import build_ctf_geolocator_page, refresh_ctf_geolocator_page
 from .controllers.navigation import PAGE_KEYS, build_workspace_pages
 from .mixins.record_text_builder import RecordTextBuilderMixin
 from .mixins.chart_rendering import ChartRenderingMixin
@@ -211,6 +213,8 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
             "Ctrl+6": lambda: self._set_workspace_page("Reports"),
             "Ctrl+7": lambda: self._set_workspace_page("Cases"),
             "Ctrl+8": lambda: self._set_workspace_page("AI Guardian"),
+            "Ctrl+9": lambda: self._set_workspace_page("OSINT Workbench"),
+            "Ctrl+0": lambda: self._set_workspace_page("CTF GeoLocator"),
         }
         self._shortcuts = []
         for key, callback in shortcuts.items():
@@ -604,8 +608,18 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
     def _build_ai_guardian_page(self) -> QWidget:
         return build_ai_guardian_page(self)
 
+    def _build_osint_workbench_page(self) -> QWidget:
+        return build_osint_workbench_page(self)
+
+    def _build_ctf_geolocator_page(self) -> QWidget:
+        return build_ctf_geolocator_page(self)
+
     def refresh_ai_guardian(self) -> None:
         refresh_ai_guardian_page(self)
+        if hasattr(self, "osint_hypothesis_view"):
+            refresh_osint_workbench_page(self)
+        if hasattr(self, "ctf_clue_cards_view"):
+            refresh_ctf_geolocator_page(self)
 
     def _build_reports_page(self) -> QWidget:
         widget = QWidget()
@@ -654,6 +668,7 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
             ("validation", "Validation Summary", "Ground-truth and workflow sanity"),
             ("executive", "Executive Summary", "Manager-friendly overview"),
             ("ai_guardian", "AI Guardian", "Readiness, graph, contradictions"),
+            ("osint_appendix", "OSINT Appendix", "Hypotheses, entities, decisions"),
             ("verification", "Package Verification", "Manifest/hash/privacy verifier"),
         ]):
             card, label, button = self._build_artifact_card(title_text, hint_text, key)
@@ -827,6 +842,11 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
         self.inventory_meta.setText(self._inventory_status_message(self.filtered_records if self.filtered_records else ([] if self.records else [])))
         if hasattr(self, "ai_guardian_summary"):
             self.refresh_ai_guardian()
+        else:
+            if hasattr(self, "osint_hypothesis_view"):
+                refresh_osint_workbench_page(self)
+            if hasattr(self, "ctf_clue_cards_view"):
+                refresh_ctf_geolocator_page(self)
         self._refresh_case_switcher()
 
     def _set_info_badge(self, label: QLabel, title: str, value: str) -> None:

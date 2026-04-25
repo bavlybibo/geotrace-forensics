@@ -235,6 +235,10 @@ class AutoHeightNarrativeView(NarrativeView):
         super().setPlainText(text)
         self._sync_height()
 
+    def setHtml(self, text: str) -> None:  # type: ignore[override]
+        super().setHtml(text)
+        self._sync_height()
+
     def clear(self) -> None:  # type: ignore[override]
         super().clear()
         self._sync_height()
@@ -245,7 +249,7 @@ class AutoHeightNarrativeView(NarrativeView):
         target = max(96, min(cap, doc_height))
         self.setMinimumHeight(target)
         self.setMaximumHeight(target)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded if doc_height > cap else Qt.ScrollBarAlwaysOff)
 
 
 class EvidenceListCard(QFrame):

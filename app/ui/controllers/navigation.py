@@ -27,6 +27,8 @@ WORKSPACE_PAGES: tuple[WorkspacePageSpec, ...] = (
     WorkspacePageSpec("Reports", "_build_reports_page", True, "reports_page"),
     WorkspacePageSpec("Cases", "_build_cases_page", True, "cases_page"),
     WorkspacePageSpec("AI Guardian", "_build_ai_guardian_page", True, "ai_guardian_page"),
+    WorkspacePageSpec("OSINT Workbench", "_build_osint_workbench_page", True, "osint_workbench_page"),
+    WorkspacePageSpec("CTF GeoLocator", "_build_ctf_geolocator_page", True, "ctf_geolocator_page"),
 )
 
 

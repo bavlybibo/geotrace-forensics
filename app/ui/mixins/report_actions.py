@@ -61,7 +61,7 @@ class ReportActionsMixin:
         self.command_progress.setText(f"Generating {export_mode} report package in background…")
         self.export_summary.setPlainText(
             f"Background export started…\n\nMode: {export_mode}\nPrivacy level: {privacy_level}\n"
-            "Creating HTML, PDF, CSV, JSON, manifest, validation, executive, and courtroom outputs."
+            "Creating HTML, PDF, CSV, JSON, manifest, validation, executive, courtroom, AI Guardian, and OSINT appendix outputs."
         )
         self.report_thread = QThread(self)
         self.report_worker = ReportWorker(
@@ -97,6 +97,7 @@ class ReportActionsMixin:
             f"Validation: {Path(payload['validation']).name}\n"
             f"AI Guardian: {Path(payload.get('ai_guardian', '')).name if payload.get('ai_guardian') else 'not generated'}\n"
             f"Privacy Guardian: {Path(payload.get('privacy_guardian', '')).name if payload.get('privacy_guardian') else 'not generated'}\n"
+            f"OSINT Appendix: {Path(payload.get('osint_appendix', '')).name if payload.get('osint_appendix') else 'not generated'}\n"
             f"Verification: {Path(payload.get('verification', '')).name if payload.get('verification') else 'not generated'} ({'PASS' if payload.get('verification_passed') == 'True' else 'REVIEW'})\n"
             f"Manifest: {Path(payload['manifest']).name}\n\n"
             f"Mode: {payload.get('export_mode', 'Shareable Redacted')}\n"

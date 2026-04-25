@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from html import escape
+
 from PyQt5.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 try:
@@ -28,6 +30,63 @@ def _guardian_shell(window, title: str, attr: str, placeholder: str, subtitle: s
     view = window._make_guardian_view(placeholder, height)
     setattr(window, attr, view)
     return window._shell(title, view, subtitle)
+
+
+def _render_osint_hypothesis_cards(records) -> str:
+    cards: list[str] = []
+    for record in sorted(records, key=lambda item: (-getattr(item, "osint_content_confidence", 0), item.evidence_id))[:10]:
+        hypotheses = getattr(record, "osint_hypothesis_cards", []) or []
+        entities = getattr(record, "osint_entities", []) or []
+        matrix = getattr(record, "osint_corroboration_matrix", []) or []
+        if not hypotheses and getattr(record, "osint_location_hypotheses", []):
+            hypotheses = [
+                {
+                    "title": "Legacy location hypothesis",
+                    "claim": text,
+                    "strength": "lead",
+                    "confidence": getattr(record, "osint_content_confidence", 0),
+                    "basis": ["legacy-osint-content"],
+                    "limitations": getattr(record, "osint_content_limitations", [])[:2],
+                    "next_actions": getattr(record, "osint_next_actions", [])[:2],
+                }
+                for text in getattr(record, "osint_location_hypotheses", [])[:3]
+            ]
+        if not hypotheses:
+            continue
+        entity_preview = ", ".join(
+            f"{escape(str(entity.get('entity_type', 'entity')))}:{escape(str(entity.get('value', '')))[:80]}"
+            for entity in entities[:4]
+        ) or "No sensitive pivots extracted."
+        matrix_preview = "<br/>".join(
+            f"<b>{escape(str(item.get('status', 'needs_corroboration')))}</b> — missing: {escape(', '.join(str(x) for x in item.get('missing_basis', [])[:4]) or 'none')}"
+            for item in matrix[:3]
+        ) or "No corroboration matrix generated yet."
+        for hypothesis in hypotheses[:4]:
+            title = escape(str(hypothesis.get("title", "OSINT hypothesis")))
+            claim = escape(str(hypothesis.get("claim", "")))
+            strength = escape(str(hypothesis.get("strength", "weak_signal")))
+            confidence = escape(str(hypothesis.get("confidence", 0)))
+            basis = escape(", ".join(str(x) for x in hypothesis.get("basis", [])[:5]) or "not available")
+            limitations = escape(" | ".join(str(x) for x in hypothesis.get("limitations", [])[:2]) or "No major limitation recorded.")
+            actions = escape(" | ".join(str(x) for x in hypothesis.get("next_actions", [])[:2]) or "Manual corroboration required.")
+            decision = hypothesis.get("analyst_decision", {}) or {}
+            decision_text = escape(str(decision.get("decision", "needs_review")))
+            decision_note = escape(str(decision.get("analyst_note", "Analyst review required.")))
+            cards.append(
+                "<div style='border:1px solid #26384a; border-radius:12px; padding:12px; margin:0 0 10px 0; background:#101923;'>"
+                f"<div style='font-weight:800; color:#f4f7fb; font-size:14px;'>{escape(record.evidence_id)} • {title}</div>"
+                f"<div style='margin-top:5px; color:#d8e2ef;'>{claim}</div>"
+                f"<div style='margin-top:8px; color:#9fb2c7;'><b>Strength:</b> {strength} • <b>Confidence:</b> {confidence}% • <b>Basis:</b> {basis}</div>"
+                f"<div style='margin-top:6px; color:#c3ceda;'><b>Limitations:</b> {limitations}</div>"
+                f"<div style='margin-top:6px; color:#c3ceda;'><b>Next:</b> {actions}</div>"
+                f"<div style='margin-top:8px; color:#91a7bd;'><b>Analyst decision:</b> {decision_text} — {decision_note}</div>"
+                f"<div style='margin-top:8px; color:#91a7bd;'><b>Entities:</b> {entity_preview}</div>"
+                f"<div style='margin-top:6px; color:#91a7bd;'><b>Corroboration:</b><br/>{matrix_preview}</div>"
+                "</div>"
+            )
+    if not cards:
+        return "<p>No OSINT hypothesis cards generated yet.</p>"
+    return "<h3 style='color:#f4f7fb; margin-top:0;'>Structured OSINT Hypothesis Cards</h3>" + "".join(cards)
 
 
 def build_ai_guardian_page(window) -> QWidget:
@@ -216,6 +275,9 @@ def refresh_ai_guardian_page(window) -> None:
                 )
                 strength_lines.append(f"  Basis: {reasons}")
                 strength_lines.append(f"  Limitation: {limits}")
+                reasoning = [line for line in getattr(record, "ai_corroboration_matrix", []) if str(line).startswith("AI reasoning:")]
+                if reasoning:
+                    strength_lines.append("  Deep reasoning: " + " | ".join(str(x).replace("AI reasoning: ", "") for x in reasoning[:2]))
             window.ai_strength_view.setPlainText("\n".join(strength_lines) if strength_lines else "No evidence strength profile generated yet.")
         if hasattr(window, "ai_graph_view"):
             lines = [
@@ -243,28 +305,29 @@ def refresh_ai_guardian_page(window) -> None:
                         map_lines.append("  Landmarks: " + ", ".join(record.landmarks_detected[:4]))
                     if rankings:
                         map_lines.append("  Place ranking: " + " | ".join(rankings[:3]))
+                    ladder = getattr(record, "map_evidence_ladder", []) or []
+                    if ladder:
+                        map_lines.append("  Evidence ladder: " + " | ".join(str(x) for x in ladder[:3]))
+                    region_hits = getattr(record, "ocr_region_signals", []) or []
+                    if region_hits:
+                        compact_regions = []
+                        for item in region_hits[:3]:
+                            if isinstance(item, dict):
+                                compact_regions.append(f"{item.get('region', 'region')}:{item.get('weight', 0)}%:{', '.join(item.get('place_hits', [])[:2]) or 'text'}")
+                        if compact_regions:
+                            map_lines.append("  Region OCR: " + " | ".join(compact_regions))
                     map_lines.append("  " + record.map_intelligence_summary)
                 window.ai_map_intelligence_view.setPlainText("\n".join(map_lines))
             else:
                 window.ai_map_intelligence_view.setPlainText("No map/navigation intelligence detected yet.")
         if hasattr(window, "ai_osint_content_view"):
-            content_items = [r for r in records if getattr(r, "osint_content_confidence", 0) > 0]
+            content_items = [
+                r
+                for r in records
+                if getattr(r, "osint_content_confidence", 0) > 0 or getattr(r, "osint_hypothesis_cards", [])
+            ]
             if content_items:
-                content_lines = []
-                for record in sorted(content_items, key=lambda item: (-getattr(item, "osint_content_confidence", 0), item.evidence_id))[:10]:
-                    tags = ", ".join(getattr(record, "osint_content_tags", [])[:5]) or "no content tags"
-                    hypotheses = getattr(record, "osint_location_hypotheses", []) or []
-                    actions = getattr(record, "osint_next_actions", []) or []
-                    content_lines.append(
-                        f"{record.evidence_id}: {record.osint_content_label} ({record.osint_content_confidence}%) | source {record.osint_source_context}"
-                    )
-                    content_lines.append(f"  Tags: {tags}")
-                    if hypotheses:
-                        content_lines.append("  Location hypotheses: " + " | ".join(hypotheses[:3]))
-                    if actions:
-                        content_lines.append("  Next: " + " | ".join(actions[:2]))
-                    content_lines.append("  " + record.osint_content_summary)
-                window.ai_osint_content_view.setPlainText("\n".join(content_lines))
+                window.ai_osint_content_view.setHtml(_render_osint_hypothesis_cards(content_items))
             else:
                 window.ai_osint_content_view.setPlainText("No OSINT content profile generated yet.")
         if hasattr(window, "ai_contradictions_view"):
@@ -274,7 +337,14 @@ def refresh_ai_guardian_page(window) -> None:
                 else "No impossible-travel contradiction detected with current anchors."
             )
         if hasattr(window, "ai_privacy_audit_view"):
-            window.ai_privacy_audit_view.setPlainText(privacy.get("summary", "Privacy audit unavailable."))
+            osint_sensitive = sum(1 for r in records if getattr(r, "osint_privacy_review", {}).get("records_with_sensitive_osint", 0))
+            osint_lines = [
+                privacy.get("summary", "Privacy audit unavailable."),
+                "",
+                f"Structured OSINT privacy review: {osint_sensitive} evidence item(s) contain sensitive OSINT pivots.",
+                "Recommended: use Shareable Redacted unless the recipient is authorised for OSINT/location pivots.",
+            ]
+            window.ai_privacy_audit_view.setPlainText("\n".join(osint_lines))
 
     if hasattr(window, "ocr_diagnostic_view"):
         try:
