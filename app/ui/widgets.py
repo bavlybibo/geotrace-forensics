@@ -348,9 +348,9 @@ class ChartCard(QFrame):
         self.subtitle_label = QLabel(subtitle)
         self.subtitle_label.setObjectName("MutedLabel")
         self.subtitle_label.setWordWrap(True)
-        self.image_label = ResizableImageLabel("Chart will appear after evidence is loaded.", min_height=220)
+        self.image_label = ResizableImageLabel("Chart will appear after evidence is loaded.", min_height=180)
         self.image_label.setObjectName("ChartCanvas")
-        self.image_label.setMinimumHeight(220)
+        self.image_label.setMinimumHeight(180)
         layout.addWidget(self.title_label)
         if subtitle:
             layout.addWidget(self.subtitle_label)

@@ -144,6 +144,15 @@ class ReviewSelectionMixin:
             self.geo_badge_route.setText("Route Overlay: —")
         if hasattr(self, "geo_map_context_view"):
             self.geo_map_context_view.setPlainText("Select evidence to load map context and OSINT AI location guidance.")
+        if hasattr(self, "geo_metric_native_value"):
+            self.geo_metric_native_value.setText("Awaiting")
+            self.geo_metric_native_note.setText("Select evidence to inspect EXIF coordinates.")
+            self.geo_metric_context_value.setText("Awaiting")
+            self.geo_metric_context_note.setText("Map screenshots and OCR labels appear here.")
+            self.geo_metric_place_value.setText("—")
+            self.geo_metric_place_note.setText("No place candidate selected yet.")
+            self.geo_metric_route_value.setText("—")
+            self.geo_metric_route_note.setText("Route overlays and navigation context.")
 
     def _set_timeline_defaults(self) -> None:
         self.timeline_badge_start.setText("Earliest: —")
@@ -216,6 +225,18 @@ class ReviewSelectionMixin:
         if hasattr(self, "geo_badge_route"):
             route_state = "Detected" if record.route_overlay_detected else "Not detected"
             self.geo_badge_route.setText(f"Route Overlay: {route_state} • {record.route_confidence}%")
+        if hasattr(self, "geo_metric_native_value"):
+            native_state = "Recovered" if record.has_gps else "Missing"
+            self.geo_metric_native_value.setText(native_state)
+            self.geo_metric_native_note.setText(f"{record.gps_display} • confidence {record.gps_confidence}%")
+            context_state = getattr(record, "map_type", "Unknown") or record.detected_map_context or record.map_app_detected or "None"
+            self.geo_metric_context_value.setText(str(context_state)[:28])
+            self.geo_metric_context_note.setText(f"Readiness {getattr(record, 'map_answer_readiness_score', 0)}% • OCR {getattr(record, 'ocr_confidence', 0)}%")
+            place = record.possible_place if record.possible_place not in {"", "Unavailable", "Unknown"} else (record.candidate_area if record.candidate_area != "Unavailable" else record.candidate_city)
+            self.geo_metric_place_value.setText(str(place or "—")[:28])
+            self.geo_metric_place_note.setText(getattr(record, "map_anchor_status", "No stable anchor"))
+            self.geo_metric_route_value.setText(route_state)
+            self.geo_metric_route_note.setText(f"Route confidence {record.route_confidence}% • {getattr(record, 'map_type', 'Unknown')}")
         self.score_ring.set_value(record.suspicion_score)
         self.score_ring.set_caption("Triage Score", record.risk_level)
         self.preview_zoom_pill.setText(f"Zoom {self.image_preview.zoom_percent()}%")

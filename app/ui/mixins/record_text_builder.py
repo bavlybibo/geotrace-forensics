@@ -519,6 +519,10 @@ class RecordTextBuilderMixin:
             f"- Candidate area: {record.candidate_area}",
             f"- Possible place: {record.possible_place}",
             f"- Map confidence: {record.map_confidence}%",
+            f"- Map answer readiness: {getattr(record, 'map_answer_readiness_label', 'Not answer-ready')} ({getattr(record, 'map_answer_readiness_score', 0)}%)",
+            f"- Map anchor status: {getattr(record, 'map_anchor_status', 'No stable map/location anchor recovered.')}",
+            f"- Best location estimate: {record.location_estimate_label} ({record.location_estimate_confidence}%)",
+            f"- Estimate scope / tier: {record.location_estimate_scope} / {record.location_estimate_source_tier}",
             f"- OCR language hint: {record.map_ocr_language_hint}",
             f"- Evidence basis: {', '.join(record.map_evidence_basis) if record.map_evidence_basis else 'Not available'}",
             f"- OSINT AI scene read: {record.osint_scene_label} ({record.osint_scene_confidence}%)",
@@ -527,6 +531,8 @@ class RecordTextBuilderMixin:
         ]
         if record.osint_content_tags:
             lines.append("- Content tags: " + ", ".join(record.osint_content_tags[:6]))
+        if record.location_estimate_supporting_signals:
+            lines.append("- Estimate support: " + " | ".join(record.location_estimate_supporting_signals[:3]))
         if record.osint_location_hypotheses:
             lines.append("- Location hypotheses: " + " | ".join(record.osint_location_hypotheses[:3]))
         if record.osint_next_actions:
@@ -537,6 +543,16 @@ class RecordTextBuilderMixin:
             lines.append("- Place candidates: " + ", ".join(record.place_candidates[:5]))
         if record.place_candidate_rankings:
             lines.append("- Candidate ranking: " + " | ".join(record.place_candidate_rankings[:4]))
+        if getattr(record, "map_visual_profile", {}):
+            profile = getattr(record, "map_visual_profile", {}) or {}
+            metrics = profile.get("metrics", {}) if isinstance(profile, dict) else {}
+            lines.append(
+                "- Visual map profile: "
+                + f"style={profile.get('style', 'Unknown')}; map_score={profile.get('map_score', 0)}%; route_score={profile.get('route_score', 0)}%; "
+                + f"light={metrics.get('light_ratio', 'n/a')}; green={metrics.get('green_ratio', 'n/a')}; edge={metrics.get('edge_density', 'n/a')}"
+            )
+        if getattr(record, "map_extraction_plan", []):
+            lines.append("- Map extraction plan: " + " | ".join(getattr(record, "map_extraction_plan", [])[:4]))
         if record.map_intelligence_reasons:
             lines.append("- Map intelligence reasons: " + "; ".join(record.map_intelligence_reasons[:4]))
         if record.osint_scene_reasons:
@@ -547,6 +563,9 @@ class RecordTextBuilderMixin:
             lines.append("- Supporting geo clues: " + ", ".join(record.possible_geo_clues[:4]))
         if record.ocr_map_labels:
             lines.append("- OCR map labels: " + ", ".join(record.ocr_map_labels[:4]))
+        if record.location_estimate_summary:
+            lines.append("")
+            lines.append(record.location_estimate_summary)
         lines.append("")
         lines.append(record.map_intelligence_summary or record.osint_scene_summary)
         return "\n".join(lines).strip()

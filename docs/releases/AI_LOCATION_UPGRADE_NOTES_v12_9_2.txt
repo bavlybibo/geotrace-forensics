@@ -1,0 +1,44 @@
+GeoTrace v12.9.2 — AI / OSINT / Location Intelligence Upgrade Notes
+
+What was added
+1) New deterministic offline location estimator:
+   - New module: app/core/osint/location_estimator.py
+   - Produces one best location estimate for every image using a source hierarchy:
+     native GPS > visible/derived coordinate > ranked geo candidates > regional hint > map context only.
+   - Gives: best location label, confidence, scope, source tier, support signals, limitations, next actions, alternate candidates.
+
+2) Evidence record enrichment:
+   - Added persisted fields:
+     location_estimate_label
+     location_estimate_confidence
+     location_estimate_scope
+     location_estimate_source_tier
+     location_estimate_summary
+     location_estimate_supporting_signals
+     location_estimate_limitations
+     location_estimate_next_actions
+     location_estimate_candidates
+
+3) Pipeline integration:
+   - CaseManager now computes the new location estimate after structured OSINT profiling.
+   - The estimate also improves possible_place / map_confidence when it is stronger than the older result.
+
+4) UI / report surfacing:
+   - Record text builder now shows the best location estimate, scope/tier, support signals, and summary.
+   - OSINT appendix now includes the best location estimate and supporting signals.
+
+5) Cache support:
+   - Structured OSINT cache now stores and reloads the new location-estimate fields.
+
+6) Tests added:
+   - tests/test_location_estimator_v12_9_2.py
+   - Covers native GPS priority, ranked-candidate selection, and map-context-only fallback.
+
+Validation run
+- python -m compileall -q app tests main.py  ✅
+- pytest -q tests/test_map_intelligence_v12_9_1.py tests/test_osint_content_v2.py tests/test_osint_location_pro_v12_8_13.py tests/test_location_estimator_v12_9_2.py  ✅
+
+Important behavior note
+- The new estimator is intentionally conservative.
+- It improves location prediction for any image that contains location evidence (GPS, map screenshot, OCR place labels, visible URLs, landmarks, region hints).
+- It does NOT claim exact geolocation when the image only contains weak or broad clues.

@@ -15,21 +15,34 @@ class GeoPageMixin:
         layout.setSpacing(12)
 
         hero = QFrame()
-        hero.setObjectName("PanelFrame")
+        hero.setObjectName("HeroPanel")
         hero_layout = QVBoxLayout(hero)
-        hero_layout.setContentsMargins(14, 14, 14, 14)
-        hero_layout.setSpacing(8)
-        title = QLabel("Geo Review")
+        hero_layout.setContentsMargins(16, 14, 16, 14)
+        hero_layout.setSpacing(10)
+        title = QLabel("Geo Intelligence Review")
         title.setObjectName("SectionLabel")
-        meta = QLabel("GPS, venue pivots, map logic, and screenshot-derived location context live here in one cleaner stage.")
+        meta = QLabel(
+            "Native GPS, screenshot-derived map context, route overlays, OCR labels, venue pivots, and next-step reasoning "
+            "are grouped here so location evidence reads like an analyst board, not a raw metadata dump."
+        )
         meta.setObjectName("SectionMetaLabel")
         meta.setWordWrap(True)
         hero_layout.addWidget(title)
         hero_layout.addWidget(meta)
+        metric_row = QGridLayout()
+        metric_row.setHorizontalSpacing(10)
+        metric_row.setVerticalSpacing(10)
+        metric_row.addWidget(self._build_metric_pill("Native GPS", "Awaiting", "Select evidence to inspect EXIF coordinates.", value_attr="geo_metric_native_value", note_attr="geo_metric_native_note"), 0, 0)
+        metric_row.addWidget(self._build_metric_pill("Derived Context", "Awaiting", "Map screenshots and OCR labels appear here.", value_attr="geo_metric_context_value", note_attr="geo_metric_context_note"), 0, 1)
+        metric_row.addWidget(self._build_metric_pill("Candidate Place", "—", "No place candidate selected yet.", value_attr="geo_metric_place_value", note_attr="geo_metric_place_note"), 0, 2)
+        metric_row.addWidget(self._build_metric_pill("Route Signal", "—", "Route overlays and navigation context.", value_attr="geo_metric_route_value", note_attr="geo_metric_route_note"), 0, 3)
+        for col in range(4):
+            metric_row.setColumnStretch(col, 1)
+        hero_layout.addLayout(metric_row)
         layout.addWidget(hero)
 
         badge_frame = QFrame()
-        badge_frame.setObjectName("CompactPanel")
+        badge_frame.setObjectName("GeoSignalRail")
         badge_layout = QGridLayout(badge_frame)
         badge_layout.setContentsMargins(10, 10, 10, 10)
         badge_layout.setHorizontalSpacing(10)
@@ -59,10 +72,10 @@ class GeoPageMixin:
         main_grid.setHorizontalSpacing(12)
         main_grid.setVerticalSpacing(12)
 
-        self.geo_status_view = AutoHeightNarrativeView("Select evidence to load native-vs-derived geo interpretation.", max_auto_height=250)
-        self.geo_reasoning_view = AutoHeightNarrativeView("Geo reasoning appears here after you select an evidence item.", max_auto_height=250)
-        self.geo_map_context_view = AutoHeightNarrativeView("Map Intelligence, detected app, route overlay, city/area candidates, and landmark pivots will appear here.", max_auto_height=260)
-        self.next_pivots_view = AutoHeightNarrativeView("Follow-up pivots will appear here.", max_auto_height=260)
+        self.geo_status_view = AutoHeightNarrativeView("Select evidence to load native-vs-derived geo interpretation.", max_auto_height=210)
+        self.geo_reasoning_view = AutoHeightNarrativeView("Geo reasoning appears here after you select an evidence item.", max_auto_height=210)
+        self.geo_map_context_view = AutoHeightNarrativeView("Map Intelligence, detected app, route overlay, city/area candidates, and landmark pivots will appear here.", max_auto_height=220)
+        self.next_pivots_view = AutoHeightNarrativeView("Follow-up pivots will appear here.", max_auto_height=210)
 
         # Backward-compatible aliases used by the review-selection mixin.
         # Keeping these aliases avoids breaking existing UI code while the Geo page evolves.
@@ -86,8 +99,8 @@ class GeoPageMixin:
             self.current_map_path = self.map_service.create_map(self.case_manager.records)
         if self.current_map_path is None:
             self.show_info(
-                "No GPS Data",
-                "No GPS-enabled images are available to plot. Use Geo Review, OSINT AI map context, timeline, source profile, and custody notes instead.",
+                "No Map Anchor Yet",
+                "No native GPS, visible coordinates, known place coordinate, or map-context board is available yet. Run map_deep OCR/manual crop OCR or import evidence with coordinates/map URL/place labels.",
             )
             return
         webbrowser.open(self.current_map_path.as_uri())

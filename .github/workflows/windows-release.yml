@@ -1,0 +1,53 @@
+name: GeoTrace Windows Release Gate
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate-build-package:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+          python -m pip install pyinstaller
+
+      - name: Compile
+        run: python -m compileall -q app tests main.py
+
+      - name: Test
+        run: python -m pytest -q
+
+      - name: Build EXE
+        run: pyinstaller --noconfirm --clean geotrace_forensics_x.spec
+
+      - name: Package ZIP
+        shell: pwsh
+        run: |
+          $name = "GeoTrace_Forensics_X_ci_Windows_x64"
+          New-Item -ItemType Directory -Force -Path release/$name | Out-Null
+          Copy-Item -Recurse -Force dist/GeoTraceForensicsX release/$name/GeoTraceForensicsX
+          Copy-Item README.md,LICENSE,PRIVACY.md,SECURITY.md,DISCLAIMER.md,THIRD_PARTY_NOTICES.md,RELEASE_CHECKLIST.md release/$name/
+          Compress-Archive -Path release/$name/* -DestinationPath release/$name.zip -Force
+          Get-FileHash release/$name.zip -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $(Split-Path $_.Path -Leaf)" } | Set-Content release/SHA256SUMS.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoTrace-Windows-Release-Candidate
+          path: |
+            release/*.zip
+            release/SHA256SUMS.txt

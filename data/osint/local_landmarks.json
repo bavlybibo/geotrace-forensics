@@ -767,5 +767,135 @@
       "tokyo",
       "red white"
     ]
+  },
+  {
+    "name": "Dubai Mall",
+    "country": "United Arab Emirates",
+    "city": "Dubai",
+    "level": "poi",
+    "aliases": [
+      "dubai mall",
+      "دبي مول",
+      "دبى مول"
+    ],
+    "visual_tags": [
+      "mall",
+      "fountain",
+      "downtown dubai"
+    ]
+  },
+  {
+    "name": "Tower Bridge",
+    "country": "United Kingdom",
+    "city": "London",
+    "level": "poi",
+    "aliases": [
+      "tower bridge",
+      "جسر البرج"
+    ],
+    "visual_tags": [
+      "bridge",
+      "river",
+      "towers",
+      "london"
+    ]
+  },
+  {
+    "name": "Statue of Liberty",
+    "country": "United States",
+    "city": "New York",
+    "level": "poi",
+    "aliases": [
+      "statue of liberty",
+      "liberty island",
+      "تمثال الحرية"
+    ],
+    "visual_tags": [
+      "statue",
+      "island",
+      "harbor",
+      "nyc"
+    ]
+  },
+  {
+    "name": "Trevi Fountain",
+    "country": "Italy",
+    "city": "Rome",
+    "level": "poi",
+    "aliases": [
+      "trevi fountain",
+      "fontana di trevi",
+      "نافورة تريفي"
+    ],
+    "visual_tags": [
+      "fountain",
+      "statues",
+      "rome"
+    ]
+  },
+  {
+    "name": "Sagrada Familia",
+    "country": "Spain",
+    "city": "Barcelona",
+    "level": "poi",
+    "aliases": [
+      "sagrada familia",
+      "ساغرادا فاميليا"
+    ],
+    "visual_tags": [
+      "church",
+      "spires",
+      "barcelona"
+    ]
+  },
+  {
+    "name": "Shibuya Crossing",
+    "country": "Japan",
+    "city": "Tokyo",
+    "level": "poi",
+    "aliases": [
+      "shibuya crossing",
+      "shibuya scramble",
+      "渋谷",
+      "شيبويا"
+    ],
+    "visual_tags": [
+      "crosswalk",
+      "crowd",
+      "tokyo",
+      "billboards"
+    ]
+  },
+  {
+    "name": "Taj Mahal",
+    "country": "India",
+    "city": "Agra",
+    "level": "poi",
+    "aliases": [
+      "taj mahal",
+      "تاج محل"
+    ],
+    "visual_tags": [
+      "mausoleum",
+      "dome",
+      "india"
+    ]
+  },
+  {
+    "name": "Petra Treasury",
+    "country": "Jordan",
+    "city": "Petra",
+    "level": "poi",
+    "aliases": [
+      "petra",
+      "al khazneh",
+      "الخزنة",
+      "البتراء"
+    ],
+    "visual_tags": [
+      "rock-cut",
+      "desert",
+      "jordan"
+    ]
   }
 ]

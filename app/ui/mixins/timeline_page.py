@@ -49,7 +49,9 @@ class TimelinePageMixin:
             badge_row.addWidget(badge, 0, idx)
         layout.addLayout(badge_row)
 
-        self.timeline_chart = ChartCard("Timeline Reconstruction", "Single-item cases use a compact evidence anchor instead of a giant empty plot.")
+        self.timeline_chart = ChartCard("Timeline Reconstruction", "Expanded analyst timeline: source-aware markers, gaps, risk edges, and parser warnings.")
+        self.timeline_chart.image_label.setMinimumHeight(380)
+        self.timeline_chart.setMinimumHeight(460)
         self.timeline_narrative = AutoHeightNarrativeView("Timeline narrative generation will appear here after evidence is loaded.", max_auto_height=200)
         self.timeline_text = AutoHeightNarrativeView("Timeline analysis will appear here after evidence is loaded.", max_auto_height=220)
         layout.addWidget(self.timeline_chart, 1)
@@ -156,7 +158,7 @@ class TimelinePageMixin:
             return
 
         plt.close("all")
-        fig, ax = plt.subplots(figsize=(12.8, 4.5), dpi=180)
+        fig, ax = plt.subplots(figsize=(14.5, 6.2), dpi=180)
         fig.patch.set_facecolor("#04101b")
         ax.set_facecolor("#04101b")
 
@@ -178,33 +180,33 @@ class TimelinePageMixin:
                 label_y,
                 f"{record.evidence_id} • {record.timestamp_source} • {record.risk_level}",
                 color="#eef8ff",
-                fontsize=7.2,
+                fontsize=8.2,
                 ha="center",
                 va="center",
                 bbox=dict(boxstyle="round,pad=0.26", facecolor="#081a2b", edgecolor="#21486d", alpha=0.96),
                 zorder=6,
             )
             if record.parser_status != "Valid" or record.signature_status == "Mismatch":
-                ax.text(dt, y - 0.95, "tamper / parser review", color="#ffcf7a", fontsize=6.8, ha="center", zorder=6)
+                ax.text(dt, y - 0.95, "tamper / parser review", color="#ffcf7a", fontsize=7.4, ha="center", zorder=6)
 
         for (prev_record, prev_dt), (curr_record, curr_dt) in zip(dated, dated[1:]):
             gap = curr_dt - prev_dt
             if gap.total_seconds() >= 4 * 3600:
                 midpoint = prev_dt + gap / 2
                 ax.axvspan(prev_dt, curr_dt, color="#10314d", alpha=0.12, zorder=1)
-                ax.text(midpoint, min(y_values) - 0.58, f"Gap {str(gap).split('.')[0]}", color="#89b9d9", fontsize=7, ha="center")
+                ax.text(midpoint, min(y_values) - 0.58, f"Gap {str(gap).split('.')[0]}", color="#89b9d9", fontsize=7.6, ha="center")
 
         ax.text(0.99, 1.02, "Fill = time source | Edge = risk | Labels = tamper/parser flags", transform=ax.transAxes, ha="right", va="bottom", color="#8fb7d6", fontsize=8)
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d\n%H:%M"))
-        ax.tick_params(axis="x", colors="#dcefff", labelsize=8)
-        ax.tick_params(axis="y", colors="#dcefff", labelsize=8)
+        ax.tick_params(axis="x", colors="#dcefff", labelsize=9)
+        ax.tick_params(axis="y", colors="#dcefff", labelsize=9)
         ax.set_yticks(y_values)
         ax.set_yticklabels([record.evidence_id for record, _ in dated])
         ax.set_ylabel("Reconstructed order", color="#dcefff")
         ax.set_xlabel("Recovered timeline anchors", color="#9ccae6")
         ax.grid(axis="x", alpha=0.16, color="#78cfff")
         ax.grid(axis="y", alpha=0.05, color="#78cfff")
-        ax.set_title("Chronological Evidence Reconstruction", color="#f3fbff", fontsize=12, pad=12, weight="bold")
+        ax.set_title("Chronological Evidence Reconstruction", color="#f3fbff", fontsize=14, pad=14, weight="bold")
         for spine in ax.spines.values():
             spine.set_color("#2f5c8e")
         fig.tight_layout(pad=1.4)

@@ -86,6 +86,7 @@ class ReportWorker(QObject):
             validation_path = package_service.export_validation_summary(self.records, self.case_id, self.case_name, privacy_level=self.privacy_level)
             ai_guardian_path = package_service.export_ai_guardian_summary(self.records, self.case_id, self.case_name, privacy_level=self.privacy_level)
             osint_appendix_path = package_service.export_osint_appendix(self.records, self.case_id, self.case_name, privacy_level=self.privacy_level)
+            ctf_writeup_path = package_service.export_ctf_geolocator_writeup(self.records, self.case_id, self.case_name, privacy_level=self.privacy_level)
             payload = {
                 "html": str(html_path),
                 "pdf": str(pdf_path),
@@ -97,9 +98,13 @@ class ReportWorker(QObject):
                 "ai_guardian": str(ai_guardian_path),
                 "privacy_guardian": str(privacy_guardian_path),
                 "osint_appendix": str(osint_appendix_path),
+                "ctf_writeup": str(ctf_writeup_path),
             }
             manifest_path = package_service.export_package_manifest(payload, privacy_level=self.privacy_level)
             payload["manifest"] = str(manifest_path)
+            manifest_signature_path = package_service.export_dir / "export_manifest.sha256"
+            if manifest_signature_path.exists():
+                payload["manifest_signature"] = str(manifest_signature_path)
             verification_payload = write_verification_report(package_service.export_dir, privacy_level=self.privacy_level)
             payload["verification"] = verification_payload.get("text", "")
             payload["verification_json"] = verification_payload.get("json", "")

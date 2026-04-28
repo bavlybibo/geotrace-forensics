@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PyQt5.QtCore import QThread, QUrl
 from PyQt5.QtGui import QDesktopServices
-from PyQt5.QtWidgets import QInputDialog
+from PyQt5.QtWidgets import QInputDialog, QMessageBox
 
 try:
     from ..workers import ReportWorker
@@ -57,11 +57,21 @@ class ReportActionsMixin:
             return
         export_mode = choice.split(" — ", 1)[0]
         privacy_level = "full" if export_mode == "Internal Full" else "courtroom_redacted" if export_mode == "Courtroom Redacted" else "redacted_text"
+        if export_mode == "Internal Full":
+            reply = QMessageBox.warning(
+                self,
+                "Internal Full Export",
+                "Internal Full can include previews, local paths, raw OCR text, and sensitive OSINT pivots. Use Shareable Redacted or Courtroom Redacted for external sharing. Continue anyway?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return
         custody = self.case_manager.export_chain_of_custody()
         self.command_progress.setText(f"Generating {export_mode} report package in background…")
         self.export_summary.setPlainText(
             f"Background export started…\n\nMode: {export_mode}\nPrivacy level: {privacy_level}\n"
-            "Creating HTML, PDF, CSV, JSON, manifest, validation, executive, courtroom, AI Guardian, and OSINT appendix outputs."
+            "Creating HTML, PDF, CSV, JSON, manifest, validation, executive, courtroom, AI Guardian, OSINT appendix, and CTF GeoLocator outputs."
         )
         self.report_thread = QThread(self)
         self.report_worker = ReportWorker(
@@ -85,6 +95,19 @@ class ReportActionsMixin:
     def _on_report_finished(self, payload: dict) -> None:
         self.last_export_payload = dict(payload)
         self._refresh_report_artifact_cards()
+        if hasattr(self, "reports_metric_package_value"):
+            privacy_level = payload.get("privacy_level", "redacted_text")
+            mode = payload.get("export_mode", "Shareable Redacted")
+            passed = payload.get("verification_passed") == "True"
+            top_readiness = max([int(getattr(record, "map_answer_readiness_score", 0) or 0) for record in self.case_manager.records], default=0)
+            self.reports_metric_package_value.setText("Ready")
+            self.reports_metric_package_note.setText(f"{mode} • {Path(payload.get('export_folder', '')).name or 'timestamped folder'}")
+            self.reports_metric_privacy_value.setText("Internal Full" if privacy_level == "full" else "Redacted")
+            self.reports_metric_privacy_note.setText("Do not share externally without redaction." if privacy_level == "full" else f"Privacy level: {privacy_level}")
+            self.reports_metric_verify_value.setText("PASS" if passed else "REVIEW")
+            self.reports_metric_verify_note.setText("Manifest/hash verification completed." if passed else "Run Verify Last Package before handoff.")
+            self.reports_metric_ctf_value.setText(f"{top_readiness}%")
+            self.reports_metric_ctf_note.setText("Final answers require GPS/OCR/URL/place anchors; visual-only stays as lead.")
         self.export_badge.setText("Report Package Generated")
         self.command_progress.setText("Export package ready")
         self.export_summary.setPlainText(
@@ -98,8 +121,10 @@ class ReportActionsMixin:
             f"AI Guardian: {Path(payload.get('ai_guardian', '')).name if payload.get('ai_guardian') else 'not generated'}\n"
             f"Privacy Guardian: {Path(payload.get('privacy_guardian', '')).name if payload.get('privacy_guardian') else 'not generated'}\n"
             f"OSINT Appendix: {Path(payload.get('osint_appendix', '')).name if payload.get('osint_appendix') else 'not generated'}\n"
+            f"CTF GeoLocator: {Path(payload.get('ctf_writeup', '')).name if payload.get('ctf_writeup') else 'not generated'}\n"
             f"Verification: {Path(payload.get('verification', '')).name if payload.get('verification') else 'not generated'} ({'PASS' if payload.get('verification_passed') == 'True' else 'REVIEW'})\n"
-            f"Manifest: {Path(payload['manifest']).name}\n\n"
+            f"Manifest: {Path(payload['manifest']).name}\n"
+            f"Manifest Signature: {Path(payload.get('manifest_signature', '')).name if payload.get('manifest_signature') else 'not generated'}\n\n"
             f"Mode: {payload.get('export_mode', 'Shareable Redacted')}\n"
             f"Privacy level: {payload.get('privacy_level', 'redacted_text')}\n"
             "CSV follows the selected privacy level; each export mode now uses an isolated timestamped folder. report_assets are included in manifest hashes when present.\n"
@@ -129,6 +154,9 @@ class ReportActionsMixin:
             self.last_export_payload["verification_passed"] = str(bool(result.get("passed")))
             self._refresh_report_artifact_cards()
             self.export_summary.setPlainText(result.get("summary", "Verification finished."))
+            if hasattr(self, "reports_metric_verify_value"):
+                self.reports_metric_verify_value.setText("PASS" if result.get("passed") else "REVIEW")
+                self.reports_metric_verify_note.setText("Manifest, artifacts, and report assets verified." if result.get("passed") else "Verifier found warnings/failures; inspect package_verification.")
             self._show_toast("Package verified", "Courtroom package verifier completed.", tone="success" if result.get("passed") else "warning")
         except Exception as exc:
             self._log_error("Package Verification Error", str(exc))

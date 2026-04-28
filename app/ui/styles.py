@@ -135,4 +135,113 @@ QLabel#MicroBadge[semantic="parser"] { border-color:#2f8160; color:#b7ffd9; }
 QLabel#MicroBadge[semantic="time"] { border-color:#8e6e2c; color:#ffe0a8; }
 QLabel#MicroBadge[semantic="source"] { border-color:#6659aa; color:#e0d7ff; }
 QLabel#MicroBadge[semantic="gps"] { border-color:#2a7f87; color:#bbfffa; }
+"
+
+QFrame#PanelFrame, QFrame#CompactPanel {
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 rgba(7,20,31,0.98), stop:1 rgba(9,27,40,0.96));
+    border:1px solid #16334a;
+}
+QFrame#PanelFrame:hover, QFrame#CompactPanel:hover { border-color:#2b5e84; }
+QFrame#MetricPill {
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 rgba(10,29,44,0.96), stop:1 rgba(12,38,58,0.96));
+    border:1px solid #204c6d;
+    border-radius:14px;
+}
+QFrame#MetricPill:hover { border-color:#53d6ff; }
+QLabel#MetricPillLabel {
+    color:#86b8d9;
+    font-size:8.6pt;
+    font-weight:700;
+    text-transform:uppercase;
+}
+QLabel#MetricPillValue {
+    color:#f4fbff;
+    font-size:18pt;
+    font-weight:900;
+}
+QLabel#MetricPillNote {
+    color:#9ac0db;
+    font-size:8.8pt;
+}
+QPushButton {
+    min-height:32px;
+    padding:8px 14px;
+}
+QPushButton#PageButtonActive {
+    background:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #114a70, stop:1 #0f6fa0);
+    color:#f8fdff;
+    border:1px solid #69e1ff;
+}
+QPushButton#PageButton:hover, QPushButton#PrimaryButton:hover {
+    border-color:#69ddff;
+    background-color:#10304a;
+}
+QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QListWidget, QTableWidget {
+    selection-background-color:#12486d;
+    selection-color:#ffffff;
+}
+QTableWidget {
+    gridline-color:#173854;
+    alternate-background-color:#081522;
+    border-radius:14px;
+}
+QHeaderView::section {
+    background-color:#0e2740;
+    color:#dff5ff;
+    padding:8px 10px;
+    border:none;
+    border-right:1px solid #1c4568;
+    border-bottom:1px solid #1c4568;
+    font-weight:800;
+}
+QLabel#SectionLabel {
+    font-size:14.5pt;
+    font-weight:900;
+    color:#b8f2ff;
+}
+QLabel#SectionMetaLabel { color:#9ebed7; line-height:1.3; }
+
+"
+
+QFrame#HeroPanel {
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 rgba(7,20,31,1.0), stop:0.48 rgba(8,31,48,0.98), stop:1 rgba(5,14,23,0.98));
+    border:1px solid #1e4968;
+    border-radius:18px;
+}
+QFrame#HeroPanel:hover { border-color:#51d7ff; }
+QFrame#GeoSignalRail {
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 rgba(6,17,27,0.98), stop:1 rgba(9,30,45,0.96));
+    border:1px solid #183a55;
+    border-radius:16px;
+}
+QFrame#ReportArtifactCard {
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #081724, stop:1 #0a1f31);
+    border:1px solid #1b4564;
+    border-radius:14px;
+}
+QFrame#ReportArtifactCard:hover {
+    border-color:#54d7ff;
+    background-color:#0b2437;
+}
+QFrame#ReportArtifactCard QLabel#PreviewMetaValue {
+    color:#9edfff;
+    font-size:9.4pt;
+    font-weight:800;
+}
+QLabel#MetricPillValue {
+    color:#ffffff;
+    letter-spacing:0.2px;
+}
+QLabel#MetricPillNote { color:#9fc2dc; }
+QFrame#MetricPill {
+    min-height:76px;
+}
+QFrame#CompactPanel QTextEdit, QFrame#CompactPanel QPlainTextEdit {
+    background-color:#050f19;
+}
+QLabel#TitleLabel {
+    font-size:24pt;
+    letter-spacing:0.4px;
+}
+
 """

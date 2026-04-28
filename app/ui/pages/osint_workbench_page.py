@@ -7,11 +7,35 @@ from typing import Any
 
 from PyQt5.QtWidgets import QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
+from .ctf_geolocator_page import build_ctf_geolocator_page, refresh_ctf_geolocator_page
+from ...core.osint.ctf_methodology import build_ctf_methodology
+
 
 def _shell(window, title: str, attr: str, placeholder: str, subtitle: str, height: int) -> QWidget:
     view = window._make_guardian_view(placeholder, height)
     setattr(window, attr, view)
     return window._shell(title, view, subtitle)
+
+
+def _metric_pill(window, label_text: str, value_attr: str, note_attr: str, value_text: str = "—", note_text: str = "Awaiting evidence") -> QFrame:
+    frame = QFrame()
+    frame.setObjectName("MetricPill")
+    layout = QVBoxLayout(frame)
+    layout.setContentsMargins(12, 10, 12, 10)
+    layout.setSpacing(3)
+    label = QLabel(label_text)
+    label.setObjectName("MetricPillLabel")
+    value = QLabel(value_text)
+    value.setObjectName("MetricPillValue")
+    note = QLabel(note_text)
+    note.setObjectName("MetricPillNote")
+    note.setWordWrap(True)
+    layout.addWidget(label)
+    layout.addWidget(value)
+    layout.addWidget(note)
+    setattr(window, value_attr, value)
+    setattr(window, note_attr, note)
+    return frame
 
 
 def _records(window) -> list[Any]:
@@ -139,16 +163,25 @@ def build_osint_workbench_page(window) -> QWidget:
     hero_layout.setContentsMargins(16, 16, 16, 16)
     hero_layout.setSpacing(10)
 
-    title = QLabel("OSINT Workbench")
+    title = QLabel("Unified OSINT + CTF Investigation Lab")
     title.setObjectName("SectionLabel")
     meta = QLabel(
-        "Structured location/OSINT review layer: hypotheses, entity graph, analyst decisions, "
-        "OCR/region profile, privacy review, and evidence-strength wording."
+        "One workspace for OSINT review and CTF-style image solving: hypotheses, entity graph, OCR/region profile, "
+        "pixel/hidden-content leads, hacker methodology, candidate ranking, answer support, and privacy-gated pivots."
     )
     meta.setObjectName("SectionMetaLabel")
     meta.setWordWrap(True)
     hero_layout.addWidget(title)
     hero_layout.addWidget(meta)
+
+    metrics = QHBoxLayout()
+    metrics.setSpacing(10)
+    metrics.addWidget(_metric_pill(window, "Evidence", "osint_metric_evidence_value", "osint_metric_evidence_note", "0", "No evidence loaded yet."))
+    metrics.addWidget(_metric_pill(window, "Top Lead", "osint_metric_lead_value", "osint_metric_lead_note", "—", "Best hypothesis confidence."))
+    metrics.addWidget(_metric_pill(window, "OCR Ready", "osint_metric_ocr_value", "osint_metric_ocr_note", "0", "Records with OCR or map labels."))
+    metrics.addWidget(_metric_pill(window, "Active Candidates", "osint_metric_candidates_value", "osint_metric_candidates_note", "0", "CTF/geo candidates awaiting review."))
+    metrics.addWidget(_metric_pill(window, "Hidden Content", "osint_metric_hidden_value", "osint_metric_hidden_note", "0", "Pixel/alpha/LSB review flags."))
+    hero_layout.addLayout(metrics)
 
     controls = QHBoxLayout()
     controls.setSpacing(8)
@@ -166,8 +199,6 @@ def build_osint_workbench_page(window) -> QWidget:
     window.btn_osint_reject_top.clicked.connect(lambda: _update_top_decision(window, "rejected"))
     window.btn_osint_reset_top = QPushButton("Reset to Review")
     window.btn_osint_reset_top.clicked.connect(lambda: _update_top_decision(window, "needs_review"))
-    window.btn_open_ctf_geolocator = QPushButton("CTF GeoLocator")
-    window.btn_open_ctf_geolocator.clicked.connect(lambda: window._set_workspace_page("CTF GeoLocator") if hasattr(window, "_set_workspace_page") else None)
     for item in [
         window.osint_region_combo,
         window.osint_ocr_mode_combo,
@@ -176,12 +207,11 @@ def build_osint_workbench_page(window) -> QWidget:
         window.btn_osint_verify_top,
         window.btn_osint_reject_top,
         window.btn_osint_reset_top,
-        window.btn_open_ctf_geolocator,
     ]:
         controls.addWidget(item)
     controls.addStretch(1)
     hero_layout.addLayout(controls)
-    window.osint_profile_status = QLabel("Active next-scan profile: region=Auto; OCR=auto/current. Apply a profile to affect future imports/scans.")
+    window.osint_profile_status = QLabel("Active next-scan profile: region=Auto; OCR=auto/current. Apply a profile to affect future imports or rescans.")
     window.osint_profile_status.setObjectName("SectionMetaLabel")
     window.osint_profile_status.setWordWrap(True)
     hero_layout.addWidget(window.osint_profile_status)
@@ -196,17 +226,54 @@ def build_osint_workbench_page(window) -> QWidget:
     grid.addWidget(_shell(window, "Evidence Strength", "osint_strength_view", "Evidence strength summary will appear here.", "proof / lead / weak_signal language for each item.", 220), 1, 0)
     grid.addWidget(_shell(window, "OCR + Region Profile", "osint_ocr_region_view", "OCR and region-aware details will appear here.", "OCR mode, region hits, map labels, and confidence.", 220), 1, 1)
     grid.addWidget(_shell(window, "Privacy Review", "osint_privacy_review_view", "OSINT privacy review will appear here.", "Pre-export warning layer for sensitive pivots.", 220), 2, 0)
-    grid.addWidget(_shell(window, "CTF GeoLocator Summary", "osint_ctf_summary_view", "CTF GeoLocator summary will appear here.", "Location solvability and filename-vs-OCR/GPS separation.", 220), 2, 1)
-    grid.addWidget(_shell(window, "Export Appendix Preview", "osint_export_appendix_view", "OSINT appendix preview will appear here.", "What the report package should include or redact.", 220), 3, 0, 1, 2)
+    grid.addWidget(_shell(window, "CTF/Hacker Summary", "osint_ctf_summary_view", "CTF/Hacker summary will appear here.", "Readiness, source hierarchy, solvability, filename-vs-OCR/GPS separation.", 220), 2, 1)
+    grid.addWidget(_shell(window, "Deep Image Intelligence", "osint_image_detail_view", "Image detail intelligence will appear here.", "Layout, object-like cues, quality flags, alpha/hidden-content review hints.", 240), 3, 0, 1, 2)
+    grid.addWidget(_shell(window, "Export Appendix Preview", "osint_export_appendix_view", "OSINT appendix preview will appear here.", "What the report package should include or redact.", 220), 4, 0, 1, 2)
     grid.setColumnStretch(0, 1)
     grid.setColumnStretch(1, 1)
     layout.addLayout(grid)
+
+    layout.addWidget(build_ctf_geolocator_page(window, embedded=True))
     layout.addStretch(1)
     return widget
 
 
 def refresh_osint_workbench_page(window) -> None:
     records = _records(window)
+    if hasattr(window, "osint_metric_evidence_value"):
+        hypotheses = [card for record in records for card in (getattr(record, "osint_hypothesis_cards", []) or []) if isinstance(card, dict)]
+        candidate_rows = [candidate for record in records for candidate in (getattr(record, "geo_candidates", []) or []) if isinstance(candidate, dict)]
+        active_candidates = [candidate for candidate in candidate_rows if candidate.get("status", "needs_review") != "rejected"]
+        hidden_hits = [
+            record
+            for record in records
+            if int(getattr(record, "pixel_hidden_score", 0) or 0) >= 15
+            or bool(getattr(record, "pixel_lsb_strings", []) or [])
+            or bool(getattr(record, "alpha_channel_notes", []) or [])
+        ]
+        ocr_ready = [
+            record
+            for record in records
+            if int(getattr(record, "ocr_confidence", 0) or 0) > 0
+            or bool(getattr(record, "ocr_map_labels", []) or [])
+        ]
+        top_confidence = 0
+        top_title = "No hypothesis yet"
+        for card in hypotheses:
+            confidence = int(card.get("confidence", 0) or 0)
+            if confidence >= top_confidence:
+                top_confidence = confidence
+                top_title = str(card.get("title", "OSINT hypothesis"))[:48]
+        window.osint_metric_evidence_value.setText(str(len(records)))
+        window.osint_metric_evidence_note.setText("Evidence items analysed in the active case.")
+        window.osint_metric_lead_value.setText(f"{top_confidence}%")
+        window.osint_metric_lead_note.setText(top_title if hypotheses else "Generate or import evidence to build leads.")
+        window.osint_metric_ocr_value.setText(str(len(ocr_ready)))
+        window.osint_metric_ocr_note.setText("Records with OCR confidence or extracted labels.")
+        window.osint_metric_candidates_value.setText(str(len(active_candidates)))
+        window.osint_metric_candidates_note.setText(f"{len(candidate_rows)} total candidate rows across the workbench.")
+        window.osint_metric_hidden_value.setText(str(len(hidden_hits)))
+        window.osint_metric_hidden_note.setText("Potential hidden-content or pixel-level review hits.")
     if hasattr(window, "osint_hypothesis_view"):
         window.osint_hypothesis_view.setHtml(_render_hypotheses(records))
     if hasattr(window, "osint_entity_graph_view"):
@@ -239,17 +306,52 @@ def refresh_osint_workbench_page(window) -> None:
         window.osint_ocr_region_view.setPlainText("\n".join(lines) if lines else "No OCR/region profile yet.")
     if hasattr(window, "osint_privacy_review_view"):
         window.osint_privacy_review_view.setPlainText(_render_privacy(records))
+    if hasattr(window, "osint_image_detail_view"):
+        lines = []
+        for record in records[:30]:
+            lines.append(
+                f"{record.evidence_id}: {getattr(record, 'image_detail_label', 'Unavailable')} "
+                f"({getattr(record, 'image_detail_confidence', 0)}%) | "
+                f"layout={', '.join(getattr(record, 'image_layout_hints', [])[:3]) or 'none'} | "
+                f"objects={', '.join(getattr(record, 'image_object_hints', [])[:3]) or 'none'}"
+            )
+            metrics = dict(getattr(record, 'image_detail_metrics', {}) or {})
+            if metrics:
+                lines.append(
+                    "  strategy: "
+                    + str(metrics.get('analysis_strategy', 'balanced visual review'))
+                    + f" | OCR={metrics.get('ocr_priority_score', 0)}"
+                    + f" map={metrics.get('map_review_priority_score', 0)}"
+                    + f" geo={metrics.get('geolocation_potential_score', 0)}"
+                    + f" hidden={metrics.get('hidden_content_priority_score', 0)}"
+                    + f" gate={metrics.get('quality_gate', 'ready_for_triage')}"
+                )
+                lines.append("  target: " + str(metrics.get('corroboration_target', 'baseline packet')))
+            quality = getattr(record, 'image_quality_flags', []) or []
+            if quality:
+                lines.append("  quality: " + " | ".join(str(x) for x in quality[:3]))
+            pixel = getattr(record, 'pixel_hidden_verdict', 'Not evaluated')
+            pixel_score = getattr(record, 'pixel_hidden_score', 0)
+            lines.append(f"  hidden pixels: {pixel} ({pixel_score}%)")
+        window.osint_image_detail_view.setPlainText("\n".join(lines) if lines else "No image-detail intelligence generated yet.")
     if hasattr(window, "osint_ctf_summary_view"):
         lines = []
         for record in records[:30]:
             candidates = [c for c in (getattr(record, 'geo_candidates', []) or []) if isinstance(c, dict)]
             active_candidates = [c for c in candidates if c.get('status', 'needs_review') != 'rejected']
+            methodology = build_ctf_methodology(record)
             lines.append(
-                f"{record.evidence_id}: solvability={getattr(record, 'location_solvability_score', 0)}% "
+                f"{record.evidence_id}: readiness={methodology.get('readiness_label', 'Recon only')} "
+                f"({methodology.get('readiness_score', 0)}%) | "
+                f"solvability={getattr(record, 'location_solvability_score', 0)}% "
                 f"({getattr(record, 'location_solvability_label', 'No useful geo clue')}) | "
                 f"active_candidates={len(active_candidates)} / total={len(candidates)} | "
+                f"source_families={len([x for x in methodology.get('source_families', []) if x != 'filename_hint'])} | "
                 f"filename_hints={', '.join(getattr(record, 'filename_location_hints', [])[:3]) or 'none'}"
             )
+            blockers = methodology.get('blockers', []) or []
+            if blockers:
+                lines.extend(f"  blocker: {item}" for item in blockers[:2])
             ladder = getattr(record, 'map_evidence_ladder', []) or []
             if ladder:
                 lines.extend(f"  - {item}" for item in ladder[:4])
@@ -265,3 +367,5 @@ def refresh_osint_workbench_page(window) -> None:
             f"- Sensitive OSINT records: {sensitive}\n"
             "- Recommended external mode: Shareable/Courtroom redacted unless the recipient is authorised for location pivots."
         )
+    if hasattr(window, "ctf_clue_cards_view"):
+        refresh_ctf_geolocator_page(window)
