@@ -29,6 +29,11 @@ _SAUDI_WORDS = ("saudi arabia", "saudi", "riyadh", "jeddah", "mecca", "makkah", 
 _UAE_WORDS = ("united arab emirates", "uae", "dubai", "abu dhabi", "burj khalifa", "الإمارات", "الامارات", "دبي", "دبى", "أبوظبي", "ابوظبي", "برج خليفة")
 _JAPAN_WORDS = ("japan", "tokyo", "osaka", "kyoto", ".jp", "日本", "東京", "طوكيو", "اليابان")
 _AUSTRALIA_WORDS = ("australia", "sydney", "melbourne", ".au", "sydney opera house", "أستراليا", "استراليا", "سيدني")
+_TURKEY_WORDS = ("turkey", "istanbul", "ankara", "bosphorus", "hagia sophia", "sultanahmet", ".tr", "تركيا", "اسطنبول", "إسطنبول")
+_INDIA_WORDS = ("india", "delhi", "mumbai", "agra", "taj mahal", ".in", "الهند", "دلهي", "تاج محل")
+_CANADA_WORDS = ("canada", "toronto", "vancouver", "montreal", ".ca", "كندا", "تورنتو", "فانكوفر")
+_BRAZIL_WORDS = ("brazil", "rio de janeiro", "sao paulo", "christ the redeemer", ".br", "البرازيل", "ريو دي جانيرو")
+_SINGAPORE_WORDS = ("singapore", "marina bay", "sentosa", ".sg", "سنغافورة", "مارينا باي")
 
 
 def _hits(blob: str, words: Iterable[str]) -> list[str]:
@@ -110,6 +115,11 @@ def classify_country_region(texts: Iterable[str]) -> tuple[str, int, list[str]]:
         ("Jordan", _JORDAN_WORDS, "+962"),
         ("Japan", _JAPAN_WORDS, "+81"),
         ("Australia", _AUSTRALIA_WORDS, "+61"),
+        ("Turkey", _TURKEY_WORDS, "+90"),
+        ("India", _INDIA_WORDS, "+91"),
+        ("Canada", _CANADA_WORDS, "+1"),
+        ("Brazil", _BRAZIL_WORDS, "+55"),
+        ("Singapore", _SINGAPORE_WORDS, "+65"),
     ]
     for label, words, phone_code in specific_profiles:
         score = 0

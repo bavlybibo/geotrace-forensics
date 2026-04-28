@@ -93,4 +93,4 @@ def has_textual_location_lead(record: EvidenceRecord) -> bool:
 
 
 def has_hidden_content_signal(record: EvidenceRecord) -> bool:
-    return bool(record.hidden_code_indicators or record.hidden_suspicious_embeds or record.hidden_carved_files or record.hidden_payload_markers)
+    return bool(record.hidden_code_indicators or record.hidden_suspicious_embeds or record.hidden_carved_files or record.hidden_payload_markers or getattr(record, "pixel_hidden_indicators", []) or getattr(record, "pixel_lsb_strings", []))

@@ -21,7 +21,6 @@ from .evidence_graph import (
 from .evidence_strength import assess_map_strength, assess_record_strength
 from .findings import BatchAIFinding
 from .planning import assign_priority_ranks, attach_plans
-from .context_reasoner import attach_deep_context_reasoning
 
 
 def _attach_strength_and_confidence(records: list[EvidenceRecord], findings: Dict[str, BatchAIFinding]) -> None:
@@ -42,6 +41,59 @@ def _attach_strength_and_confidence(records: list[EvidenceRecord], findings: Dic
         # Keep confidence_delta as a small additive signal, not the raw confidence score.
         finding.confidence_delta = max(finding.confidence_delta, min(12, max(0, confidence - 65) // 3))
 
+
+
+def _attach_deep_image_methodology(records: list[EvidenceRecord], findings: Dict[str, BatchAIFinding]) -> None:
+    """Promote image-detail methodology into the batch AI plan.
+
+    This keeps the AI layer explainable: high-priority visual regions become
+    actions, limitations become guardrails, and scene descriptors become
+    corroboration context.
+    """
+    for record in records:
+        finding = findings[record.evidence_id]
+        confidence = int(getattr(record, "image_detail_confidence", 0) or 0)
+        regions = list(getattr(record, "image_attention_regions", []) or [])
+        descriptors = list(getattr(record, "image_scene_descriptors", []) or [])
+        methodology = list(getattr(record, "image_analysis_methodology", []) or [])
+        quality = list(getattr(record, "image_quality_flags", []) or [])
+        metrics = dict(getattr(record, "image_detail_metrics", {}) or {})
+        strategy = str(metrics.get("analysis_strategy", "") or "")
+        quality_gate = str(metrics.get("quality_gate", "") or "")
+        corroboration_target = str(metrics.get("corroboration_target", "") or "")
+        if confidence <= 0 and not regions and not descriptors:
+            continue
+        if strategy:
+            finding.add_matrix_line(
+                "Image reasoning strategy: "
+                + strategy
+                + (
+                    f" | OCR {metrics.get('ocr_priority_score', 0)} | Map {metrics.get('map_review_priority_score', 0)} | Geo {metrics.get('geolocation_potential_score', 0)}"
+                    if metrics
+                    else ""
+                )
+            )
+            finding.add_action("Apply image reasoning strategy: " + strategy + (f" — {corroboration_target}" if corroboration_target else ""))
+        if quality_gate and quality_gate != "ready_for_triage":
+            finding.add_action("Pass image quality gate before final claims: " + quality_gate)
+        if descriptors:
+            finding.add_matrix_line("Image scene descriptors: " + " | ".join(str(x) for x in descriptors[:3]))
+        if regions and isinstance(regions[0], dict):
+            top = regions[0]
+            reasons = ", ".join(str(x) for x in (top.get("reasons", []) or [])[:3]) or "high visual attention score"
+            finding.add_action(
+                f"Prioritize crop/OCR review for {top.get('region', 'top image region')} "
+                f"box={top.get('original_box', 'unknown')} because {reasons}."
+            )
+            finding.add_matrix_line(
+                f"Deep image attention: {top.get('region', '?')} score {top.get('attention_score', 0)} — {reasons}"
+            )
+        if methodology:
+            finding.add_action("Follow image methodology: " + str(methodology[min(2, len(methodology) - 1)]))
+        if quality:
+            finding.add_action("Resolve image-quality limitation before final wording: " + str(quality[0]))
+        if confidence >= 72 and regions:
+            finding.confidence_delta = max(finding.confidence_delta, 3)
 
 def _attach_graph_and_readiness(records: list[EvidenceRecord], findings: Dict[str, BatchAIFinding]) -> None:
     edges = build_evidence_graph(records)
@@ -91,8 +143,8 @@ def run_ai_batch_assessment(records: Iterable[EvidenceRecord]) -> Dict[str, Batc
     for record in records_list:
         metadata_authenticity_review(record, findings)
     _attach_strength_and_confidence(records_list, findings)
+    _attach_deep_image_methodology(records_list, findings)
     attach_plans(records_list, findings)
-    attach_deep_context_reasoning(records_list, findings)
     _attach_graph_and_readiness(records_list, findings)
     assign_priority_ranks(records_list, findings)
     for finding in findings.values():

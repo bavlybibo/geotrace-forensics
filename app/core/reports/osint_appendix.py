@@ -104,6 +104,9 @@ def build_osint_appendix_text(
         safe_name = file_name(record)
         solvability_label = getattr(record, "location_solvability_label", "No useful geo clue")
         solvability_score = getattr(record, "location_solvability_score", 0)
+        estimate_label = getattr(record, "location_estimate_label", "Unavailable")
+        estimate_conf = getattr(record, "location_estimate_confidence", 0)
+        estimate_scope = getattr(record, "location_estimate_scope", "no_signal")
         filename_hints = getattr(record, "filename_location_hints", []) or []
         image_existence = getattr(record, "ctf_image_existence_profile", {}) or {}
         online_gate = getattr(record, "ctf_online_privacy_review", {}) or {}
@@ -119,6 +122,8 @@ def build_osint_appendix_text(
                 f"Derived geo: {redact_text(_safe(record.derived_geo_display))} ({_safe(record.derived_geo_confidence)}%)",
                 f"OCR profile: {_safe(record.ocr_confidence)}% | {redact_text(_safe(record.ocr_analyst_relevance))}",
                 f"CTF solvability: {_safe(solvability_label)} ({_safe(solvability_score)}%)",
+                f"Best location estimate: {redact_text(_safe(estimate_label))} ({_safe(estimate_conf)}%) | scope={_safe(estimate_scope)}",
+                f"Estimate support: {join_redacted(getattr(record, 'location_estimate_supporting_signals', []) or [], 6, '[REDACTED_LOCATION_SUPPORT]')}",
                 f"Filename-only hints: {join_redacted(filename_hints, 6, '[REDACTED_FILENAME_HINT]')}",
                 f"Hypotheses: {join_redacted(hypothesis_labels, 8, '[REDACTED_OSINT_CARD]')}",
                 f"Entities: {join_redacted(entity_labels, 10, '[REDACTED_OSINT_ENTITY]')}",

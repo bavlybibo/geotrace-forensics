@@ -14,8 +14,6 @@ from typing import Iterable, TYPE_CHECKING
 
 from PIL import Image, ImageStat
 
-from .visual_semantics import analyze_visual_semantics
-
 if TYPE_CHECKING:  # pragma: no cover
     from ..models import EvidenceRecord
 
@@ -215,17 +213,48 @@ def analyze_image_content(record: "EvidenceRecord") -> OSINTContentProfile:
     ])
 
     visual_cues, visual_score = _visual_layout_cues(record.file_path)
-    semantic_profile = analyze_visual_semantics(record.file_path)
-    visual_cues = _unique([*semantic_profile.cues, *visual_cues], limit=10)
+    detail_cues = list(getattr(record, "image_detail_cues", []) or [])
+    detail_layout = list(getattr(record, "image_layout_hints", []) or [])
+    detail_objects = list(getattr(record, "image_object_hints", []) or [])
+    detail_quality = list(getattr(record, "image_quality_flags", []) or [])
+    detail_regions = list(getattr(record, "image_attention_regions", []) or [])
+    detail_scene = list(getattr(record, "image_scene_descriptors", []) or [])
+    detail_methodology = list(getattr(record, "image_analysis_methodology", []) or [])
+    detail_metrics = dict(getattr(record, "image_detail_metrics", {}) or {})
+    detail_strategy = str(detail_metrics.get("analysis_strategy", "") or "")
+    detail_quality_gate = str(detail_metrics.get("quality_gate", "") or "")
+    detail_corroboration_target = str(detail_metrics.get("corroboration_target", "") or "")
+    detail_label = str(getattr(record, "image_detail_label", "") or "")
+    detail_confidence = int(getattr(record, "image_detail_confidence", 0) or 0)
+    if detail_cues or detail_layout or detail_objects or detail_quality or detail_regions or detail_scene:
+        region_cues = []
+        for region in detail_regions[:2]:
+            if isinstance(region, dict):
+                region_cues.append(
+                    f"attention region {region.get('region', '?')} score {region.get('attention_score', 0)}: "
+                    + ", ".join(str(x) for x in (region.get('reasons', []) or [])[:3])
+                )
+        strategy_cues = []
+        if detail_strategy:
+            strategy_cues.append(
+                f"image reasoning strategy {detail_strategy}; "
+                f"OCR={detail_metrics.get('ocr_priority_score', 0)}, "
+                f"map={detail_metrics.get('map_review_priority_score', 0)}, "
+                f"geo={detail_metrics.get('geolocation_potential_score', 0)}"
+            )
+        if detail_quality_gate and detail_quality_gate != "ready_for_triage":
+            strategy_cues.append(f"quality gate {detail_quality_gate}")
+        visual_cues.extend([*strategy_cues, *detail_scene[:3], *detail_layout[:3], *detail_objects[:3], *detail_quality[:2], *region_cues, *detail_cues[:2]])
+        visual_score = max(visual_score, min(88, detail_confidence + (4 if detail_strategy else 0)))
     keyword_tags, text_cues = _keyword_tags(text_blob)
     source_context = _source_context(record)
     location_hypotheses = _location_hypotheses(record)
 
-    tags = _unique([*keyword_tags, *semantic_profile.tags, semantic_profile.label], limit=14)
+    tags = list(keyword_tags)
+    if detail_label and "unavailable" not in detail_label.lower():
+        tags.append(detail_label)
     reasons: list[str] = []
-    confidence = max(38, min(78, 36 + max(visual_score, semantic_profile.confidence) // 2 + min(24, len(text_cues) * 5)))
-    if semantic_profile.label not in {"Unknown visual profile", "Visual analysis unavailable"}:
-        reasons.append(f"visual semantics suggest {semantic_profile.short_label()}")
+    confidence = max(38, min(74, 36 + visual_score // 2 + min(24, len(text_cues) * 5)))
     label = "General image / low-context artifact"
 
     map_conf = int(getattr(record, "map_intelligence_confidence", 0) or 0)
@@ -250,14 +279,10 @@ def analyze_image_content(record: "EvidenceRecord") -> OSINTContentProfile:
         label = "OSINT dashboard/security artifact"
         confidence = max(confidence, 66)
         reasons.append("dashboard/security workflow words were recovered")
-    elif semantic_profile.label == "Document/export visual profile" and record.source_type != "Camera Photo":
-        label = "OSINT document/export artifact"
-        confidence = max(confidence, semantic_profile.confidence, 66)
-        reasons.append("visual semantics suggest a document/export style artifact")
-    elif semantic_profile.label == "Natural-photo visual profile" and record.source_type != "Screenshot":
-        label = "Real-world visual artifact"
-        confidence = max(confidence, semantic_profile.confidence, 64)
-        reasons.append("visual semantics suggest a natural-photo style artifact")
+    elif detail_label in {"Outdoor/photo-like image", "Screenshot/UI-rich image", "Map/document-style visual artifact", "Flat/low-information image"}:
+        label = detail_label
+        confidence = max(confidence, detail_confidence)
+        reasons.append("deep image-detail profile provided the dominant visual reading")
     elif record.source_type == "Camera Photo":
         label = "Real-world camera photo"
         confidence = max(confidence, 68 if record.device_model in {"Unknown", "N/A", ""} else 80)
@@ -278,6 +303,28 @@ def analyze_image_content(record: "EvidenceRecord") -> OSINTContentProfile:
         reasons.append("one or more location hypotheses were generated")
     if getattr(record, "map_evidence_strength", "") in {"lead", "strong_indicator", "proof"}:
         tags.append(f"Map evidence strength: {record.map_evidence_strength}")
+    if detail_quality:
+        tags.append("Image quality/forensic review needed")
+    if detail_objects:
+        reasons.append("image-detail cues can guide OCR crops and manual object/location review")
+    if detail_regions:
+        reasons.append("tile-level attention regions identify where OCR/manual zoom should start")
+    if detail_scene:
+        reasons.append("scene descriptors convert raw visual metrics into analyst-safe review hypotheses")
+    if detail_strategy:
+        tags.append(f"Image reasoning strategy: {detail_strategy}")
+        reasons.append("image reasoning strategy selected the safest analysis path for this evidence item")
+
+    pixel_score = int(getattr(record, "pixel_hidden_score", 0) or 0)
+    pixel_indicators = list(getattr(record, "pixel_hidden_indicators", []) or [])
+    pixel_strings = list(getattr(record, "pixel_lsb_strings", []) or [])
+    if pixel_score >= 40 or pixel_indicators or pixel_strings:
+        tags.append("Pixel-level hidden-content lead")
+        visual_cues.extend(pixel_indicators[:3] or [getattr(record, "pixel_hidden_verdict", "Pixel-level review required")])
+        reasons.append("pixel-level LSB/alpha heuristics produced a hidden-content lead")
+        if label == "General image / low-context artifact":
+            label = "Image with pixel-level hidden-content lead"
+        confidence = max(confidence, min(92, 62 + pixel_score // 2))
 
     next_actions: list[str] = []
     if location_hypotheses:
@@ -288,16 +335,33 @@ def analyze_image_content(record: "EvidenceRecord") -> OSINTContentProfile:
         next_actions.append("Treat usernames/entities as sensitive; use them for scoped OSINT pivots only after confirming permission and relevance.")
     if map_conf >= 50 and not record.has_gps:
         next_actions.append("Do not claim device location from map screenshots alone; label it as searched/displayed place unless corroborated.")
+    if int(getattr(record, "pixel_hidden_score", 0) or 0) >= 40 or getattr(record, "pixel_lsb_strings", []):
+        next_actions.append("Run a dedicated steganography review on a forensic copy and keep decoded low-bit strings separate from visible OCR text.")
+    if detail_strategy:
+        next_actions.append(
+            "Apply image reasoning strategy: "
+            + detail_strategy
+            + (f" — {detail_corroboration_target}" if detail_corroboration_target else "")
+        )
+    if detail_quality_gate and detail_quality_gate != "ready_for_triage":
+        next_actions.append("Resolve image quality gate before final wording: " + detail_quality_gate)
+    for action in list(getattr(record, "image_detail_next_actions", []) or [])[:2]:
+        next_actions.append(action)
+    for step in detail_methodology[:2]:
+        next_actions.append("Methodology: " + str(step))
     if not next_actions:
         next_actions.append("Use metadata integrity, source profile, and custody trail as the primary analysis anchors.")
 
-    limitations = _unique([*_VISUAL_LIMITATIONS, *semantic_profile.limitations], limit=8)
+    limitations = list(_VISUAL_LIMITATIONS)
     if not record.ocr_raw_text and not record.visible_text_lines:
         limitations.append("No OCR text was recovered, so content interpretation relies mostly on metadata and visual layout heuristics.")
     if getattr(record, "map_evidence_basis", []) == ["filename"]:
         limitations.append("Location signal appears filename-only and should not be used as a factual place claim.")
+    if getattr(record, "pixel_hidden_score", 0):
+        limitations.extend(getattr(record, "pixel_hidden_limitations", [])[:2])
+    limitations.extend(list(getattr(record, "image_detail_limitations", []) or [])[:2])
 
-    cue_summary = "; ".join(_unique([*reasons, *text_cues[:2], *visual_cues[:2]], limit=5)) or "low-context image"
+    cue_summary = "; ".join(_unique([*reasons, *text_cues[:2], *visual_cues[:3]], limit=6)) or "low-context image"
     place_text = location_hypotheses[0] if location_hypotheses else "no stable location hypothesis"
     summary = (
         f"OSINT Content v2: {label} ({max(0, min(100, confidence))}% confidence). "
@@ -308,7 +372,7 @@ def analyze_image_content(record: "EvidenceRecord") -> OSINTContentProfile:
         confidence=max(0, min(100, confidence)),
         summary=summary,
         content_tags=_unique(tags, limit=12),
-        visual_cues=_unique(visual_cues, limit=10),
+        visual_cues=_unique(visual_cues, limit=8),
         text_cues=_unique(text_cues, limit=8),
         location_hypotheses=location_hypotheses,
         source_context=source_context,

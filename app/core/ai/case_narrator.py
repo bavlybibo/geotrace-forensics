@@ -30,7 +30,7 @@ def mini_case_narrative(records: Iterable[EvidenceRecord]) -> str:
     )
     strongest_strength = strength[strongest.evidence_id]
     return (
-        f"Case Narrator: {len(items)} evidence item(s) reviewed; {high} high-risk item(s); "
+        f"Mini Case Narrator: {len(items)} evidence item(s) reviewed; {high} high-risk item(s); "
         f"{proof_like} proof/strong-indicator item(s), {lead_like} investigative lead(s). "
         f"Strongest current item is {strongest.evidence_id}: strength {strongest_strength.label.value} "
         f"({strongest_strength.score}%), risk {strongest.risk_level}, score {strongest.suspicion_score}, "

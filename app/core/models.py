@@ -205,6 +205,20 @@ class EvidenceRecord:
     osint_source_context: str = "Unknown"
     osint_content_limitations: List[str] = field(default_factory=list)
     osint_next_actions: List[str] = field(default_factory=list)
+    image_detail_label: str = "Image detail profile unavailable"
+    image_detail_confidence: int = 0
+    image_detail_summary: str = "Image-detail analysis has not run yet."
+    image_detail_cues: List[str] = field(default_factory=list)
+    image_layout_hints: List[str] = field(default_factory=list)
+    image_object_hints: List[str] = field(default_factory=list)
+    image_quality_flags: List[str] = field(default_factory=list)
+    image_detail_metrics: Dict[str, object] = field(default_factory=dict)
+    image_detail_limitations: List[str] = field(default_factory=list)
+    image_detail_next_actions: List[str] = field(default_factory=list)
+    image_attention_regions: List[Dict[str, object]] = field(default_factory=list)
+    image_scene_descriptors: List[str] = field(default_factory=list)
+    image_analysis_methodology: List[str] = field(default_factory=list)
+    image_performance_notes: List[str] = field(default_factory=list)
     osint_entities: List[Dict[str, object]] = field(default_factory=list)
     osint_hypothesis_cards: List[Dict[str, object]] = field(default_factory=list)
     osint_corroboration_matrix: List[Dict[str, object]] = field(default_factory=list)
@@ -232,6 +246,18 @@ class EvidenceRecord:
     map_limitations: List[str] = field(default_factory=list)
     map_recommended_actions: List[str] = field(default_factory=list)
     map_evidence_ladder: List[str] = field(default_factory=list)
+    map_visual_profile: Dict[str, object] = field(default_factory=dict)
+    map_anchor_status: str = "No stable map/location anchor recovered."
+    map_answer_readiness_score: int = 0
+    map_answer_readiness_label: str = "Not answer-ready"
+    map_extraction_plan: List[str] = field(default_factory=list)
+    map_route_start_label: str = ""
+    map_route_end_label: str = ""
+    map_label_clusters: List[Dict[str, object]] = field(default_factory=list)
+    map_confidence_radius_m: int = 0
+    map_offline_geocoder_hits: List[Dict[str, object]] = field(default_factory=list)
+    map_source_comparison: List[str] = field(default_factory=list)
+    map_interactive_payload: Dict[str, object] = field(default_factory=dict)
     place_candidate_rankings: List[str] = field(default_factory=list)
     filename_location_hints: List[str] = field(default_factory=list)
     ctf_clues: List[Dict[str, object]] = field(default_factory=list)
@@ -239,12 +265,34 @@ class EvidenceRecord:
     ctf_search_queries: List[str] = field(default_factory=list)
     location_solvability_score: int = 0
     location_solvability_label: str = "No useful geo clue"
+    location_estimate_label: str = "Unavailable"
+    location_estimate_confidence: int = 0
+    location_estimate_scope: str = "no_signal"
+    location_estimate_source_tier: str = "no_signal"
+    location_estimate_summary: str = "No stable location estimate was recovered yet."
+    location_estimate_supporting_signals: List[str] = field(default_factory=list)
+    location_estimate_limitations: List[str] = field(default_factory=list)
+    location_estimate_next_actions: List[str] = field(default_factory=list)
+    location_estimate_candidates: List[str] = field(default_factory=list)
     ctf_country_region_profile: str = "Unknown"
     ctf_landmark_matches: List[Dict[str, object]] = field(default_factory=list)
     ctf_writeup: str = "CTF geolocation writeup has not been generated yet."
     ctf_online_mode_status: str = "Offline-only. External/reverse-image searches require explicit analyst action and privacy review."
     ctf_image_existence_profile: Dict[str, object] = field(default_factory=dict)
     ctf_online_privacy_review: Dict[str, object] = field(default_factory=dict)
+    ctf_visual_clue_profile: Dict[str, object] = field(default_factory=dict)
+    pixel_hidden_score: int = 0
+    pixel_hidden_verdict: str = "Not evaluated"
+    pixel_hidden_summary: str = "Pixel-level hidden-content scan has not run yet."
+    pixel_hidden_indicators: List[str] = field(default_factory=list)
+    pixel_lsb_strings: List[str] = field(default_factory=list)
+    pixel_alpha_findings: List[str] = field(default_factory=list)
+    pixel_channel_notes: List[str] = field(default_factory=list)
+    pixel_hidden_metrics: Dict[str, object] = field(default_factory=dict)
+    pixel_hidden_limitations: List[str] = field(default_factory=list)
+    pixel_hidden_next_actions: List[str] = field(default_factory=list)
+    manual_crop_assets: List[str] = field(default_factory=list)
+    ocr_diagnostics: Dict[str, object] = field(default_factory=dict)
     validation_hits: List[str] = field(default_factory=list)
     validation_misses: List[str] = field(default_factory=list)
     extracted_strings: List[str] = field(default_factory=list)

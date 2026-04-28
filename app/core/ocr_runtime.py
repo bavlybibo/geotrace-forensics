@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 from pathlib import Path
 from typing import Iterable
+
+LOGGER = logging.getLogger("geotrace.ocr_runtime")
 
 COMMON_TESSERACT_PATHS = (
     r"C:\Program Files\Tesseract-OCR\tesseract.exe",
@@ -43,6 +46,6 @@ def configure_pytesseract(pytesseract_module) -> str:
     if binary and pytesseract_module is not None:
         try:
             pytesseract_module.pytesseract.tesseract_cmd = binary
-        except Exception:
-            pass
+        except Exception as exc:
+            LOGGER.warning("Failed to configure pytesseract binary %s: %s", binary, exc)
     return binary

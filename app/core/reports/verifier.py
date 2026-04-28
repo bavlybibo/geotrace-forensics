@@ -114,6 +114,22 @@ def _safe_manifest_path(package_dir: Path, entry: dict) -> Path:
     return (package_dir / candidate).resolve()
 
 
+
+
+def _verify_manifest_signature(result: VerificationResult, package_dir: Path, manifest_path: Path) -> None:
+    signature_path = package_dir / "export_manifest.sha256"
+    if not signature_path.exists():
+        result.warn("export_manifest.sha256 sidecar is missing; artifact hashes were still verified from the manifest.")
+        return
+    raw = signature_path.read_text(encoding="utf-8", errors="ignore").strip().split()
+    expected = raw[0] if raw else ""
+    actual = _sha256(manifest_path)
+    if expected and expected == actual:
+        result.add_check("Manifest SHA-256 sidecar verified (export_manifest.sha256).")
+    else:
+        result.fail("Manifest SHA-256 sidecar does not match export_manifest.json.")
+
+
 def _verify_entries(result: VerificationResult, package_dir: Path, entries: dict, label: str) -> None:
     for name, entry in (entries or {}).items():
         candidate = _safe_manifest_path(package_dir, entry or {})
@@ -177,6 +193,7 @@ def verify_export_package(package_dir: Path | str, privacy_level: str | None = N
 
     result.privacy_level = str(manifest.get("privacy_level") or privacy_level or "unknown")
     strict_mode = result.privacy_level in STRICT_PRIVACY_LEVELS
+    _verify_manifest_signature(result, package, manifest_path)
 
     artifacts = manifest.get("artifacts", {}) or {}
     report_assets = manifest.get("report_assets", {}) or {}

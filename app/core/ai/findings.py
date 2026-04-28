@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-AI_PROVIDER_NAME = "GeoTrace Local AI Analyst v5 — Deep Context Reasoner"
+AI_PROVIDER_NAME = "GeoTrace Local AI Analyst v4"
 
 
 @dataclass
