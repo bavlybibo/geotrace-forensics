@@ -71,7 +71,7 @@ class ReportActionsMixin:
         self.command_progress.setText(f"Generating {export_mode} report package in background…")
         self.export_summary.setPlainText(
             f"Background export started…\n\nMode: {export_mode}\nPrivacy level: {privacy_level}\n"
-            "Creating HTML, PDF, CSV, JSON, manifest, validation, executive, courtroom, AI Guardian, OSINT appendix, and CTF GeoLocator outputs."
+            "Creating HTML, PDF, CSV, JSON, manifest, validation, executive, courtroom, AI Guardian, OSINT appendix, CTF GeoLocator, claim matrix, and report-builder index outputs."
         )
         self.report_thread = QThread(self)
         self.report_worker = ReportWorker(
@@ -118,16 +118,19 @@ class ReportActionsMixin:
             f"JSON: {Path(payload['json']).name}\n"
             f"Courtroom: {Path(payload['courtroom']).name}\n"
             f"Validation: {Path(payload['validation']).name}\n"
+            f"Validation Template: {Path(payload.get('validation_template', '')).name if payload.get('validation_template') else 'not generated'}\n"
             f"AI Guardian: {Path(payload.get('ai_guardian', '')).name if payload.get('ai_guardian') else 'not generated'}\n"
             f"Privacy Guardian: {Path(payload.get('privacy_guardian', '')).name if payload.get('privacy_guardian') else 'not generated'}\n"
             f"OSINT Appendix: {Path(payload.get('osint_appendix', '')).name if payload.get('osint_appendix') else 'not generated'}\n"
             f"CTF GeoLocator: {Path(payload.get('ctf_writeup', '')).name if payload.get('ctf_writeup') else 'not generated'}\n"
+            f"Claim Matrix: {Path(payload.get('claim_matrix', '')).name if payload.get('claim_matrix') else 'not generated'}\n"
+            f"Report Builder: {Path(payload.get('report_builder', '')).name if payload.get('report_builder') else 'not generated'}\n"
             f"Verification: {Path(payload.get('verification', '')).name if payload.get('verification') else 'not generated'} ({'PASS' if payload.get('verification_passed') == 'True' else 'REVIEW'})\n"
             f"Manifest: {Path(payload['manifest']).name}\n"
             f"Manifest Signature: {Path(payload.get('manifest_signature', '')).name if payload.get('manifest_signature') else 'not generated'}\n\n"
             f"Mode: {payload.get('export_mode', 'Shareable Redacted')}\n"
             f"Privacy level: {payload.get('privacy_level', 'redacted_text')}\n"
-            "CSV follows the selected privacy level; each export mode now uses an isolated timestamped folder. report_assets are included in manifest hashes when present.\n"
+            "CSV follows the selected privacy level; each export mode now uses an isolated timestamped folder. report_assets are included in manifest hashes when present. Launch Gate blockers are listed in report_builder_index.\n"
             f"Export folder: {payload.get('export_folder', str(self.export_dir))}"
         )
         self.populate_custody_log()

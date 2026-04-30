@@ -6,6 +6,7 @@ Moved from app.ui.main_window during v12.10.2 organization-only refactor.
 from __future__ import annotations
 
 import logging
+import os
 import webbrowser
 from datetime import datetime
 from pathlib import Path
@@ -55,6 +56,8 @@ try:
     from ...core.map_service import MapService
     from ...core.models import EvidenceRecord
     from ...core.report_service import ReportService
+    from ...core.launch_readiness import evaluate_launch_readiness, render_launch_gate_text
+    from ...core.structured_logging import log_failure
     from ...config import APP_NAME, APP_ORGANIZATION, APP_VERSION, APP_BUILD_CHANNEL, DEFAULT_ANALYST_NAME
     from ...agents import RuleBasedForensicAgent
 except ImportError:  # pragma: no cover - fallback for direct script execution
@@ -63,15 +66,19 @@ except ImportError:  # pragma: no cover - fallback for direct script execution
     from app.core.map_service import MapService
     from app.core.models import EvidenceRecord
     from app.core.report_service import ReportService
+    from app.core.launch_readiness import evaluate_launch_readiness, render_launch_gate_text
+    from app.core.structured_logging import log_failure
     from app.config import APP_NAME, APP_ORGANIZATION, APP_VERSION, APP_BUILD_CHANNEL, DEFAULT_ANALYST_NAME
     from app.agents import RuleBasedForensicAgent
 from ..styles import APP_STYLESHEET
-from ..dialogs import CompareDialog, DuplicateReviewDialog, OnboardingDialog, RecentCasesDialog, SettingsDialog, ToastPopup
+from ..dialogs import CompareDialog, DuplicateReviewDialog, FirstRunSetupWizardDialog, OCRSetupWizardDialog, OnboardingDialog, RecentCasesDialog, SettingsDialog, ToastPopup
 from ..widgets import AutoHeightNarrativeView, CaseListCard, ChartCard, CustodyTimelineWidget, EvidenceListCard, ResizableImageLabel, ScoreRing, SmoothScrollArea, StatCard, TerminalView
 from ..workers import AnalysisWorker, ReportWorker
 from ..pages.ai_guardian_page import build_ai_guardian_page, refresh_ai_guardian_page
 from ..pages.osint_workbench_page import build_osint_workbench_page, refresh_osint_workbench_page
 from ..pages.ctf_geolocator_page import build_ctf_geolocator_page, refresh_ctf_geolocator_page
+from ..pages.map_workspace_page import build_map_workspace_page, refresh_map_workspace_page
+from ..pages.system_health_page import build_system_health_page, refresh_system_health_page, run_dependency_check_ui
 from ..controllers.navigation import PAGE_KEYS, build_workspace_pages
 from ..mixins.record_text_builder import RecordTextBuilderMixin
 from ..mixins.chart_rendering import ChartRenderingMixin
@@ -92,6 +99,7 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
         super().__init__()
         self.project_root = project_root
         self.settings = QSettings(APP_ORGANIZATION, APP_NAME)
+        self.current_workspace_mode = str(self.settings.value("workspace_mode", "Analyst"))
         self.logger = self._build_logger()
         self.case_manager = CaseManager(project_root)
         self.records: List[EvidenceRecord] = list(self.case_manager.records)
@@ -140,6 +148,7 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
         self.populate_table(self.filtered_records)
         self.refresh_dashboard()
         self.refresh_ai_guardian()
+        self.refresh_system_health()
         self.update_charts()
         self.populate_timeline()
         self.populate_custody_log()
@@ -167,21 +176,40 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
             "analyst_name": self.settings.value("analyst_name", DEFAULT_ANALYST_NAME),
             "default_page": self.settings.value("default_page", "Dashboard"),
             "default_sort": self.settings.value("default_sort", "Score ↓"),
+            "workspace_mode": self.settings.value("workspace_mode", "Analyst"),
             "auto_reopen_last_case": self.settings.value("auto_reopen_last_case", True, type=bool),
             "open_reports_after_export": self.settings.value("open_reports_after_export", True, type=bool),
             "show_toasts": self.settings.value("show_toasts", True, type=bool),
             "confirm_before_new_case": self.settings.value("confirm_before_new_case", True, type=bool),
             "show_onboarding": self.settings.value("show_onboarding", True, type=bool),
+            "first_run_setup_completed": self.settings.value("first_run_setup_completed", False, type=bool),
+            "ocr_mode": self.settings.value("ocr_mode", os.getenv("GEOTRACE_OCR_MODE", "quick")),
+            "ocr_timeout": self.settings.value("ocr_timeout", os.getenv("GEOTRACE_OCR_TIMEOUT", "0.8")),
+            "ocr_global_timeout": self.settings.value("ocr_global_timeout", os.getenv("GEOTRACE_OCR_GLOBAL_TIMEOUT", "5.0")),
+            "ocr_max_calls": self.settings.value("ocr_max_calls", os.getenv("GEOTRACE_OCR_MAX_CALLS", "4")),
+            "log_privacy": self.settings.value("log_privacy", os.getenv("GEOTRACE_LOG_PRIVACY", "redacted")),
+            "local_ai_enabled": self.settings.value("local_ai_enabled", False, type=bool),
         }
 
     def _apply_startup_settings(self) -> None:
         values = self._startup_settings()
         self.analyst_name = str(values["analyst_name"])
+        os.environ["GEOTRACE_OCR_MODE"] = str(values.get("ocr_mode", "quick"))
+        os.environ["GEOTRACE_OCR_TIMEOUT"] = str(values.get("ocr_timeout", "0.8"))
+        os.environ["GEOTRACE_OCR_GLOBAL_TIMEOUT"] = str(values.get("ocr_global_timeout", "5.0"))
+        os.environ["GEOTRACE_OCR_MAX_CALLS"] = str(values.get("ocr_max_calls", "4"))
+        os.environ["GEOTRACE_LOG_PRIVACY"] = str(values.get("log_privacy", "redacted"))
+        os.environ["GEOTRACE_LOCAL_AI_ENABLED"] = "1" if bool(values.get("local_ai_enabled", False)) else "0"
         if hasattr(self, "sort_combo"):
             self.sort_combo.setCurrentText(str(values["default_sort"]))
+        if hasattr(self, "workspace_mode_combo"):
+            self.workspace_mode_combo.setCurrentText(str(values.get("workspace_mode", "Analyst")))
+        self._apply_workspace_mode()
         self._set_workspace_page(str(values["default_page"]))
 
     def _show_onboarding_if_needed(self) -> None:
+        if not self.settings.value("first_run_setup_completed", False, type=bool):
+            self.open_first_run_setup_wizard()
         if not bool(self._startup_settings().get("show_onboarding", True)):
             return
         if self.settings.value("onboarding_seen_once", False, type=bool):
@@ -213,12 +241,12 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
             "Ctrl+1": lambda: self._set_workspace_page("Dashboard"),
             "Ctrl+2": lambda: self._set_workspace_page("Review"),
             "Ctrl+3": lambda: self._set_workspace_page("Geo"),
-            "Ctrl+4": lambda: self._set_workspace_page("Timeline"),
-            "Ctrl+5": lambda: self._set_workspace_page("Custody"),
-            "Ctrl+6": lambda: self._set_workspace_page("Reports"),
-            "Ctrl+7": lambda: self._set_workspace_page("Cases"),
-            "Ctrl+8": lambda: self._set_workspace_page("AI Guardian"),
-            "Ctrl+9": lambda: self._set_workspace_page("OSINT Workbench"),
+            "Ctrl+4": lambda: self._set_workspace_page("Map Workspace"),
+            "Ctrl+5": lambda: self._set_workspace_page("Timeline"),
+            "Ctrl+6": lambda: self._set_workspace_page("Custody"),
+            "Ctrl+7": lambda: self._set_workspace_page("Reports"),
+            "Ctrl+8": lambda: self._set_workspace_page("Cases"),
+            "Ctrl+9": lambda: self._set_workspace_page("AI Guardian"),
             "Ctrl+0": lambda: self._set_workspace_page("OSINT Workbench"),
         }
         self._shortcuts = []
@@ -235,7 +263,11 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
 
     def _log_error(self, context: str, message: str) -> None:
         self.last_error_message = f"{context}: {message}"
-        self.logger.error(self.last_error_message)
+        try:
+            from ...core.structured_logging import log_failure
+            log_failure(self.logger, context=context, operation=context, message=message, log_dir=self.project_root / "logs")
+        except Exception:
+            self.logger.error(self.last_error_message)
         if hasattr(self, "error_log_view"):
             existing = self.error_log_view.toPlainText().strip()
             combined = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {self.last_error_message}"
@@ -273,9 +305,9 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
         badge_row.setSpacing(8)
         self.case_badge = QLabel()
         self.case_badge.setObjectName("BadgeLabel")
-        self.mode_badge = QLabel("Review mode")
+        self.mode_badge = QLabel("Analyst mode")
         self.mode_badge.setObjectName("BadgeLabel")
-        self.export_badge = QLabel("Import → Review → Report")
+        self.export_badge = QLabel("Import → Decide → Export")
         self.export_badge.setObjectName("BadgeLabel")
         for badge in [self.case_badge, self.mode_badge, self.export_badge]:
             badge_row.addWidget(badge)
@@ -303,7 +335,7 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
 
     def _build_command_bar(self) -> QWidget:
         frame = QFrame()
-        frame.setObjectName("PanelFrame")
+        frame.setObjectName("CommandBarFrame")
         outer = QVBoxLayout(frame)
         outer.setContentsMargins(14, 10, 14, 10)
         outer.setSpacing(8)
@@ -373,6 +405,10 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
         more_menu.addAction("Courtroom Summary", self.generate_reports)
         more_menu.addAction("Recent Cases", self.open_recent_cases_dialog)
         more_menu.addAction("Preferences", self.open_settings)
+        more_menu.addAction("System Health", lambda: self._set_workspace_page("System Health"))
+        more_menu.addAction("Dependency Check", self.run_dependency_check_ui)
+        more_menu.addAction("First Run Setup Wizard", self.open_first_run_setup_wizard)
+        more_menu.addAction("OCR Setup Wizard", self.open_ocr_setup_wizard)
         self.more_actions_button.setMenu(more_menu)
 
         self.command_progress = QLabel("Ready")
@@ -411,10 +447,19 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
 
     def _build_page_bar(self) -> QWidget:
         frame = QFrame()
-        frame.setObjectName("CompactPanel")
+        frame.setObjectName("PageNavFrame")
         layout = QHBoxLayout(frame)
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(8)
+        mode_label = QLabel("Mode")
+        mode_label.setObjectName("MutedLabel")
+        self.workspace_mode_combo = QComboBox()
+        self.workspace_mode_combo.addItems(["Executive", "Analyst", "Technical"])
+        self.workspace_mode_combo.setCurrentText(str(getattr(self, "current_workspace_mode", "Analyst")))
+        self.workspace_mode_combo.setMinimumWidth(130)
+        self.workspace_mode_combo.currentTextChanged.connect(self._set_workspace_mode)
+        layout.addWidget(mode_label)
+        layout.addWidget(self.workspace_mode_combo)
         self.page_buttons = {}
         for key in PAGE_KEYS:
             btn = QPushButton(key)
@@ -456,6 +501,36 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
             setattr(self, note_attr, note)
         return frame
 
+    def _build_system_health_page(self) -> QWidget:
+        return build_system_health_page(self)
+
+    def refresh_system_health(self) -> None:
+        try:
+            refresh_system_health_page(self)
+        except Exception as exc:
+            self.logger.exception("System Health refresh failed")
+            if hasattr(self, "system_health_sections_view"):
+                self.system_health_sections_view.setPlainText(f"System Health refresh failed: {exc}")
+
+    def run_dependency_check_ui(self) -> None:
+        try:
+            run_dependency_check_ui(self)
+            self._show_toast("Dependency check complete", "System Health dependency output refreshed.")
+        except Exception as exc:
+            self.logger.exception("Dependency check failed")
+            QMessageBox.warning(self, "Dependency Check", f"Dependency check failed: {exc}")
+
+    def open_first_run_setup_wizard(self) -> None:
+        dialog = FirstRunSetupWizardDialog(self.project_root, self._startup_settings(), self)
+        if dialog.exec_():
+            values = dialog.values()
+            for key, value in values.items():
+                self.settings.setValue(key, value)
+            self.settings.setValue("first_run_setup_completed", True)
+            self._apply_startup_settings()
+            self.refresh_system_health()
+            self._show_toast("First run setup saved", "Runtime folders and safe defaults are ready.")
+
     def _build_content_pages(self) -> QWidget:
         self.workspace_stack = QStackedWidget()
         self.workspace_pages = build_workspace_pages(self)
@@ -483,11 +558,10 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
         hero_layout = QVBoxLayout(hero)
         hero_layout.setContentsMargins(16, 14, 16, 14)
         hero_layout.setSpacing(10)
-        title = QLabel("Investigation Mission Control")
+        title = QLabel("Case Command Center")
         title.setObjectName("SectionLabel")
         meta = QLabel(
-            "A clean executive cockpit for the active case: inventory, risk, GPS coverage, timeline integrity, "
-            "priority review, and export readiness in one demo-ready screen."
+            "Clean case view: inventory, risk, geo coverage, timeline integrity, and export readiness without repeated narrative blocks."
         )
         meta.setObjectName("SectionMetaLabel")
         meta.setWordWrap(True)
@@ -495,21 +569,56 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
         hero_layout.addWidget(meta)
         mission_row = QHBoxLayout()
         mission_row.setSpacing(10)
-        mission_row.addWidget(self._build_metric_pill("Workflow", "Import → Analyze → Export", "Guided forensic flow with case isolation."))
-        mission_row.addWidget(self._build_metric_pill("AI Layer", "Explainable", "Risk, contradictions, OSINT, image details."))
-        mission_row.addWidget(self._build_metric_pill("Evidence Policy", "Local-first", "No remote lookup unless analyst authorises it."))
-        mission_row.addWidget(self._build_metric_pill("Demo State", "Ready", "Readable even before evidence is loaded."))
+        mission_row.addWidget(self._build_metric_pill("Workflow", "Import → Analyze → Export", "Case-isolated pipeline."))
+        mission_row.addWidget(self._build_metric_pill("AI Layer", "Explainable", "Risk, contradictions, hidden content."))
+        mission_row.addWidget(self._build_metric_pill("Evidence Policy", "Local-first", "No remote lookup by default."))
+        mission_row.addWidget(self._build_metric_pill("Readiness", "Clean", "Designed empty states."))
         hero_layout.addLayout(mission_row)
         layout.addWidget(hero)
 
         layout.addWidget(self._build_stat_cards())
+
+        evidence_studio = QSplitter(Qt.Horizontal)
+        evidence_studio.setChildrenCollapsible(False)
+        self.dashboard_evidence_preview = ResizableImageLabel(
+            "Evidence Viewer: import/select evidence to preview image and crop context.",
+            min_height=300,
+        )
+        self.dashboard_evidence_preview.setMinimumHeight(320)
+
+        studio_actions = QWidget()
+        studio_actions_layout = QVBoxLayout(studio_actions)
+        studio_actions_layout.setContentsMargins(0, 0, 0, 0)
+        studio_actions_layout.setSpacing(8)
+        self.dashboard_action_center = AutoHeightNarrativeView(
+            "Action Center: key blockers and next actions appear after selection.",
+            max_auto_height=210,
+        )
+        self.dashboard_claim_links_view = AutoHeightNarrativeView(
+            "Claim-to-evidence links appear after analysis.",
+            max_auto_height=210,
+        )
+        studio_actions_layout.addWidget(self.dashboard_action_center)
+        studio_actions_layout.addWidget(self.dashboard_claim_links_view)
+        evidence_studio.addWidget(self._shell(
+            "Evidence Viewer",
+            self.dashboard_evidence_preview,
+            "Proof stays visible beside case decisions.",
+        ))
+        evidence_studio.addWidget(self._shell(
+            "Action Center + Claim Links",
+            studio_actions,
+            "Claims map to source, confidence, and next action.",
+        ))
+        evidence_studio.setSizes([740, 680])
+        layout.addWidget(evidence_studio)
 
         top_split = QSplitter(Qt.Horizontal)
         top_split.setChildrenCollapsible(False)
         top_split.addWidget(self._shell(
             "Case Snapshot",
             self._build_dashboard_summary_body(),
-            "Executive orientation first: what kind of case is open, what matters first, and what needs review.",
+            "Fast case orientation without raw dumps.",
         ))
         charts = QWidget()
         charts_layout = QGridLayout(charts)
@@ -518,7 +627,7 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
         charts_layout.setVerticalSpacing(12)
         self.chart_sources = ChartCard("Source Profile Mix", "Adaptive overview for source families, screenshots, edited files, and imports.")
         self.chart_risks = ChartCard("Risk Mix", "High/medium/low distribution without crowding the review screen.")
-        self.chart_geo = ChartCard("GPS & Duplicate Coverage", "Geo anchors, duplicate clusters, and route/map indicators.")
+        self.chart_geo = ChartCard("Geo Anchor & Duplicate Coverage", "Native GPS, derived map anchors, duplicate clusters, and route/map indicators.")
         self.chart_relationships = ChartCard("Relationship Graph", "Links appear only when meaningful evidence relationships exist.")
         charts_layout.addWidget(self.chart_sources, 0, 0)
         charts_layout.addWidget(self.chart_risks, 0, 1)
@@ -534,7 +643,7 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
         layout.addWidget(self._shell(
             "Visual Diff & Reuse Review",
             self.duplicate_terminal,
-            "No duplicate clusters becomes a designed state instead of a stretched empty chart.",
+            "Duplicate/reuse notes stay compact.",
         ))
         return widget
 
@@ -559,7 +668,7 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
 
         self.card_total = StatCard("Total", chip="Inventory")
         self.card_high = StatCard("High Risk", chip="Priority")
-        self.card_gps = StatCard("GPS", chip="Geo")
+        self.card_gps = StatCard("Geo Anchors", chip="GPS/Map")
         self.card_duplicates = StatCard("Duplicates", chip="Correlation")
         self.card_timeline = StatCard("Timeline", chip="Span")
         self.card_integrity = StatCard("Integrity", chip="Custody")
@@ -571,7 +680,7 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
 
         self.card_total.clicked.connect(lambda: self._activate_filter("All Evidence"))
         self.card_high.clicked.connect(lambda: self._activate_filter("High Risk"))
-        self.card_gps.clicked.connect(lambda: self._activate_filter("Has GPS"))
+        self.card_gps.clicked.connect(lambda: self._activate_filter("Has Geo Anchor"))
         self.card_duplicates.clicked.connect(lambda: self._activate_filter("Duplicate Cluster"))
         self.card_timeline.clicked.connect(lambda: self._set_workspace_page("Timeline"))
         self.card_integrity.clicked.connect(lambda: self._set_workspace_page("Custody"))
@@ -583,7 +692,7 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        meta_intro = QLabel("Technical depth lives here so the preview tab stays clean. Normalized and raw layers stay visible by default so the wide workspace is used better.")
+        meta_intro = QLabel("Technical depth lives here. Raw dumps stay collapsed by default so Review remains clean; open only when needed.")
         meta_intro.setObjectName("SectionMetaLabel")
         layout.addWidget(meta_intro)
 
@@ -606,10 +715,10 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
         self.raw_exif_view.setMinimumHeight(200)
         self.normalized_shell = self._shell("Normalized Metadata Dump", self.metadata_view, "Structured normalized values for technical review.")
         self.raw_shell = self._shell("Raw EXIF vs Embedded Tags", self.raw_exif_view, "Deep tag-level comparison only when you explicitly need it.")
-        self.normalized_shell.show()
-        self.raw_shell.show()
-        self.btn_toggle_normalized.setText("Hide Normalized Dump")
-        self.btn_toggle_raw.setText("Hide Raw Tags")
+        self.normalized_shell.hide()
+        self.raw_shell.hide()
+        self.btn_toggle_normalized.setText("Show Normalized Dump")
+        self.btn_toggle_raw.setText("Show Raw Tags")
         self.metadata_splitter = QSplitter(Qt.Vertical)
         self.metadata_splitter.setChildrenCollapsible(False)
         self.metadata_splitter.addWidget(self.normalized_shell)
@@ -666,12 +775,20 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
     def _build_ctf_geolocator_page(self) -> QWidget:
         return build_ctf_geolocator_page(self)
 
+    def _build_map_workspace_page(self) -> QWidget:
+        return build_map_workspace_page(self)
+
+    def refresh_map_workspace(self) -> None:
+        refresh_map_workspace_page(self)
+
     def refresh_ai_guardian(self) -> None:
         refresh_ai_guardian_page(self)
         if hasattr(self, "osint_hypothesis_view"):
             refresh_osint_workbench_page(self)
         if hasattr(self, "ctf_clue_cards_view"):
             refresh_ctf_geolocator_page(self)
+        if hasattr(self, "map_workspace_summary_view"):
+            refresh_map_workspace_page(self)
 
     def _build_reports_page(self) -> QWidget:
         widget = QWidget()
@@ -686,8 +803,7 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
         title = QLabel("Reports & Export Command Center")
         title.setObjectName("SectionLabel")
         meta = QLabel(
-            "A cleaner report cockpit for demos and real handoff: generated artifacts, verification, privacy posture, "
-            "courtroom notes, and troubleshooting are grouped by operational value."
+            "Export hub for generated artifacts, verification, privacy posture, courtroom notes, and troubleshooting grouped by value."
         )
         meta.setObjectName("SectionMetaLabel")
         meta.setWordWrap(True)
@@ -707,13 +823,20 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
         self.btn_quick_generate_reports = QPushButton("Generate Export Package")
         self.btn_quick_generate_reports.setObjectName("PrimaryButton")
         self.btn_quick_generate_reports.clicked.connect(self.generate_reports)
+        self.btn_preview_export = QPushButton("Preview Export")
+        self.btn_preview_export.clicked.connect(self.preview_report_package)
+        self.btn_ocr_setup_wizard = QPushButton("OCR Setup Wizard")
+        self.btn_ocr_setup_wizard.clicked.connect(self.open_ocr_setup_wizard)
         report_action_row.addWidget(self.btn_quick_generate_reports)
+        report_action_row.addWidget(self.btn_preview_export)
         report_action_row.addWidget(self.btn_verify_export)
+        report_action_row.addWidget(self.btn_ocr_setup_wizard)
         report_action_row.addStretch(1)
         hero_layout.addLayout(report_action_row)
         layout.addWidget(hero)
 
         self.export_summary = AutoHeightNarrativeView("No export package generated for the current case yet.", max_auto_height=170)
+        self.report_preview_view = AutoHeightNarrativeView("Click Preview Export before generating a package to see blockers, warnings, privacy mode, and expected artifacts.", max_auto_height=190)
         self.report_notes_view = AutoHeightNarrativeView("Generate reports to populate courtroom-ready output notes here.", max_auto_height=160)
         self.batch_queue_view = AutoHeightNarrativeView("No active or queued import batches.", max_auto_height=140)
         self.error_log_view = TerminalView("Graceful error logs will appear here for user-visible troubleshooting.")
@@ -735,11 +858,17 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
             ("manifest_signature", "Manifest Signature", "SHA-256 sidecar"),
             ("courtroom", "Courtroom Notes", "Legal-facing readout"),
             ("validation", "Validation Summary", "Workflow sanity"),
+            ("validation_template", "Validation Template", "Ground-truth JSON skeleton"),
             ("executive", "Executive Summary", "Manager-friendly overview"),
             ("ai_guardian", "AI Guardian", "Readiness and graph"),
             ("osint_appendix", "OSINT Appendix", "Hypotheses and entities"),
             ("ctf_writeup", "OSINT/CTF Writeup", "Answer support"),
+            ("claim_matrix", "Claim Matrix", "Claim-to-evidence map"),
+            ("report_builder", "Report Builder Index", "Handoff table of contents"),
+            ("report_builder_json", "Report Builder JSON", "Machine-readable handoff plan"),
             ("verification", "Package Verification", "Manifest/hash/privacy verifier"),
+            ("report_preview", "Report Preview", "Pre-export blockers/warnings"),
+            ("map_workspace", "Map Workspace", "Coordinate reconstruction notes"),
         ]):
             card, label, button = self._build_artifact_card(title_text, hint_text, key)
             self.report_artifact_labels[key] = label
@@ -756,12 +885,29 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
         report_grid.addWidget(self._shell("Package Status", self.export_summary, "HTML, PDF, CSV, JSON, validation, and courtroom outputs are summarized here."), 0, 0)
         report_grid.addWidget(self._shell("Courtroom Output Notes", self.report_notes_view, "Use this page as the document hub after generation."), 0, 1)
         report_grid.addWidget(self._shell("Batch Queue & Intake Progress", self.batch_queue_view, "Drag-and-drop or import multiple sets; queued batches start automatically."), 1, 0)
-        report_grid.addWidget(self._shell("Graceful Error Log", self.error_log_view, "User-visible runtime issues are stored here and mirrored to logs/app_errors.log."), 1, 1)
+        report_grid.addWidget(self._shell("Graceful Error Log", self.error_log_view, "User-visible runtime issues are stored here and mirrored to logs/app_errors.log and structured_failures.jsonl."), 1, 1)
+        report_grid.addWidget(self._shell("Pre-export Preview", self.report_preview_view, "Blockers/warnings/artifact contract before you generate a report package."), 2, 0, 1, 2)
         report_grid.setColumnStretch(0, 1)
         report_grid.setColumnStretch(1, 1)
         layout.addLayout(report_grid)
         layout.addStretch(1)
         return widget
+
+
+    def preview_report_package(self) -> None:
+        try:
+            from ...core.report_preview import render_report_preview
+        except Exception:  # pragma: no cover
+            from app.core.report_preview import render_report_preview
+        text = render_report_preview(
+            list(getattr(self.case_manager, "records", [])),
+            privacy_level="redacted_text",
+            export_mode="Shareable Redacted",
+            verification_passed=None,
+        )
+        if hasattr(self, "report_preview_view"):
+            self.report_preview_view.setPlainText(text)
+        self._show_toast("Export preview ready", "Review blockers/warnings before generating the package.", tone="info")
 
     def _build_artifact_card(self, title: str, subtitle: str, artifact: str):
         frame = QFrame()
@@ -855,9 +1001,57 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
         panel.setVisible(not panel.isVisible())
         button.setText(open_text if panel.isVisible() else closed_text)
 
+
+    def _set_workspace_mode(self, mode: str) -> None:
+        try:
+            from ...core.workspace_modes import normalize_mode, mode_tooltip
+        except Exception:  # pragma: no cover
+            from app.core.workspace_modes import normalize_mode, mode_tooltip
+        self.current_workspace_mode = normalize_mode(mode)
+        self.settings.setValue("workspace_mode", self.current_workspace_mode)
+        if hasattr(self, "mode_badge"):
+            self.mode_badge.setText(f"{self.current_workspace_mode} mode")
+        if hasattr(self, "command_hint"):
+            self.command_hint.setText(mode_tooltip(self.current_workspace_mode))
+        self._apply_workspace_mode()
+
+    def _apply_workspace_mode(self) -> None:
+        try:
+            from ...core.workspace_modes import allowed_pages_for_mode, get_workspace_mode_profile
+        except Exception:  # pragma: no cover
+            from app.core.workspace_modes import allowed_pages_for_mode, get_workspace_mode_profile
+        allowed = allowed_pages_for_mode(getattr(self, "current_workspace_mode", "Analyst"))
+        for page, button in getattr(self, "page_buttons", {}).items():
+            button.setVisible(page in allowed)
+        current_page = None
+        if hasattr(self, "workspace_stack") and hasattr(self, "workspace_pages"):
+            current_widget = self.workspace_stack.currentWidget()
+            for page, widget in self.workspace_pages.items():
+                if widget is current_widget:
+                    current_page = page
+                    break
+            if current_page and current_page not in allowed:
+                self._set_workspace_page(get_workspace_mode_profile(self.current_workspace_mode).allowed_pages[0])
+
     def _set_workspace_page(self, page: str) -> None:
-        alias_map = {"Overview": "Review", "Insights": "Dashboard", "CTF GeoLocator": "OSINT Workbench", "CTF": "OSINT Workbench", "OSINT CTF": "OSINT Workbench"}
+        alias_map = {"Overview": "Review", "Insights": "Dashboard", "CTF GeoLocator": "OSINT Workbench", "CTF": "OSINT Workbench", "OSINT CTF": "OSINT Workbench", "Map": "Map Workspace"}
         resolved = alias_map.get(page, page)
+        try:
+            from ...core.workspace_modes import allowed_pages_for_mode, get_workspace_mode_profile
+            allowed = allowed_pages_for_mode(getattr(self, "current_workspace_mode", "Analyst"))
+            if resolved not in allowed:
+                resolved = get_workspace_mode_profile(getattr(self, "current_workspace_mode", "Analyst")).allowed_pages[0]
+        except Exception as exc:
+            log_failure(
+                getattr(self, "logger", None),
+                context="main_window",
+                operation="set_workspace_page",
+                message=f"Workspace mode guard failed for requested page {page!r}.",
+                exc=exc,
+                log_dir=getattr(self, "project_root", Path.cwd()) / "logs",
+                severity="warning",
+                user_visible=False,
+            )
         widget = self.workspace_pages.get(resolved)
         if widget is None:
             return
@@ -885,6 +1079,95 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
         self._apply_risk_badge_style(lbl, level)
         return lbl
 
+
+    def _refresh_dashboard_selection_widgets(self, record: Optional[EvidenceRecord] = None) -> None:
+        if not hasattr(self, "dashboard_action_center"):
+            return
+        record = record or self.selected_record()
+        if record is None:
+            self.dashboard_evidence_preview.clear_source("Evidence Viewer: no evidence selected. Import/select an item to show image and crop context.")
+            self.dashboard_action_center.setPlainText(
+                "Next actions:\n"
+                "- Import evidence or open a recent case.\n"
+                "- Run OCR Setup Wizard if OCR is disabled.\n"
+                "- Use Review for visual inspection and Manual Crop OCR when labels are small.\n"
+                "- Export only after the Launch Gate and package verifier pass."
+            )
+            self.dashboard_claim_links_view.setPlainText("Claim-to-evidence links will appear after a record is selected.")
+            return
+
+        pixmap = self.current_preview_pixmap if getattr(self, "current_preview_pixmap", None) is not None else QPixmap(str(record.file_path))
+        if pixmap is not None and not pixmap.isNull():
+            self.dashboard_evidence_preview.set_source_pixmap(pixmap)
+        else:
+            self.dashboard_evidence_preview.clear_source(self._build_parser_fallback_text(record))
+
+        actions = []
+        for attr in ("map_extraction_plan", "map_recommended_actions", "location_estimate_next_actions", "next_actions"):
+            value = getattr(record, attr, None)
+            if isinstance(value, list):
+                actions.extend(str(item) for item in value if str(item).strip())
+        if not actions:
+            actions = [
+                "Open Review and verify the visual evidence manually.",
+                "Run Manual Crop OCR on map labels, street signs, UI text, or hidden small text.",
+                "Use OCR Setup Wizard if OCR confidence is 0% or language packs are missing.",
+                "Generate a redacted export package only after claim links and verification are reviewed.",
+            ]
+        seen = set()
+        clean_actions = []
+        for action in actions:
+            if action not in seen:
+                seen.add(action)
+                clean_actions.append(action)
+
+        privacy_review = getattr(record, "osint_privacy_review", {}) or {}
+        if isinstance(privacy_review, dict):
+            privacy_text = privacy_review.get("recommended_mode") or privacy_review.get("decision") or "Review privacy gate before export"
+        else:
+            privacy_text = str(privacy_review)
+        route_text = "none"
+        if getattr(record, 'map_route_start_label', '') or getattr(record, 'map_route_end_label', ''):
+            route_text = f"{getattr(record, 'map_route_start_label', '') or 'unknown'} → {getattr(record, 'map_route_end_label', '') or 'unknown'}"
+        cluster_count = len(getattr(record, 'map_label_clusters', []) or [])
+        offline_hits = len(getattr(record, 'map_offline_geocoder_hits', []) or [])
+        radius = int(getattr(record, 'map_confidence_radius_m', 0) or 0)
+        gate = evaluate_launch_readiness(self.case_manager.records, privacy_level="full")
+        gate_lines = [f"Launch Gate: {gate.label} ({gate.score}%)", f"Gate status: {gate.status}"]
+        if gate.blockers:
+            gate_lines.append("Top blocker: " + gate.blockers[0])
+        elif gate.warnings:
+            gate_lines.append("Top warning: " + gate.warnings[0])
+
+        self.dashboard_action_center.setPlainText(
+            "\n".join(gate_lines) + "\n\n"
+            f"{record.evidence_id} — {record.file_name}\n"
+            f"Map readiness: {getattr(record, 'map_answer_readiness_label', 'Not answer-ready')} ({getattr(record, 'map_answer_readiness_score', 0)}%) | radius≈{radius}m\n"
+            f"OCR confidence: {getattr(record, 'ocr_confidence', 0)}% | label clusters={cluster_count} | offline hits={offline_hits}\n"
+            f"Route: {route_text}\n"
+            f"Geo: native={getattr(record, 'gps_confidence', 0)}% derived={getattr(record, 'derived_geo_confidence', 0)}% | Privacy: {privacy_text}\n\n"
+            "Next actions:\n" + "\n".join(f"- {action}" for action in clean_actions[:7])
+        )
+
+        links = list(getattr(record, "claim_to_evidence_links", []) or [])
+        if not links:
+            try:
+                from ...core.evidence_claims import build_claim_links_dicts
+            except ImportError:  # pragma: no cover
+                from app.core.evidence_claims import build_claim_links_dicts
+            links = build_claim_links_dicts(record)
+        rows = []
+        for item in links[:10]:
+            if hasattr(item, "to_dict"):
+                item = item.to_dict()
+            rows.append(
+                f"- {item.get('claim_id', 'claim')} | {item.get('status', 'review')} | "
+                f"{item.get('source_family', 'unknown')} | {item.get('confidence', 0)}% :: {item.get('summary', '')}"
+            )
+        self.dashboard_claim_links_view.setPlainText(
+            "Claim-to-evidence links:\n" + ("\n".join(rows) if rows else "- No claim links yet. Run analysis/rescan to attach auditable claim rows.")
+        )
+
     def _apply_risk_badge_style(self, label: QLabel, level: str) -> None:
         object_name = {"High": "RiskBadgeHigh", "Medium": "RiskBadgeMedium", "Low": "RiskBadgeLow"}.get(level, "RiskBadgeLow")
         label.setObjectName(object_name)
@@ -898,9 +1181,11 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
         self.card_total.set_value(str(stats.total_images))
         self.card_total.set_subtitle("Total evidence items in the active isolated case.")
         self.card_high.set_value(str(high))
-        self.card_high.set_subtitle("Items that should be reviewed first during demo and validation.")
-        self.card_gps.set_value(str(stats.gps_enabled))
-        self.card_gps.set_subtitle("Files with native GPS available for map correlation.")
+        self.card_high.set_subtitle("Items that should be reviewed first.")
+        native_gps_count = stats.gps_enabled
+        derived_anchor_count = sum(1 for record in self.case_manager.records if not record.has_gps and (getattr(record, "derived_geo_display", "Unavailable") != "Unavailable" or int(getattr(record, "map_answer_readiness_score", 0) or 0) >= 70))
+        self.card_gps.set_value(f"{native_gps_count} GPS / {derived_anchor_count} map")
+        self.card_gps.set_subtitle("Native GPS plus derived map/URL/OCR anchors. Click to show all geo-ready evidence.")
         self.card_duplicates.set_value(str(stats.duplicates_count))
         self.card_duplicates.set_subtitle("Near-duplicate groups that can collapse redundant review.")
         self.card_timeline.set_value(stats.timeline_span)
@@ -908,7 +1193,12 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
         self.card_integrity.set_value(stats.integrity_summary)
         self.card_integrity.set_subtitle("Case-level integrity and custody isolation summary.")
         self._set_info_badge(self.integrity_label, "Case Integrity", stats.integrity_summary)
-        self.btn_open_map.setEnabled(stats.gps_enabled > 0 and self.current_map_path is not None)
+        has_geo_or_map_signal = stats.gps_enabled > 0 or any(
+            (getattr(record, "derived_geo_display", "Unavailable") != "Unavailable")
+            or int(getattr(record, "map_intelligence_confidence", 0) or 0) > 0
+            for record in self.case_manager.records
+        )
+        self.btn_open_map.setEnabled(has_geo_or_map_signal and self.current_map_path is not None)
         self.btn_generate_report.setEnabled(stats.total_images > 0 and self.analysis_thread is None)
         self.btn_courtroom.setEnabled(stats.total_images > 0 and self.analysis_thread is None)
         self.btn_compare.setEnabled(len(self.records) >= 2)
@@ -936,6 +1226,10 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
                 refresh_osint_workbench_page(self)
             if hasattr(self, "ctf_clue_cards_view"):
                 refresh_ctf_geolocator_page(self)
+        if hasattr(self, "map_workspace_summary_view"):
+            refresh_map_workspace_page(self)
+        if hasattr(self, "_refresh_dashboard_selection_widgets"):
+            self._refresh_dashboard_selection_widgets(self.selected_record())
         self._refresh_case_switcher()
 
     def _set_info_badge(self, label: QLabel, title: str, value: str) -> None:
@@ -1009,6 +1303,10 @@ class GeoTraceMainWindow(RecordTextBuilderMixin, ChartRenderingMixin, PreviewInt
                 self.settings.setValue(key, value)
             self._apply_startup_settings()
             self._show_toast("Settings saved", "Workspace preferences were updated.", tone="success")
+
+    def open_ocr_setup_wizard(self) -> None:
+        dialog = OCRSetupWizardDialog(self)
+        dialog.exec_()
 
     def open_compare_mode(self) -> None:
         selected = self.selected_records()

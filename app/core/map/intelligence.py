@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Iterable, Mapping
 import re
 
-from ..osint.map_url_parser import parse_map_url_signals
+from ..osint.map_url_parser import MapURLSignal, parse_first_coordinate, parse_map_url_signals
 from ..osint.gazetteer import (
     AREA_ALIASES as GAZETTEER_AREA_ALIASES,
     CITY_ALIASES as GAZETTEER_CITY_ALIASES,
@@ -35,6 +35,17 @@ CITY_ALIASES: dict[str, tuple[str, ...]] = {
     "Cairo": ("cairo", "القاهرة", "القاهره", "new cairo", "مصر الجديدة", "مدينة نصر", "nasr city", "heliopolis"),
     "Giza": ("giza", "الجيزة", "جيزة", "dokki", "الدقي", "mohandessin", "المهندسين", "haram", "الهرم"),
     "Alexandria": ("alexandria", "الإسكندرية", "الاسكندرية"),
+    "Madrid": ("madrid", "مدريد"),
+    "Barcelona": ("barcelona", "برشلونة"),
+    "Valencia": ("valencia", "valència", "فالنسيا"),
+    "Zaragoza": ("zaragoza", "سرقسطة"),
+    "Seville": ("seville", "sevilla", "إشبيلية", "اشبيلية"),
+    "Bilbao": ("bilbao", "بلباو"),
+    "Lisbon": ("lisbon", "lisboa", "لشبونة", "لشبونه"),
+    "Porto": ("porto", "oporto", "بورتو"),
+    "Toulouse": ("toulouse", "تولوز"),
+    "Bordeaux": ("bordeaux", "بوردو"),
+    "Montpellier": ("montpellier", "مونبلييه"),
 }
 
 AREA_ALIASES: dict[str, tuple[str, ...]] = {
@@ -47,6 +58,12 @@ AREA_ALIASES: dict[str, tuple[str, ...]] = {
     "Maadi": ("maadi", "المعادي"),
     "Tahrir": ("tahrir", "التحرير"),
     "Nile Corniche": ("nile", "corniche", "النيل", "كورنيش"),
+    "Spain": ("spain", "españa", "espana", "إسبانيا", "اسبانيا"),
+    "Portugal": ("portugal", "البرتغال"),
+    "France": ("france", "فرنسا"),
+    "Andorra": ("andorra", "اندورا"),
+    "Morocco": ("morocco", "المغرب"),
+    "Algeria": ("algeria", "الجزائر"),
 }
 
 LANDMARK_ALIASES: dict[str, tuple[str, ...]] = {
@@ -65,6 +82,13 @@ GOOGLE_MAPS_TOKENS = (
 )
 
 ROUTE_TOKENS = ("route", "directions", "اتجاهات", "المسار", "كم", "دقيقة", "min", "minutes")
+
+GENERIC_PLACE_NOISE = {
+    "exif", "no exif", "metadata", "image", "photo", "picture", "screenshot", "screen",
+    "capture", "evidence", "file", "sample", "demo", "unknown", "unavailable", "none",
+    "parser", "valid", "invalid", "width", "height", "png", "jpg", "jpeg", "webp", "bmp",
+}
+
 
 # Keep backwards compatibility with the legacy constants while extending them from the
 # dedicated offline gazetteer module.
@@ -138,7 +162,9 @@ def _unique(items: Iterable[str], limit: int = 10) -> list[str]:
 
 def _good_place_candidate(value: str) -> bool:
     text = _normalize(value).strip(" -:|•·")
-    if len(text) < 4 or text.lower() in {"unknown", "unavailable", "none", "n/a"}:
+    lower = text.lower()
+    compact = re.sub(r"[^a-z0-9\u0600-\u06ff]+", " ", lower).strip()
+    if len(text) < 4 or lower in {"unknown", "unavailable", "none", "n/a"} or compact in GENERIC_PLACE_NOISE:
         return False
     letters = sum(ch.isalpha() for ch in text)
     digits = sum(ch.isdigit() for ch in text)
@@ -321,6 +347,20 @@ def analyze_map_intelligence(file_path: Path, visible: Mapping[str, object]) -> 
 
     map_url_signals = parse_map_url_signals([raw_text, excerpt, *lines, *labels, *locations, *urls, file_path.name], source="map-intelligence")
     offline_texts = [raw_text, excerpt, *lines, *labels, *locations, *urls, file_path.name]
+    # Plain visible coordinates from OCR/context menus are as important as full map URLs.
+    # Example: Google Maps right-click menu exposes "40.48168, -3.21450" without a URL.
+    visible_coordinate = parse_first_coordinate(offline_texts)
+    if visible_coordinate and not any(getattr(signal, "coordinates", None) for signal in map_url_signals):
+        lat, lon = visible_coordinate
+        map_url_signals.append(
+            MapURLSignal(
+                provider="Visible coordinate text",
+                raw=f"{lat:.6f}, {lon:.6f}",
+                coordinates=(lat, lon),
+                source="ocr-visible-coordinate",
+                confidence=86,
+            )
+        )
     route_start_label, route_end_label, route_notes = extract_route_endpoints(offline_texts)
     label_clusters = cluster_place_labels([*labels, *locations, *lines], limit=8)
     offline_hits = match_offline_places(offline_texts, limit=8)
@@ -335,16 +375,29 @@ def analyze_map_intelligence(file_path: Path, visible: Mapping[str, object]) -> 
     visual_map_score = int(visual_profile.get("map_score", 0) or 0)
     visual_route_score = int(visual_profile.get("route_score", 0) or 0)
     visual_reasons = [str(item) for item in visual_profile.get("reasons", []) or []]
+    visual_metrics = visual_profile.get("metrics", {}) if isinstance(visual_profile.get("metrics", {}), dict) else {}
+    visual_is_blank_canvas = (
+        float(visual_metrics.get("white_ui_ratio", 0) or 0) >= 0.95
+        and float(visual_metrics.get("colorfulness_proxy", 0) or 0) <= 0.03
+        and float(visual_metrics.get("edge_density", 0) or 0) <= 0.035
+        and int(visual_metrics.get("green_ratio", 0) or 0) == 0
+        and int(visual_metrics.get("water_blue_ratio", 0) or 0) == 0
+    )
     textual_google = any(token in lower_content for token in GOOGLE_MAPS_TOKENS) or any(app == "Google Maps" for app in app_names)
     filename_map_signal = any(token in lower_filename for token in ("map", "maps", "route", "directions", "geo", "location"))
     route_text = any(token in lower_content for token in ROUTE_TOKENS)
     filename_route_text = any(token in lower_filename for token in ("route", "directions"))
-    has_map_label = any(_good_place_candidate(x) for x in [*labels, *locations])
+    clean_label_candidates = [x for x in [*labels, *locations] if _good_place_candidate(x)]
+    has_map_label = bool(clean_label_candidates)
 
+    visual_map_usable = visual_map_score >= 34 and not (
+        visual_is_blank_canvas
+        and not (textual_google or map_url_signals or clean_label_candidates or urls or route_text)
+    )
     route_overlay = visual_route_score >= 52 or route_text
     route_confidence = max(visual_route_score, 72 if route_text else 0, 40 if filename_route_text else 0)
     map_url_detected = bool(map_url_signals)
-    detected = textual_google or visual_map_score >= 42 or has_map_label or route_overlay or filename_map_signal or map_url_detected
+    detected = textual_google or visual_map_usable or has_map_label or route_overlay or filename_map_signal or map_url_detected
     first_map_provider = map_url_signals[0].provider if map_url_signals else ""
     visual_provider = str(visual_profile.get("provider_hint", "Unknown") or "Unknown")
     app_detected = "Google Maps" if textual_google else (first_map_provider if map_url_detected else (visual_provider if visual_provider != "Unknown" and detected else "Map Application" if detected else "Unknown"))
@@ -372,13 +425,25 @@ def analyze_map_intelligence(file_path: Path, visible: Mapping[str, object]) -> 
         ],
         limit=6,
     )
+    filename_only_signal = bool(filename_map_signal or filename_location_hints) and not (
+        textual_google or visual_map_usable or has_map_label or route_overlay or map_url_detected
+    )
+    if filename_only_signal:
+        # A filename such as map.png or cairo_scene.jpg is useful as a triage hint,
+        # but it must not become a map screenshot finding or plotted coordinate by itself.
+        detected = bool(filename_location_hints)
+        app_detected = "Filename hint only" if detected else "Unknown"
+        map_type = "Filename location hint only" if detected else "Unknown"
+        route_overlay = False
+        route_confidence = min(route_confidence, 35)
+
     url_places = [signal.place_name for signal in map_url_signals if signal.place_name != "Unavailable"]
     offline_place_names = [str(hit.get("name", "")) for hit in offline_hits if isinstance(hit, dict)]
     raw_places = _unique([*labels, *locations, *url_places, *landmarks, *offline_place_names, candidate_area, candidate_city], limit=16)
     place_candidates = [item for item in raw_places if _good_place_candidate(item) and item != "Unavailable"]
 
     basis: list[str] = []
-    if visual_map_score >= 30:
+    if visual_map_usable and visual_map_score >= 30:
         basis.append("visual-map-colors")
     if visual_route_score >= 30:
         basis.append("route-visual")
@@ -458,8 +523,8 @@ def analyze_map_intelligence(file_path: Path, visible: Mapping[str, object]) -> 
         reasons.extend(route_notes[:2])
 
     if basis == ["filename"]:
-        confidence = min(confidence, 52)
-        reasons.append("confidence capped because the map clue is filename-only")
+        confidence = min(confidence, 35)
+        reasons.append("confidence capped because the map clue is filename-only and cannot prove a map/location claim")
     if any(item in basis for item in ("visual-map-colors", "route-visual", "filename")):
         reasons.append(summarize_visual_map_signals(basis, confidence=confidence))
 
@@ -489,7 +554,9 @@ def analyze_map_intelligence(file_path: Path, visible: Mapping[str, object]) -> 
         limitations.append("Location/map inference is filename-only; treat as weak signal.")
     elif filename_location_hints:
         limitations.append("Filename location hints are retained separately and do not outrank OCR/GPS/map evidence.")
-    if detected and not (textual_google or labels or locations or urls or map_url_signals):
+    if detected and filename_only_signal:
+        limitations.append("Filename-only map/location hint; no screenshot pixels, OCR labels, URL, or coordinate corroborated it.")
+    elif detected and not (textual_google or labels or locations or urls or map_url_signals):
         limitations.append("Visual map pattern was detected without stable OCR text or source URL.")
     if map_url_signals and not any(signal.coordinates for signal in map_url_signals):
         limitations.append("Map URL/provider context was detected, but no stable coordinate pair was recovered from it.")

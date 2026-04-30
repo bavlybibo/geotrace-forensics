@@ -7,7 +7,10 @@ from ..ai.osint_content import analyze_image_content
 from ..ai.osint_scene import predict_osint_scene
 from ..exif_service import extract_basic_image_info
 from ..explainability import apply_explainability
+from ..evidence_claims import attach_claim_links
+from ..timeline_confidence import attach_timeline_confidence
 from ..map_intelligence import analyze_map_intelligence
+from ..map.provider_bridge import build_map_provider_bridge
 from ..models import EvidenceRecord
 from ..ocr_diagnostics import run_ocr_diagnostic
 from ..osint.visual_clue_engine import extract_ctf_visual_clues
@@ -138,6 +141,13 @@ def refresh_record_from_visible_signals(manager: "CaseManager", record: Evidence
         landmarks=record.landmarks_detected,
         offline_hits=record.map_offline_geocoder_hits,
     )
+    map_bridge = build_map_provider_bridge(record)
+    record.map_provider_bridge = map_bridge.to_dict()
+    record.map_provider_links = [item.to_dict() for item in map_bridge.provider_links]
+    record.map_provider_queries = list(map_bridge.search_queries)
+    record.map_reverse_lookup_label = map_bridge.reverse_lookup_label
+    record.map_reverse_lookup_confidence = int(map_bridge.reverse_lookup_confidence)
+    record.map_bridge_status = map_bridge.status
     record.place_candidate_rankings = list(map_intel.place_candidate_rankings)
     record.filename_location_hints = list(getattr(map_intel, "filename_location_hints", []))
 
@@ -199,6 +209,8 @@ def refresh_record_from_visible_signals(manager: "CaseManager", record: Evidence
     manager._apply_osint_signal_profile(record)
     manager._apply_location_estimate(record)
     apply_explainability(record)
+    attach_timeline_confidence(record, manager.records)
+    attach_claim_links(record)
     record.analyst_verdict = manager._derive_analyst_verdict(record)
     record.courtroom_notes = manager._derive_courtroom_notes(record)
     return record

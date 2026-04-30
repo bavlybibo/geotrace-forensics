@@ -103,6 +103,10 @@ class ReviewSelectionMixin:
             self.summary_text.setPlainText(self._build_case_assessment_text())
         if hasattr(self, "dashboard_priority_text"):
             self.dashboard_priority_text.setPlainText(self._build_priority_text())
+        if hasattr(self, "dashboard_evidence_preview"):
+            self.dashboard_evidence_preview.clear_source("Evidence Viewer: no evidence selected. Import/select an item to show image and crop context.")
+            self.dashboard_action_center.setPlainText("Action Center: select evidence to see OCR, map, privacy, and export next steps.")
+            self.dashboard_claim_links_view.setPlainText("Claim-to-evidence links will appear after a record is selected.")
 
 
     def _set_preview_controls(self, enabled: bool) -> None:
@@ -283,6 +287,8 @@ class ReviewSelectionMixin:
             )
             self.agent_insight_view.setPlainText(agent_response.to_panel_text() + ai_context)
         self.review_pivots_text.setPlainText(self._build_summary_text(record))
+        if hasattr(self, "_refresh_dashboard_selection_widgets"):
+            self._refresh_dashboard_selection_widgets(record)
         self._set_decision_selection_state(True)
         self._select_default_tab(record)
         self._highlight_selected_inventory_card()

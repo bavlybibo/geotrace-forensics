@@ -17,6 +17,9 @@ import re
 
 from PIL import Image, ImageStat
 
+from .local_vision_model import run_optional_local_vision
+from .semantic_embeddings import build_semantic_image_profile
+
 
 @dataclass(slots=True)
 class ImageDetailProfile:
@@ -467,6 +470,9 @@ def analyze_image_details(file_path: Path) -> ImageDetailProfile:
         profile.quality_flags.append("image decoder unavailable for visual intelligence")
         return profile
 
+    semantic_profile = build_semantic_image_profile(file_path)
+    local_vision_result = run_optional_local_vision(file_path)
+
     total = max(1, len(rgb_pixels))
     ratios = _ratios(rgb_pixels, alpha_values)
     edge = _edge_density(gray, width, height)
@@ -572,6 +578,28 @@ def analyze_image_details(file_path: Path) -> ImageDetailProfile:
             f"Start manual crop/OCR at {top.get('region')} {top.get('original_box')} because {', '.join(top.get('reasons', [])[:3])}."
         )
 
+    if semantic_profile.fingerprint:
+        cues.append(f"semantic fingerprint {semantic_profile.fingerprint}")
+        for tag in semantic_profile.tags[:4]:
+            layout_hints.append(f"semantic tag: {tag}")
+        profile.performance_notes.extend(semantic_profile.similarity_notes[:2])
+        confidence = max(confidence, min(84, semantic_profile.confidence))
+
+    if local_vision_result.executed:
+        if local_vision_result.scene_label:
+            object_hints.append(f"local vision scene: {local_vision_result.scene_label}")
+        if local_vision_result.caption:
+            cues.append("local vision caption available")
+        for item in local_vision_result.objects[:5]:
+            object_hints.append(f"local vision object: {item.get('label')} ({item.get('confidence', 0)}%)")
+        for item in local_vision_result.landmarks[:4]:
+            object_hints.append(f"local vision landmark candidate: {item.get('label')} ({item.get('confidence', 0)}%)")
+        if local_vision_result.confidence:
+            confidence = max(confidence, min(92, int(local_vision_result.confidence)))
+        profile.performance_notes.append(f"Optional local vision runner executed: {local_vision_result.provider}.")
+    elif local_vision_result.warnings:
+        profile.performance_notes.extend(local_vision_result.warnings[:2])
+
     scene_descriptors = _scene_descriptors(label, ratios, edge, block_var, brightness, contrast)
     review_strategy = _image_review_strategy(
         label=label,
@@ -631,6 +659,8 @@ def analyze_image_details(file_path: Path) -> ImageDetailProfile:
         "detail_complexity_score": review_strategy.get("detail_complexity_score", 0),
         "corroboration_target": review_strategy.get("corroboration_target", "baseline packet"),
         "strategy_safeguards": list(review_strategy.get("safeguards", []) or []),
+        "semantic_fingerprint": semantic_profile.to_dict(),
+        "local_vision": local_vision_result.to_dict(),
         **ratios,
     }
     cue_text = "; ".join(
@@ -645,9 +675,16 @@ def analyze_image_details(file_path: Path) -> ImageDetailProfile:
             limit=5,
         )
     )
+    local_vision_phrase = ""
+    if local_vision_result.executed:
+        local_vision_phrase = f" Local vision: {local_vision_result.provider} executed."
+    elif local_vision_result.available:
+        local_vision_phrase = " Local vision configured but not executed; deterministic signals remain primary."
     profile.summary = (
-        f"Image detail AI v5: {label} ({profile.confidence}% confidence). "
+        f"Image detail AI v6: {label} ({profile.confidence}% confidence). "
         f"Strategy: {review_strategy.get('analysis_strategy', 'balanced visual review')}. "
         f"Key visual cues: {cue_text or 'low-context image'}."
+        f" Semantic fingerprint: {semantic_profile.fingerprint or 'unavailable'}."
+        f"{local_vision_phrase}"
     )
     return profile

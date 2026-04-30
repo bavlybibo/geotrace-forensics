@@ -39,9 +39,12 @@ class RecordTextBuilderMixin:
     def _build_geo_reasoning_text(self, record: EvidenceRecord) -> str:
         lines = [
             f"Geo posture: {record.geo_status}",
-            f"Native: {record.gps_display} ({record.gps_confidence}%)",
-            f"Derived: {record.derived_geo_display} ({record.derived_geo_confidence}%)",
+            f"Native GPS: {record.gps_display} ({record.gps_confidence}%)",
+            f"Derived/map anchor: {record.derived_geo_display} ({record.derived_geo_confidence}%)",
+            f"Provider bridge: {getattr(record, 'map_bridge_status', 'not_evaluated')}",
         ]
+        if getattr(record, 'map_reverse_lookup_label', 'Unavailable') != 'Unavailable':
+            lines.append(f"Reverse lookup: {getattr(record, 'map_reverse_lookup_label')} ({getattr(record, 'map_reverse_lookup_confidence', 0)}%)")
         if record.has_gps:
             lines.extend(["", "Direct map anchor is available.", "Validate place claims against venue context and the time anchor."])
         elif record.derived_geo_display != "Unavailable":
@@ -120,6 +123,7 @@ class RecordTextBuilderMixin:
             f"Dimensions: {record.dimensions} • Frames: {record.frame_count} • Source: {record.source_type} ({record.source_profile_confidence}%)",
             f"Time: {record.timestamp} ({record.timestamp_source}, {record.timestamp_confidence}%)",
             f"Native GPS: {record.gps_display} • Derived: {record.derived_geo_display}",
+            f"Map bridge: {getattr(record, 'map_bridge_status', 'not_evaluated')} • Provider links: {len(getattr(record, 'map_provider_links', []) or [])}",
             f"OCR clue: {ocr_line}",
             f"Hashes: SHA-256 {self._short_hash(record.sha256, 14)} • MD5 {self._short_hash(record.md5, 8)}",
         ]
@@ -193,6 +197,9 @@ class RecordTextBuilderMixin:
             f"Native GPS             : {record.gps_display}",
             f"Derived Geo            : {record.derived_geo_display}",
             f"Derived Geo Source     : {record.derived_geo_source}",
+            f"Map Bridge Status      : {getattr(record, 'map_bridge_status', 'not_evaluated')}",
+            f"Map Reverse Lookup     : {getattr(record, 'map_reverse_lookup_label', 'Unavailable')} ({getattr(record, 'map_reverse_lookup_confidence', 0)}%)",
+            f"Map Provider Links     : {len(getattr(record, 'map_provider_links', []) or [])}",
             f"Possible Geo Clues     : {', '.join(record.possible_geo_clues) if record.possible_geo_clues else 'None'}",
             f"GPS Altitude           : {f'{record.gps_altitude:.2f} m' if record.gps_altitude is not None else 'Unavailable'}",
             f"SHA-256                : {record.sha256}",
@@ -277,6 +284,9 @@ class RecordTextBuilderMixin:
             f"Derived Geo           : {record.derived_geo_display}",
             f"Derived Geo Source    : {record.derived_geo_source}",
             f"Derived Geo Confidence: {record.derived_geo_confidence}%",
+            f"Map Bridge Status     : {getattr(record, 'map_bridge_status', 'not_evaluated')}",
+            f"Provider Links        : {len(getattr(record, 'map_provider_links', []) or [])}",
+            f"Reverse Lookup        : {getattr(record, 'map_reverse_lookup_label', 'Unavailable')} ({getattr(record, 'map_reverse_lookup_confidence', 0)}%)",
             f"Altitude              : {f'{record.gps_altitude:.2f} m' if record.gps_altitude is not None else 'Unavailable'}",
             f"Map Package           : {'Available' if self.current_map_path else 'Not generated'}",
             f"Time Anchor           : {record.timestamp} ({record.timestamp_source}, {record.timestamp_confidence}%)",
@@ -288,6 +298,11 @@ class RecordTextBuilderMixin:
             f"Possible geo clues    : {', '.join(record.possible_geo_clues[:4]) if record.possible_geo_clues else 'None'}",
             f"OCR map labels        : {', '.join(record.ocr_map_labels[:5]) if record.ocr_map_labels else 'None'}",
             f"Source reasons        : {'; '.join(record.source_profile_reasons[:2]) if record.source_profile_reasons else 'None'}",
+            "",
+            "[ MAP PROVIDER BRIDGE ]",
+            "- Privacy default: no remote map/geocoding request is sent unless the analyst opens a link or enables GEOTRACE_ONLINE_MAP_LOOKUP=1.",
+            f"- Search queries: {(' | '.join(getattr(record, 'map_provider_queries', [])[:4]) if getattr(record, 'map_provider_queries', []) else 'None')}",
+            f"- Link targets: {(', '.join([str(item.get('provider', 'provider')) + ':' + str(item.get('kind', 'link')) for item in (getattr(record, 'map_provider_links', []) or [])[:4] if isinstance(item, dict)]) or 'None')}",
             "",
             "[ GPS VERIFICATION LADDER ]",
             "-" * 96,
@@ -350,6 +365,8 @@ class RecordTextBuilderMixin:
                 "No native GPS → explain absence using workflow profile before framing it as suspicious.",
                 "Correlate timestamp anchor with uploads, messages, or witness timeline.",
             ]
+        if getattr(record, 'map_provider_links', []):
+            leads.append('Provider bridge is ready: after privacy approval, open/copy Google/OSM/Apple map links to validate the recovered coordinate or place label.')
         lines = ["[ NEXT PIVOTS ]", "=" * 96]
         lines.extend(f"- {lead}" for lead in leads)
         return "\n".join(lines)
@@ -366,68 +383,132 @@ class RecordTextBuilderMixin:
         parser_issues = sum(1 for r in records if r.parser_status != "Valid" or r.signature_status == "Mismatch")
         dominant_source = max({r.source_type for r in records}, key=lambda s: sum(1 for r in records if r.source_type == s))
         return (
-            f"Total evidence items: {total}\n\n"
-            f"Dominant source profile: {dominant_source}\n\n"
-            f"GPS-bearing media: {gps} | Duplicate clusters: {duplicates}\n\n"
-            f"Priority review items: {high} high-risk | Parser/signature alerts: {parser_issues}\n\n"
-            "Interpretation: the active case summary is computed only from the current isolated case, so previous sessions do not contaminate the dashboard."
+            f"Evidence: {total} item(s) | Source: {dominant_source}\n"
+            f"Geo: {gps} GPS item(s) | Duplicates: {duplicates} cluster(s)\n"
+            f"Priority: {high} high-risk | Parser/signature alerts: {parser_issues}\n"
+            "Scope: current isolated case only; previous sessions do not contaminate the dashboard."
         )
 
     def _build_priority_text(self) -> str:
         records = self.case_manager.records
         if not records:
             return "Case priorities will appear here after evidence is loaded."
-        ordered = sorted(records, key=lambda r: (-r.suspicion_score, r.evidence_id))[:5]
+        ordered = sorted(records, key=lambda r: (-r.suspicion_score, r.evidence_id))[:4]
         lines = []
         for idx, record in enumerate(ordered, start=1):
             why = record.anomaly_reasons[0] if record.anomaly_reasons else "No explicit anomaly note."
             lines.append(
                 f"{idx}. {record.evidence_id} — {record.risk_level} / Score {record.suspicion_score} / {record.source_type}\n"
-                f"   Parser: {record.parser_status} • Signature: {record.signature_status} • Trust: {record.format_trust}\n"
-                f"   Why it matters: {why}"
+                f"   Parser: {record.parser_status} • Signature: {record.signature_status} • Why: {why}"
             )
         lines.extend([
             "",
-            "Recommended next steps:",
-            "Validate time anchors against chats, uploads, or witness timelines.",
-            "Use duplicate clusters to collapse redundant review and isolate derivative media.",
-            "Prioritize decoder failures, signature mismatches, and GPS-enabled files first.",
+            "Next steps:",
+            "Validate time anchors; collapse duplicate clusters; review decoder/signature alerts first.",
         ])
         return "\n\n".join(lines)
 
     def _build_hidden_content_text(self, record: EvidenceRecord) -> str:
+        """Focused digital-risk view: decision first, raw narrative second."""
+        final_call = getattr(record, "digital_final_call", "CLEAR")
+        risk = getattr(record, "digital_risk_score", 0)
+        confidence = getattr(record, "digital_confidence_score", 0)
+        confirmation = getattr(record, "digital_confirmation_level", "clean")
+        one_line = getattr(record, "digital_one_line", "") or "No digital-risk verdict generated."
+        zones = list(getattr(record, "digital_danger_zones", []) or ["none"])
+        evidence = list(getattr(record, "digital_evidence_brief", []) or [])
+        guards = list(getattr(record, "digital_false_positive_guards", []) or [])
+        actions = list(getattr(record, "digital_next_actions", []) or [])
+
         lines = [
-            record.hidden_content_overview,
+            "[ IMAGE THREAT AI ]",
+            f"Final judgement: {getattr(record, 'image_risk_label', 'SAFE')} / {getattr(record, 'image_risk_badge', 'SAFE')}",
+            f"Dangerous: {'YES' if getattr(record, 'image_risk_is_dangerous', False) else 'NO'}",
+            f"Score: {getattr(record, 'image_risk_score', 0)}/100",
+            f"Confidence: {getattr(record, 'image_risk_confidence', 0)}/100",
+            f"Evidence grade: {getattr(record, 'image_risk_evidence_grade', getattr(record, 'image_risk_verdict_payload', {}).get('evidence_grade', 'D'))}",
+            f"Review priority: {getattr(record, 'image_risk_review_priority', getattr(record, 'image_risk_verdict_payload', {}).get('review_priority', 'P3'))}",
+            f"Risk temperature: {getattr(record, 'image_risk_risk_temperature', getattr(record, 'image_risk_verdict_payload', {}).get('risk_temperature', 'COOL'))}",
+            f"Safe handling: {getattr(record, 'image_risk_safe_handling_profile', getattr(record, 'image_risk_verdict_payload', {}).get('safe_handling_profile', 'normal_evidence_preservation'))}",
+            f"Export policy: {getattr(record, 'image_risk_export_policy', getattr(record, 'image_risk_verdict_payload', {}).get('export_policy', 'Shareable after standard case redaction.'))}",
+            f"Summary: {getattr(record, 'image_risk_summary', 'No image threat judgement generated.')}",
+            f"Primary reason: {getattr(record, 'image_risk_primary_reason', 'No primary reason recorded.')}",
             "",
-            f"Primary issue: {record.score_primary_issue}",
-            f"Tier summary: {record.hidden_context_summary}",
-            f"Finding types: {', '.join(record.hidden_finding_types) if record.hidden_finding_types else 'None'}",
-            f"URLs recovered: {len(record.urls_found)}",
-            f"Readable strings kept for context: {len(record.extracted_strings)}",
-            f"Code-like indicators: {len(record.hidden_code_indicators)}",
-            f"Structural warnings: {len(record.hidden_suspicious_embeds)}",
-            f"Container findings: {len(record.hidden_container_findings)}",
-            f"Carved payloads: {len(record.hidden_carved_files)}",
-            f"Carved summary: {record.hidden_carved_summary}",
-            f"Stego / appended-payload note: {record.stego_suspicion}",
-            f"OCR entities: apps {', '.join(record.ocr_app_names) if record.ocr_app_names else 'None'} • locations {', '.join(record.ocr_location_entities[:3]) if record.ocr_location_entities else 'None'}",
-            "",
-            "Interpretation:",
+            "Danger/privacy zones:",
+            *[f"- {item}" for item in list(getattr(record, 'image_risk_danger_zones', []) or ['none'])[:6]],
         ]
-        if record.hidden_code_indicators:
-            lines.append("Potential script-like, credential-like, or payload-bearing content was recovered from inside the container. Treat it as a heuristic lead and verify manually before drawing exploit conclusions.")
-        elif record.hidden_suspicious_embeds:
-            lines.append("No direct code payload was confirmed, but the container has structural hidden-content warnings such as encoded blobs or trailing data that justify a deeper review.")
-        elif record.extracted_strings:
-            lines.append("Readable strings exist inside the file, but they do not currently look like strong executable payloads. They are preserved as analyst context and may still help with provenance, origin tracing, or hidden-message review.")
+        privacy_findings = list(getattr(record, "image_risk_privacy_findings", []) or [])
+        if privacy_findings:
+            lines.extend(["", "Privacy findings:", *[f"- {item}" for item in privacy_findings[:5]]])
+        missing = list(getattr(record, "image_risk_missing_evidence", getattr(record, "image_risk_verdict_payload", {}).get("missing_evidence", [])) or [])
+        if missing:
+            lines.extend(["", "Missing evidence / validation gaps:", *[f"- {item}" for item in missing[:5]]])
+        calibration = list(getattr(record, "image_risk_calibration_notes", getattr(record, "image_risk_verdict_payload", {}).get("calibration_notes", [])) or [])
+        if calibration:
+            lines.extend(["", "Calibration notes:", *[f"- {item}" for item in calibration[:6]]])
+        image_guards = list(getattr(record, "image_risk_false_positive_guards", []) or [])
+        if image_guards:
+            lines.extend(["", "Image false-positive guardrails:", *[f"- {item}" for item in image_guards[:5]]])
+        image_actions = list(getattr(record, "image_risk_next_actions", []) or [])
+        if image_actions:
+            lines.extend(["", "Image-threat checklist:", *[f"- {item}" for item in image_actions[:5]]])
+        lines.extend([
+            "",
+            "[ DIGITAL RISK VERDICT ]",
+            f"Final call: {final_call}",
+            f"Risk score: {risk}/100",
+            f"Confidence: {confidence}/100",
+            f"Confirmation level: {confirmation}",
+            f"One-line result: {one_line}",
+            "",
+            "Where is the risk?",
+            *[f"- {item}" for item in zones[:6]],
+            "",
+            "Why?",
+        ])
+
+        if evidence:
+            lines.extend(f"- {item}" for item in evidence[:6])
         else:
-            lines.append("No readable payload strings or code markers were recovered from the file bytes during the lightweight scan.")
-        if record.hidden_carved_files:
-            lines.extend(["", "Recovered payload files:"])
-            lines.extend([f"- {item}" for item in record.hidden_carved_files[:4]])
-        elif record.hidden_container_findings:
-            lines.extend(["", "Container findings:"])
-            lines.extend([f"- {item}" for item in record.hidden_container_findings[:6]])
+            lines.append("- No strong hidden payload, injection marker, or color-plane artifact was detected.")
+
+        lines.extend([
+            "",
+            "Artifact status:",
+            f"- {getattr(record, 'digital_artifact_status', 'no_artifact_detected')}",
+            "Execution status:",
+            f"- {getattr(record, 'digital_execution_status', 'no_execution_evidence')}",
+        ])
+
+        if guards:
+            lines.extend(["", "False-positive guardrails:"])
+            lines.extend(f"- {item}" for item in guards[:5])
+
+        if actions:
+            lines.extend(["", "Analyst checklist:"])
+            lines.extend(f"- {item}" for item in actions[:5])
+
+        lines.extend([
+            "",
+            "[ COUNTS ]",
+            f"Embedded code-like indicators: {len(record.hidden_code_indicators)}",
+            f"Structural/container warnings: {len(record.hidden_suspicious_embeds) + len(record.hidden_container_findings)}",
+            f"Payload markers: {len(record.hidden_payload_markers)}",
+            f"Carved payloads: {len(record.hidden_carved_files)}",
+            f"LSB strings: {len(record.pixel_lsb_strings)}",
+            f"Alpha/transparent-pixel findings: {len(record.pixel_alpha_findings)}",
+        ])
+
+        # Keep the raw engine notes, but only after the concise verdict.
+        if final_call in {"REVIEW", "ISOLATE"}:
+            lines.extend([
+                "",
+                "[ RAW ENGINE NOTES ]",
+                f"Container summary: {record.hidden_content_overview}",
+                f"Pixel summary: {record.pixel_hidden_summary}",
+            ])
+            if record.hidden_carved_files:
+                lines.extend(["Recovered payload files:", *[f"- {item}" for item in record.hidden_carved_files[:4]]])
         return "\n".join(lines)
 
 
@@ -521,6 +602,7 @@ class RecordTextBuilderMixin:
             f"- Map confidence: {record.map_confidence}%",
             f"- Map answer readiness: {getattr(record, 'map_answer_readiness_label', 'Not answer-ready')} ({getattr(record, 'map_answer_readiness_score', 0)}%)",
             f"- Map anchor status: {getattr(record, 'map_anchor_status', 'No stable map/location anchor recovered.')}",
+            f"- Provider bridge: {getattr(record, 'map_bridge_status', 'not_evaluated')} | links {len(getattr(record, 'map_provider_links', []) or [])}",
             f"- Best location estimate: {record.location_estimate_label} ({record.location_estimate_confidence}%)",
             f"- Estimate scope / tier: {record.location_estimate_scope} / {record.location_estimate_source_tier}",
             f"- OCR language hint: {record.map_ocr_language_hint}",
@@ -563,6 +645,13 @@ class RecordTextBuilderMixin:
             lines.append("- Supporting geo clues: " + ", ".join(record.possible_geo_clues[:4]))
         if record.ocr_map_labels:
             lines.append("- OCR map labels: " + ", ".join(record.ocr_map_labels[:4]))
+        if getattr(record, 'map_reverse_lookup_label', 'Unavailable') != 'Unavailable':
+            lines.append(f"- Reverse lookup: {getattr(record, 'map_reverse_lookup_label')} ({getattr(record, 'map_reverse_lookup_confidence', 0)}%)")
+        if getattr(record, 'map_provider_queries', []):
+            lines.append("- Provider search queries: " + " | ".join(getattr(record, 'map_provider_queries', [])[:4]))
+        provider_targets = [str(item.get('provider', 'provider')) + ':' + str(item.get('kind', 'link')) for item in (getattr(record, 'map_provider_links', []) or [])[:5] if isinstance(item, dict)]
+        if provider_targets:
+            lines.append("- Provider links ready: " + ", ".join(provider_targets))
         if record.location_estimate_summary:
             lines.append("")
             lines.append(record.location_estimate_summary)

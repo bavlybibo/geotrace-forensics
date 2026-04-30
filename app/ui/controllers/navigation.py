@@ -22,11 +22,13 @@ WORKSPACE_PAGES: tuple[WorkspacePageSpec, ...] = (
     WorkspacePageSpec("Dashboard", "_build_dashboard_page", True, "dashboard_page"),
     WorkspacePageSpec("Review", "_build_review_page", True, "review_page"),
     WorkspacePageSpec("Geo", "_build_geo_page", True, "geo_page"),
+    WorkspacePageSpec("Map Workspace", "_build_map_workspace_page", True, "map_workspace_page"),
     WorkspacePageSpec("Timeline", "_build_timeline_page", True, "timeline_page"),
     WorkspacePageSpec("Custody", "_build_custody_page", True, "custody_page"),
     WorkspacePageSpec("Reports", "_build_reports_page", True, "reports_page"),
     WorkspacePageSpec("Cases", "_build_cases_page", True, "cases_page"),
     WorkspacePageSpec("AI Guardian", "_build_ai_guardian_page", True, "ai_guardian_page"),
+    WorkspacePageSpec("System Health", "_build_system_health_page", True, "system_health_page"),
     WorkspacePageSpec("OSINT Workbench", "_build_osint_workbench_page", True, "osint_workbench_page"),
 )
 

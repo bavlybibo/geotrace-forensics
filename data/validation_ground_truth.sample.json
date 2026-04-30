@@ -1,0 +1,14 @@
+{
+  "_schema": "GeoTrace validation ground truth v1",
+  "sample_map.png": {
+    "map_detected": true,
+    "derived_geo": true,
+    "ocr_confidence_min": 40,
+    "expected_note": "Replace with a real validated sample name."
+  },
+  "sample_plain_photo.jpg": {
+    "map_detected": false,
+    "hidden_detected": false,
+    "expected_note": "Use this to catch map/geo false positives."
+  }
+}

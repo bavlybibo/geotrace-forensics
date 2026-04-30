@@ -1,0 +1,25 @@
+{
+  "model_type": "offline-command-runner",
+  "capabilities": [
+    "image_captioning",
+    "object_detection",
+    "landmark_candidates",
+    "map_screenshot_classifier",
+    "clip_similarity"
+  ],
+  "command": "python tools/local_vision_runner_template.py",
+  "runner_sha256": "optional-sha256-of-runner-file",
+  "network_required": false,
+  "max_output_bytes": 200000,
+  "timeout_seconds": 12,
+  "input_mode": "image_path",
+  "output_schema": {
+    "provider": "local-model-name",
+    "caption": "short visual summary",
+    "scene_label": "map/navigation screenshot | outdoor landmark | document | unknown",
+    "confidence": 0.0,
+    "objects": [{"label": "map", "confidence": 0.0}],
+    "landmarks": [{"label": "Cairo Tower", "confidence": 0.0}],
+    "warnings": []
+  }
+}

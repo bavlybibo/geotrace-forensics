@@ -20,6 +20,7 @@ from .evidence_graph import (
 )
 from .evidence_strength import assess_map_strength, assess_record_strength
 from .findings import BatchAIFinding
+from .evidence_fusion import attach_fused_claims_to_finding
 from .planning import assign_priority_ranks, attach_plans
 
 
@@ -95,6 +96,59 @@ def _attach_deep_image_methodology(records: list[EvidenceRecord], findings: Dict
         if confidence >= 72 and regions:
             finding.confidence_delta = max(finding.confidence_delta, 3)
 
+def _attach_image_threat_decision(records: list[EvidenceRecord], findings: Dict[str, BatchAIFinding]) -> None:
+    """Promote the per-image danger decision into the AI review queue."""
+    for record in records:
+        finding = findings[record.evidence_id]
+        label = str(getattr(record, "image_risk_label", "SAFE") or "SAFE").upper()
+        score = int(getattr(record, "image_risk_score", 0) or 0)
+        summary = str(getattr(record, "image_risk_summary", "") or "")
+        primary = str(getattr(record, "image_risk_primary_reason", "") or "")
+        zones = list(getattr(record, "image_risk_danger_zones", []) or [])
+        matrix = list(getattr(record, "image_risk_evidence_matrix", []) or [])
+        actions = list(getattr(record, "image_risk_next_actions", []) or [])
+        payload = getattr(record, "image_risk_verdict_payload", {}) or {}
+        grade = str(getattr(record, "image_risk_evidence_grade", payload.get("evidence_grade", "D")) or "D")
+        priority = str(getattr(record, "image_risk_review_priority", payload.get("review_priority", "P3")) or "P3")
+        temperature = str(getattr(record, "image_risk_risk_temperature", payload.get("risk_temperature", "COOL")) or "COOL")
+        export_policy = str(getattr(record, "image_risk_export_policy", payload.get("export_policy", "")) or "")
+        missing = list(getattr(record, "image_risk_missing_evidence", payload.get("missing_evidence", [])) or [])
+        calibration = list(getattr(record, "image_risk_calibration_notes", payload.get("calibration_notes", [])) or [])
+        if priority in {"P0", "P1"} or grade in {"A", "B", "C"}:
+            finding.add_matrix_line(f"Image AI triage: grade {grade} | priority {priority} | temperature {temperature}")
+            if export_policy:
+                finding.add_action("Apply Image AI export policy: " + export_policy)
+            if missing:
+                finding.add_matrix_line("Image AI missing evidence: " + " | ".join(str(x) for x in missing[:3]))
+            if calibration:
+                finding.add_matrix_line("Image AI calibration: " + " | ".join(str(x) for x in calibration[:4]))
+        if label in {"HIGH", "CRITICAL"} and bool(getattr(record, "image_risk_is_dangerous", False)):
+            finding.add(
+                flag="image_threat_dangerous",
+                reason=primary or summary or "Image Threat AI marked this file dangerous.",
+                contributor="Image Threat AI",
+                delta=22 if label == "CRITICAL" else 16,
+                confidence_delta=5,
+                breakdown_detail=f"image threat verdict {label} ({score}%)",
+            )
+        elif label == "MEDIUM":
+            finding.add_matrix_line(f"Image Threat AI: {label} ({score}%) — {primary or summary}")
+            finding.add_action("Review Image Threat AI medium-risk indicators before export or public sharing.")
+        elif label == "LOW":
+            finding.add_matrix_line(f"Image Threat AI: LOW ({score}%) — privacy/weak-signal review only.")
+        if zones and zones != ["none"]:
+            finding.add_matrix_line("Image danger zones: " + " | ".join(str(x) for x in zones[:4]))
+        if matrix:
+            finding.add_matrix_line("Image risk evidence: " + " | ".join(str(x) for x in matrix[:3]))
+        for action in actions[:2]:
+            finding.add_action(str(action))
+
+
+def _attach_evidence_fusion(records: list[EvidenceRecord], findings: Dict[str, BatchAIFinding]) -> None:
+    for record in records:
+        attach_fused_claims_to_finding(record, findings[record.evidence_id])
+
+
 def _attach_graph_and_readiness(records: list[EvidenceRecord], findings: Dict[str, BatchAIFinding]) -> None:
     edges = build_evidence_graph(records)
     contradictions = explain_contradictions(records)
@@ -144,6 +198,8 @@ def run_ai_batch_assessment(records: Iterable[EvidenceRecord]) -> Dict[str, Batc
         metadata_authenticity_review(record, findings)
     _attach_strength_and_confidence(records_list, findings)
     _attach_deep_image_methodology(records_list, findings)
+    _attach_image_threat_decision(records_list, findings)
+    _attach_evidence_fusion(records_list, findings)
     attach_plans(records_list, findings)
     _attach_graph_and_readiness(records_list, findings)
     assign_priority_ranks(records_list, findings)

@@ -9,6 +9,8 @@ screenshots are not treated as magic location proof.
 """
 
 from dataclasses import asdict, dataclass
+import json
+from pathlib import Path
 import re
 from typing import Any, Iterable
 
@@ -36,6 +38,15 @@ GLOBAL_PLACE_INDEX: list[dict[str, Any]] = [
     {"name": "Pyramids of Giza", "level": "poi", "country": "Egypt", "city": "Giza", "lat": 29.9792, "lon": 31.1342, "aliases": ["pyramids of giza", "giza pyramids", "pyramids", "الأهرامات", "الاهرامات"]},
     {"name": "Stanley Bridge", "level": "poi", "country": "Egypt", "city": "Alexandria", "lat": 31.2242, "lon": 29.9668, "aliases": ["stanley bridge", "stanley", "كوبرى ستانلى", "كوبري ستانلي"]},
     {"name": "Bibliotheca Alexandrina", "level": "poi", "country": "Egypt", "city": "Alexandria", "lat": 31.2089, "lon": 29.9092, "aliases": ["bibliotheca alexandrina", "alexandria library", "مكتبة الإسكندرية", "مكتبه الاسكندريه"]},
+    {"name": "Spain", "level": "country", "country": "Spain", "city": "Spain", "lat": 40.4637, "lon": -3.7492, "aliases": ["spain", "españa", "espana", "إسبانيا", "اسبانيا"]},
+    {"name": "Madrid", "level": "city", "country": "Spain", "city": "Madrid", "lat": 40.4168, "lon": -3.7038, "aliases": ["madrid", "مدريد"]},
+    {"name": "Barcelona", "level": "city", "country": "Spain", "city": "Barcelona", "lat": 41.3851, "lon": 2.1734, "aliases": ["barcelona", "برشلونة"]},
+    {"name": "Valencia", "level": "city", "country": "Spain", "city": "Valencia", "lat": 39.4699, "lon": -0.3763, "aliases": ["valencia", "valència", "فالنسيا"]},
+    {"name": "Zaragoza", "level": "city", "country": "Spain", "city": "Zaragoza", "lat": 41.6488, "lon": -0.8891, "aliases": ["zaragoza", "سرقسطة"]},
+    {"name": "Seville", "level": "city", "country": "Spain", "city": "Seville", "lat": 37.3891, "lon": -5.9845, "aliases": ["seville", "sevilla", "إشبيلية", "اشبيلية"]},
+    {"name": "Portugal", "level": "country", "country": "Portugal", "city": "Portugal", "lat": 39.3999, "lon": -8.2245, "aliases": ["portugal", "البرتغال"]},
+    {"name": "Lisbon", "level": "city", "country": "Portugal", "city": "Lisbon", "lat": 38.7223, "lon": -9.1393, "aliases": ["lisbon", "lisboa", "لشبونة", "لشبونه"]},
+    {"name": "Porto", "level": "city", "country": "Portugal", "city": "Porto", "lat": 41.1579, "lon": -8.6291, "aliases": ["porto", "oporto", "بورتو"]},
     {"name": "Eiffel Tower", "level": "poi", "country": "France", "city": "Paris", "lat": 48.8584, "lon": 2.2945, "aliases": ["eiffel tower", "tour eiffel"]},
     {"name": "Louvre Museum", "level": "poi", "country": "France", "city": "Paris", "lat": 48.8606, "lon": 2.3376, "aliases": ["louvre", "louvre museum", "musée du louvre"]},
     {"name": "Colosseum", "level": "poi", "country": "Italy", "city": "Rome", "lat": 41.8902, "lon": 12.4922, "aliases": ["colosseum", "colosseo"]},
@@ -99,10 +110,55 @@ def _route_endpoint_cleanup(value: str, *, side: str) -> str:
     return cleaned
 
 
+def _load_extra_place_index() -> list[dict[str, Any]]:
+    path = Path(__file__).resolve().parents[3] / "data" / "osint" / "local_geocoder_places.json"
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    rows = data.get("places", data) if isinstance(data, dict) else data
+    if not isinstance(rows, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name", "")).strip()
+        if not name:
+            continue
+        aliases = row.get("aliases", [])
+        if not isinstance(aliases, list):
+            aliases = [name]
+        out.append({
+            "name": name,
+            "level": str(row.get("level", "poi")),
+            "country": str(row.get("country", "Unknown")),
+            "city": str(row.get("city", "Unknown")),
+            "lat": row.get("lat", row.get("latitude")),
+            "lon": row.get("lon", row.get("longitude")),
+            "aliases": aliases or [name],
+        })
+    return out
+
+
+def _combined_place_index() -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    merged: list[dict[str, Any]] = []
+    for item in _load_extra_place_index() + GLOBAL_PLACE_INDEX:
+        key = str(item.get("name", "")).strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    return merged
+
+
 def match_offline_places(texts: Iterable[str], *, limit: int = 8) -> list[dict[str, Any]]:
     blob = _norm("\n".join(str(x or "") for x in texts)).lower()
     hits: list[OfflinePlaceHit] = []
-    for item in GLOBAL_PLACE_INDEX:
+    for item in _combined_place_index():
         aliases = [str(a) for a in item.get("aliases", [])]
         alias_hits = [alias for alias in aliases if _norm(alias).lower() in blob]
         if not alias_hits:
@@ -203,3 +259,138 @@ def build_interactive_map_payload(*, latitude: float | None, longitude: float | 
         "source": source,
         "privacy": "Offline payload only. Render locally; do not upload case evidence to third-party maps without approval.",
     }
+
+
+# ---------------------------------------------------------------------------
+# v12.10.25: enriched offline geocoder index + country/city normalization
+# ---------------------------------------------------------------------------
+try:
+    from .geo_normalizer import enrich_aliases, normalize_city, normalize_country, score_alias_against_text
+except Exception:  # pragma: no cover - keeps old portable releases alive if file is removed
+    enrich_aliases = None  # type: ignore[assignment]
+    normalize_city = None  # type: ignore[assignment]
+    normalize_country = None  # type: ignore[assignment]
+    score_alias_against_text = None  # type: ignore[assignment]
+
+
+def _load_generated_place_index() -> list[dict[str, Any]]:
+    """Load optional generated index created by tools/build_offline_geocoder_index.py."""
+    path = Path(__file__).resolve().parents[3] / "data" / "osint" / "generated_geocoder_index.json"
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    rows = data.get("places", data) if isinstance(data, dict) else data
+    return rows if isinstance(rows, list) else []
+
+
+def _combined_place_index() -> list[dict[str, Any]]:  # type: ignore[override]
+    """Merge generated imports, local seed JSON, and hardcoded fallback rows."""
+    seen: set[str] = set()
+    merged: list[dict[str, Any]] = []
+    for item in _load_generated_place_index() + _load_extra_place_index() + GLOBAL_PLACE_INDEX:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        lat = item.get("lat", item.get("latitude"))
+        lon = item.get("lon", item.get("longitude"))
+        key = f"{name}|{lat}|{lon}".casefold()
+        if not name or key in seen:
+            continue
+        seen.add(key)
+        country = str(item.get("country", "Unknown"))
+        city = str(item.get("city", "Unknown"))
+        if normalize_country:
+            country = normalize_country(country)  # type: ignore[misc]
+        if normalize_city:
+            city, country_from_city = normalize_city(city, country=country)  # type: ignore[misc]
+            if country in {"", "Unknown"} and country_from_city:
+                country = country_from_city
+        aliases = item.get("aliases", [])
+        if not isinstance(aliases, list):
+            aliases = [str(aliases)]
+        if enrich_aliases:
+            # Do not let a city/country alias make every POI in that city match.
+            # POIs/areas are matched by their own names/aliases; city/country rows
+            # are matched by their wider alias sets.
+            level_for_aliases = str(item.get("level", "poi")).lower()
+            if level_for_aliases in {"city", "country"}:
+                aliases = enrich_aliases(name, aliases, city=city, country=country)  # type: ignore[misc]
+            else:
+                aliases = enrich_aliases(name, aliases, city="", country="")  # type: ignore[misc]
+        row = dict(item)
+        row.update({"name": name, "country": country or "Unknown", "city": city or "Unknown", "aliases": aliases})
+        merged.append(row)
+    return merged
+
+
+def match_offline_places(texts: Iterable[str], *, limit: int = 8) -> list[dict[str, Any]]:  # type: ignore[override]
+    """Match visible/OCR text against the offline place index with exact + fuzzy ranking.
+
+    This returns *leads* only. It is intentionally conservative: filename-only or
+    weak fuzzy text should not become native GPS/device-location evidence.
+    """
+    segments = [_norm(str(x or "")) for x in texts if str(x or "").strip()]
+    if not segments:
+        return []
+    hits: list[OfflinePlaceHit] = []
+    for item in _combined_place_index():
+        name = str(item.get("name", "Unknown"))
+        aliases = [str(a) for a in item.get("aliases", []) if str(a or "").strip()]
+        alias_hits: list[str] = []
+        best_text_score = 0
+        for alias in aliases:
+            if score_alias_against_text:
+                score, label = score_alias_against_text(alias, segments)  # type: ignore[misc]
+            else:
+                score = 100 if _norm(alias).lower() in _norm("\n".join(segments)).lower() else 0
+                label = alias if score else ""
+            if score > best_text_score:
+                best_text_score = score
+            if label:
+                alias_hits.append(label)
+        if best_text_score < 70:
+            continue
+        level = str(item.get("level", "poi"))
+        source_conf = int(item.get("confidence", 68) or 68)
+        level_bonus = {"poi": 8, "area": 4, "city": 0, "country": -4}.get(level, 2)
+        source_name = str(item.get("source", "")).lower()
+        generated_bonus = 4 if source_name.startswith(("geonames", "natural_earth", "wikidata", "json_import", "csv_import")) else 0
+        score = max(45, min(96, int(best_text_score * 0.62 + source_conf * 0.28 + level_bonus + generated_bonus)))
+        try:
+            lat = float(item["lat"]) if item.get("lat") is not None else None
+            lon = float(item["lon"]) if item.get("lon") is not None else None
+        except Exception:
+            lat, lon = None, None
+        hits.append(
+            OfflinePlaceHit(
+                name=name,
+                level=level,
+                country=str(item.get("country", "Unknown")),
+                city=str(item.get("city", "Unknown")),
+                latitude=lat,
+                longitude=lon,
+                confidence=score,
+                source=str(item.get("source", "offline-geocoder-index")),
+                aliases_hit=alias_hits[:6],
+                limitations=[
+                    "Offline text/alias match only; not native GPS.",
+                    "Verify with map screenshot, source URL, EXIF GPS, or manual analyst review before reporting.",
+                ],
+            )
+        )
+    hits.sort(key=lambda hit: (-hit.confidence, {"poi": 0, "area": 1, "city": 2, "country": 3}.get(hit.level, 9), hit.name.lower()))
+    return [hit.to_dict() for hit in hits[:limit]]
+
+
+def geocoder_data_sources() -> list[dict[str, str]]:
+    """Human-readable source plan for System Health / documentation."""
+    return [
+        {"name": "GeoNames", "role": "large city/place index + alternate names", "mode": "offline dump import"},
+        {"name": "Natural Earth Populated Places", "role": "curated global cities/capitals seed", "mode": "offline CSV/GeoJSON import"},
+        {"name": "OpenStreetMap/Nominatim", "role": "optional self-hosted geocoder/search", "mode": "disabled unless analyst enables online/self-hosted connector"},
+        {"name": "Wikidata", "role": "POI coordinates + multilingual labels", "mode": "optional exported JSON/CSV import"},
+    ]
+

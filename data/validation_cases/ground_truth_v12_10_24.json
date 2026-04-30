@@ -1,0 +1,64 @@
+{
+  "_schema": "GeoTrace validation ground truth v12.10.24",
+  "_accuracy_target": {
+    "native_gps_detection": ">=95% on labelled camera originals",
+    "map_screenshot_mode": ">=88% on labelled map screenshots",
+    "coordinate_extraction": ">=82% when coordinates are visibly present",
+    "false_critical_rate": "<=3% on privacy-only/location-only images"
+  },
+  "gps_native/original_camera_gps_01.jpg": {
+    "has_gps": true,
+    "derived_geo": false,
+    "map_detected": false,
+    "hidden_payload": false,
+    "parser_failure": false,
+    "image_detail_generated": true,
+    "expected_note": "Manually verified original camera file with native EXIF GPS."
+  },
+  "map_screenshots/google_maps_route_01.png": {
+    "has_gps": false,
+    "derived_geo": true,
+    "map_detected": true,
+    "map_route_detected": true,
+    "hidden_payload": false,
+    "ocr_confidence_min": 30,
+    "image_detail_generated": true,
+    "expected_note": "Manually labelled map screenshot. Expected GeoTrace classification: Derived Geo Anchor or Map Screenshot Mode, not Native GPS."
+  },
+  "map_screenshots/osm_coordinate_context_01.png": {
+    "has_gps": false,
+    "derived_geo": true,
+    "map_detected": true,
+    "hidden_payload": false,
+    "expected_note": "Visible coordinate/context-menu screenshot; coordinate is derived from image content."
+  },
+  "no_gps_exports/social_export_01.jpg": {
+    "has_gps": false,
+    "derived_geo": false,
+    "map_detected": false,
+    "hidden_payload": false,
+    "parser_failure": false,
+    "expected_note": "Known recompressed/exported image with stripped metadata."
+  },
+  "privacy_sensitive/location_plus_phone_01.png": {
+    "has_gps": false,
+    "derived_geo": true,
+    "map_detected": true,
+    "hidden_payload": false,
+    "expected_note": "Privacy exposure should not become CRITICAL unless technical payload evidence exists."
+  },
+  "hidden_payload/safe_synthetic_embedded_payload_01.png": {
+    "has_gps": false,
+    "map_detected": false,
+    "hidden_payload": true,
+    "hidden_detected": true,
+    "parser_failure": false,
+    "expected_note": "Safe lab-created fixture with appended/embedded payload marker for scanner validation."
+  },
+  "corrupt_or_tampered/bad_signature_01.jpg": {
+    "has_gps": false,
+    "hidden_payload": false,
+    "parser_failure": true,
+    "expected_note": "Known malformed header/signature mismatch fixture."
+  }
+}

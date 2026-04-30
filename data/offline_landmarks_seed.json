@@ -1,0 +1,26 @@
+{
+  "schema": "GeoTrace offline landmark seed v1",
+  "notes": "Extend locally with approved offline landmarks. Keep source and confidence for each row.",
+  "places": [
+    {
+      "name": "Cairo Tower",
+      "city": "Cairo",
+      "country": "Egypt",
+      "level": "poi",
+      "latitude": 30.0459,
+      "longitude": 31.2243,
+      "source": "seed",
+      "confidence": 72
+    },
+    {
+      "name": "Egyptian Museum",
+      "city": "Cairo",
+      "country": "Egypt",
+      "level": "poi",
+      "latitude": 30.0478,
+      "longitude": 31.2336,
+      "source": "seed",
+      "confidence": 72
+    }
+  ]
+}

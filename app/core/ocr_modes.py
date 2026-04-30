@@ -32,7 +32,7 @@ class OCRCacheKey:
     mode: str
     force: bool
     language: str
-    version: str = "v7"
+    version: str = "v9-visual-coordinate-fallback"
 
     def filename(self) -> str:
         raw = f"{self.file_sha256}.{self.mode}.{self.force}.{self.language}.{self.version}.ocr.json"

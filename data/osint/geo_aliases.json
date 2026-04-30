@@ -1,0 +1,773 @@
+{
+  "schema": "GeoTrace geo alias normalization v1",
+  "notes": [
+    "Offline aliases are triage helpers only; they never prove device location.",
+    "Aliases intentionally include Arabic/English/common transliterations for OCR and map screenshots.",
+    "Use tools/build_offline_geocoder_index.py to generate a much larger local index from GeoNames/Natural Earth exports."
+  ],
+  "countries": [
+    {
+      "name": "Egypt",
+      "iso2": "EG",
+      "aliases": [
+        "egypt",
+        "misr",
+        "masr",
+        "مصر",
+        "جمهورية مصر العربية",
+        "egypte"
+      ]
+    },
+    {
+      "name": "Saudi Arabia",
+      "iso2": "SA",
+      "aliases": [
+        "saudi arabia",
+        "ksa",
+        "saudi",
+        "السعودية",
+        "المملكة العربية السعودية"
+      ]
+    },
+    {
+      "name": "United Arab Emirates",
+      "iso2": "AE",
+      "aliases": [
+        "united arab emirates",
+        "uae",
+        "emirates",
+        "الإمارات",
+        "الامارات",
+        "دولة الإمارات"
+      ]
+    },
+    {
+      "name": "Qatar",
+      "iso2": "QA",
+      "aliases": [
+        "qatar",
+        "قطر"
+      ]
+    },
+    {
+      "name": "Kuwait",
+      "iso2": "KW",
+      "aliases": [
+        "kuwait",
+        "الكويت"
+      ]
+    },
+    {
+      "name": "Bahrain",
+      "iso2": "BH",
+      "aliases": [
+        "bahrain",
+        "البحرين"
+      ]
+    },
+    {
+      "name": "Oman",
+      "iso2": "OM",
+      "aliases": [
+        "oman",
+        "عمان",
+        "سلطنة عمان"
+      ]
+    },
+    {
+      "name": "Jordan",
+      "iso2": "JO",
+      "aliases": [
+        "jordan",
+        "الأردن",
+        "الاردن"
+      ]
+    },
+    {
+      "name": "Lebanon",
+      "iso2": "LB",
+      "aliases": [
+        "lebanon",
+        "لبنان"
+      ]
+    },
+    {
+      "name": "Morocco",
+      "iso2": "MA",
+      "aliases": [
+        "morocco",
+        "المغرب",
+        "maroc"
+      ]
+    },
+    {
+      "name": "Algeria",
+      "iso2": "DZ",
+      "aliases": [
+        "algeria",
+        "الجزائر"
+      ]
+    },
+    {
+      "name": "Tunisia",
+      "iso2": "TN",
+      "aliases": [
+        "tunisia",
+        "تونس"
+      ]
+    },
+    {
+      "name": "Türkiye",
+      "iso2": "TR",
+      "aliases": [
+        "turkey",
+        "türkiye",
+        "turkiye",
+        "تركيا"
+      ]
+    },
+    {
+      "name": "Spain",
+      "iso2": "ES",
+      "aliases": [
+        "spain",
+        "españa",
+        "espana",
+        "إسبانيا",
+        "اسبانيا"
+      ]
+    },
+    {
+      "name": "Portugal",
+      "iso2": "PT",
+      "aliases": [
+        "portugal",
+        "البرتغال"
+      ]
+    },
+    {
+      "name": "France",
+      "iso2": "FR",
+      "aliases": [
+        "france",
+        "فرنسا"
+      ]
+    },
+    {
+      "name": "Italy",
+      "iso2": "IT",
+      "aliases": [
+        "italy",
+        "italia",
+        "إيطاليا",
+        "ايطاليا"
+      ]
+    },
+    {
+      "name": "Germany",
+      "iso2": "DE",
+      "aliases": [
+        "germany",
+        "deutschland",
+        "ألمانيا",
+        "المانيا"
+      ]
+    },
+    {
+      "name": "United Kingdom",
+      "iso2": "GB",
+      "aliases": [
+        "united kingdom",
+        "uk",
+        "britain",
+        "great britain",
+        "المملكة المتحدة",
+        "بريطانيا"
+      ]
+    },
+    {
+      "name": "United States",
+      "iso2": "US",
+      "aliases": [
+        "united states",
+        "usa",
+        "u.s.a",
+        "us",
+        "america",
+        "الولايات المتحدة",
+        "امريكا"
+      ]
+    },
+    {
+      "name": "Brazil",
+      "iso2": "BR",
+      "aliases": [
+        "brazil",
+        "brasil",
+        "البرازيل"
+      ]
+    },
+    {
+      "name": "Japan",
+      "iso2": "JP",
+      "aliases": [
+        "japan",
+        "اليابان",
+        "日本"
+      ]
+    },
+    {
+      "name": "China",
+      "iso2": "CN",
+      "aliases": [
+        "china",
+        "الصين",
+        "中国"
+      ]
+    },
+    {
+      "name": "India",
+      "iso2": "IN",
+      "aliases": [
+        "india",
+        "الهند"
+      ]
+    },
+    {
+      "name": "Australia",
+      "iso2": "AU",
+      "aliases": [
+        "australia",
+        "أستراليا",
+        "استراليا"
+      ]
+    },
+    {
+      "name": "Canada",
+      "iso2": "CA",
+      "aliases": [
+        "canada",
+        "كندا"
+      ]
+    },
+    {
+      "name": "South Africa",
+      "iso2": "ZA",
+      "aliases": [
+        "south africa",
+        "جنوب أفريقيا",
+        "جنوب افريقيا"
+      ]
+    },
+    {
+      "name": "Mexico",
+      "iso2": "MX",
+      "aliases": [
+        "mexico",
+        "méxico",
+        "المكسيك"
+      ]
+    },
+    {
+      "name": "Peru",
+      "iso2": "PE",
+      "aliases": [
+        "peru",
+        "بيرو"
+      ]
+    },
+    {
+      "name": "Greece",
+      "iso2": "GR",
+      "aliases": [
+        "greece",
+        "اليونان"
+      ]
+    },
+    {
+      "name": "Netherlands",
+      "iso2": "NL",
+      "aliases": [
+        "netherlands",
+        "holland",
+        "هولندا"
+      ]
+    }
+  ],
+  "cities": [
+    {
+      "name": "Cairo",
+      "country": "Egypt",
+      "aliases": [
+        "cairo",
+        "القاهرة",
+        "القاهره",
+        "greater cairo",
+        "وسط البلد",
+        "downtown cairo"
+      ]
+    },
+    {
+      "name": "Giza",
+      "country": "Egypt",
+      "aliases": [
+        "giza",
+        "الجيزة",
+        "الجيزه",
+        "جيزة",
+        "جيزه"
+      ]
+    },
+    {
+      "name": "Alexandria",
+      "country": "Egypt",
+      "aliases": [
+        "alexandria",
+        "الإسكندرية",
+        "الاسكندرية",
+        "اسكندرية"
+      ]
+    },
+    {
+      "name": "Luxor",
+      "country": "Egypt",
+      "aliases": [
+        "luxor",
+        "الأقصر",
+        "الاقصر"
+      ]
+    },
+    {
+      "name": "Aswan",
+      "country": "Egypt",
+      "aliases": [
+        "aswan",
+        "أسوان",
+        "اسوان"
+      ]
+    },
+    {
+      "name": "Sharm El Sheikh",
+      "country": "Egypt",
+      "aliases": [
+        "sharm el sheikh",
+        "sharm el-sheikh",
+        "شرم الشيخ"
+      ]
+    },
+    {
+      "name": "Hurghada",
+      "country": "Egypt",
+      "aliases": [
+        "hurghada",
+        "الغردقة",
+        "الغردقه"
+      ]
+    },
+    {
+      "name": "Riyadh",
+      "country": "Saudi Arabia",
+      "aliases": [
+        "riyadh",
+        "الرياض"
+      ]
+    },
+    {
+      "name": "Jeddah",
+      "country": "Saudi Arabia",
+      "aliases": [
+        "jeddah",
+        "جدة",
+        "جده"
+      ]
+    },
+    {
+      "name": "Mecca",
+      "country": "Saudi Arabia",
+      "aliases": [
+        "mecca",
+        "makkah",
+        "مكة",
+        "مكه"
+      ]
+    },
+    {
+      "name": "Medina",
+      "country": "Saudi Arabia",
+      "aliases": [
+        "medina",
+        "madinah",
+        "المدينة",
+        "المدينه"
+      ]
+    },
+    {
+      "name": "Dubai",
+      "country": "United Arab Emirates",
+      "aliases": [
+        "dubai",
+        "دبي"
+      ]
+    },
+    {
+      "name": "Abu Dhabi",
+      "country": "United Arab Emirates",
+      "aliases": [
+        "abu dhabi",
+        "أبوظبي",
+        "ابوظبي"
+      ]
+    },
+    {
+      "name": "Sharjah",
+      "country": "United Arab Emirates",
+      "aliases": [
+        "sharjah",
+        "الشارقة",
+        "الشارقه"
+      ]
+    },
+    {
+      "name": "Doha",
+      "country": "Qatar",
+      "aliases": [
+        "doha",
+        "الدوحة",
+        "الدوحه"
+      ]
+    },
+    {
+      "name": "Kuwait City",
+      "country": "Kuwait",
+      "aliases": [
+        "kuwait city",
+        "مدينة الكويت",
+        "مدينه الكويت"
+      ]
+    },
+    {
+      "name": "Manama",
+      "country": "Bahrain",
+      "aliases": [
+        "manama",
+        "المنامة",
+        "المنامه"
+      ]
+    },
+    {
+      "name": "Muscat",
+      "country": "Oman",
+      "aliases": [
+        "muscat",
+        "مسقط"
+      ]
+    },
+    {
+      "name": "Amman",
+      "country": "Jordan",
+      "aliases": [
+        "amman",
+        "عمّان",
+        "عمان"
+      ]
+    },
+    {
+      "name": "Beirut",
+      "country": "Lebanon",
+      "aliases": [
+        "beirut",
+        "بيروت"
+      ]
+    },
+    {
+      "name": "Casablanca",
+      "country": "Morocco",
+      "aliases": [
+        "casablanca",
+        "الدار البيضاء",
+        "كازابلانكا"
+      ]
+    },
+    {
+      "name": "Rabat",
+      "country": "Morocco",
+      "aliases": [
+        "rabat",
+        "الرباط"
+      ]
+    },
+    {
+      "name": "Marrakesh",
+      "country": "Morocco",
+      "aliases": [
+        "marrakesh",
+        "marrakech",
+        "مراكش"
+      ]
+    },
+    {
+      "name": "Algiers",
+      "country": "Algeria",
+      "aliases": [
+        "algiers",
+        "الجزائر العاصمة",
+        "مدينة الجزائر"
+      ]
+    },
+    {
+      "name": "Tunis",
+      "country": "Tunisia",
+      "aliases": [
+        "tunis",
+        "تونس العاصمة",
+        "مدينة تونس"
+      ]
+    },
+    {
+      "name": "Istanbul",
+      "country": "Türkiye",
+      "aliases": [
+        "istanbul",
+        "إسطنبول",
+        "اسطنبول"
+      ]
+    },
+    {
+      "name": "Ankara",
+      "country": "Türkiye",
+      "aliases": [
+        "ankara",
+        "أنقرة",
+        "انقره"
+      ]
+    },
+    {
+      "name": "Madrid",
+      "country": "Spain",
+      "aliases": [
+        "madrid",
+        "مدريد"
+      ]
+    },
+    {
+      "name": "Barcelona",
+      "country": "Spain",
+      "aliases": [
+        "barcelona",
+        "برشلونة",
+        "برشلونه"
+      ]
+    },
+    {
+      "name": "Valencia",
+      "country": "Spain",
+      "aliases": [
+        "valencia",
+        "valència",
+        "فالنسيا"
+      ]
+    },
+    {
+      "name": "Seville",
+      "country": "Spain",
+      "aliases": [
+        "seville",
+        "sevilla",
+        "إشبيلية",
+        "اشبيلية"
+      ]
+    },
+    {
+      "name": "Lisbon",
+      "country": "Portugal",
+      "aliases": [
+        "lisbon",
+        "lisboa",
+        "لشبونة",
+        "لشبونه"
+      ]
+    },
+    {
+      "name": "Porto",
+      "country": "Portugal",
+      "aliases": [
+        "porto",
+        "oporto",
+        "بورتو"
+      ]
+    },
+    {
+      "name": "Paris",
+      "country": "France",
+      "aliases": [
+        "paris",
+        "باريس"
+      ]
+    },
+    {
+      "name": "Lyon",
+      "country": "France",
+      "aliases": [
+        "lyon",
+        "ليون"
+      ]
+    },
+    {
+      "name": "Marseille",
+      "country": "France",
+      "aliases": [
+        "marseille",
+        "مرسيليا"
+      ]
+    },
+    {
+      "name": "Rome",
+      "country": "Italy",
+      "aliases": [
+        "rome",
+        "roma",
+        "روما"
+      ]
+    },
+    {
+      "name": "Milan",
+      "country": "Italy",
+      "aliases": [
+        "milan",
+        "milano",
+        "ميلانو"
+      ]
+    },
+    {
+      "name": "Venice",
+      "country": "Italy",
+      "aliases": [
+        "venice",
+        "venezia",
+        "البندقية",
+        "البندقيه"
+      ]
+    },
+    {
+      "name": "Berlin",
+      "country": "Germany",
+      "aliases": [
+        "berlin",
+        "برلين"
+      ]
+    },
+    {
+      "name": "Munich",
+      "country": "Germany",
+      "aliases": [
+        "munich",
+        "münchen",
+        "ميونخ"
+      ]
+    },
+    {
+      "name": "London",
+      "country": "United Kingdom",
+      "aliases": [
+        "london",
+        "لندن"
+      ]
+    },
+    {
+      "name": "Manchester",
+      "country": "United Kingdom",
+      "aliases": [
+        "manchester",
+        "مانشستر"
+      ]
+    },
+    {
+      "name": "New York",
+      "country": "United States",
+      "aliases": [
+        "new york",
+        "nyc",
+        "new york city",
+        "نيويورك"
+      ]
+    },
+    {
+      "name": "Los Angeles",
+      "country": "United States",
+      "aliases": [
+        "los angeles",
+        "la",
+        "لوس أنجلوس",
+        "لوس انجلوس"
+      ]
+    },
+    {
+      "name": "San Francisco",
+      "country": "United States",
+      "aliases": [
+        "san francisco",
+        "سان فرانسيسكو"
+      ]
+    },
+    {
+      "name": "Tokyo",
+      "country": "Japan",
+      "aliases": [
+        "tokyo",
+        "طوكيو",
+        "東京"
+      ]
+    },
+    {
+      "name": "Kyoto",
+      "country": "Japan",
+      "aliases": [
+        "kyoto",
+        "كيوتو",
+        "京都"
+      ]
+    },
+    {
+      "name": "Sydney",
+      "country": "Australia",
+      "aliases": [
+        "sydney",
+        "سيدني"
+      ]
+    },
+    {
+      "name": "Toronto",
+      "country": "Canada",
+      "aliases": [
+        "toronto",
+        "تورونتو"
+      ]
+    },
+    {
+      "name": "Cape Town",
+      "country": "South Africa",
+      "aliases": [
+        "cape town",
+        "كيب تاون"
+      ]
+    },
+    {
+      "name": "Rio de Janeiro",
+      "country": "Brazil",
+      "aliases": [
+        "rio de janeiro",
+        "rio",
+        "ريو دي جانيرو"
+      ]
+    },
+    {
+      "name": "Mexico City",
+      "country": "Mexico",
+      "aliases": [
+        "mexico city",
+        "ciudad de mexico",
+        "مكسيكو سيتي"
+      ]
+    }
+  ]
+}

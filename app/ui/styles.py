@@ -135,7 +135,6 @@ QLabel#MicroBadge[semantic="parser"] { border-color:#2f8160; color:#b7ffd9; }
 QLabel#MicroBadge[semantic="time"] { border-color:#8e6e2c; color:#ffe0a8; }
 QLabel#MicroBadge[semantic="source"] { border-color:#6659aa; color:#e0d7ff; }
 QLabel#MicroBadge[semantic="gps"] { border-color:#2a7f87; color:#bbfffa; }
-"
 
 QFrame#PanelFrame, QFrame#CompactPanel {
     background-color:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 rgba(7,20,31,0.98), stop:1 rgba(9,27,40,0.96));
@@ -201,7 +200,6 @@ QLabel#SectionLabel {
 }
 QLabel#SectionMetaLabel { color:#9ebed7; line-height:1.3; }
 
-"
 
 QFrame#HeroPanel {
     background-color:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 rgba(7,20,31,1.0), stop:0.48 rgba(8,31,48,0.98), stop:1 rgba(5,14,23,0.98));
@@ -243,5 +241,138 @@ QLabel#TitleLabel {
     font-size:24pt;
     letter-spacing:0.4px;
 }
+
+/* v12.10.18 UI cleanup: clearer density, better page tabs, readable empty states */
+QFrame#CommandBarFrame {
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #07131f, stop:1 #0a1d2c);
+    border:1px solid #173956;
+    border-radius:18px;
+}
+QFrame#PageNavFrame {
+    background-color:#06111b;
+    border:1px solid #132c43;
+    border-radius:16px;
+}
+QPushButton#PageButton, QPushButton#PageButtonActive {
+    min-height:28px;
+    padding:7px 10px;
+    font-size:9.3pt;
+}
+QLabel#ModeBadgeStrong {
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #103954, stop:1 #0f637f);
+    border:1px solid #5bdfff;
+    border-radius:13px;
+    padding:7px 11px;
+    color:#ecfbff;
+    font-weight:800;
+}
+QFrame#EmptyStatePanel {
+    background-color:#06101a;
+    border:1px dashed #28516f;
+    border-radius:18px;
+}
+QFrame#DashboardHeroCompact {
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #071727, stop:1 #06111b);
+    border:1px solid #1e4968;
+    border-radius:18px;
+}
+QTextEdit#NarrativeView, QPlainTextEdit#TerminalView {
+    line-height: 125%;
+}
+QListWidget#EvidenceList {
+    padding:8px;
+}
+QFrame#EvidenceListCard {
+    min-height:118px;
+}
+QLabel#EvidenceCardTitle {
+    font-size:10.2pt;
+}
+QLabel#EvidenceCardMeta, QLabel#EvidenceCardBadges, QLabel#EvidenceCardSupport {
+    line-height:1.2;
+}
+QTabWidget#ReviewTabs QTabBar::tab {
+    min-width:84px;
+    padding:9px 12px;
+}
+
+
+
+/* v12.10.19 AI Guardian Plus: clearer AI colors and threat-state palette */
+QFrame#AIGuardianHero {
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:1,
+        stop:0 #071428,
+        stop:0.42 #101f3a,
+        stop:0.72 #102831,
+        stop:1 #07111c);
+    border:1px solid #2f75a6;
+    border-radius:22px;
+}
+QFrame#AIGuardianHero:hover {
+    border-color:#79e6ff;
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:1,
+        stop:0 #08172b,
+        stop:0.46 #142447,
+        stop:0.74 #12303a,
+        stop:1 #07131e);
+}
+QFrame#MetricPill[role="ai"] {
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 rgba(38,18,47,0.96), stop:1 rgba(17,47,64,0.96));
+    border:1px solid #7c5cff;
+}
+QFrame#MetricPill[role="ai"]:hover { border-color:#ff9fbd; }
+QFrame#MetricPill[role="danger"] {
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 rgba(49,17,26,0.96), stop:1 rgba(47,25,18,0.96));
+    border:1px solid #b55470;
+}
+QFrame#MetricPill[role="privacy"] {
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 rgba(36,24,48,0.96), stop:1 rgba(15,37,53,0.96));
+    border:1px solid #6a73d9;
+}
+QFrame#MetricPill[role="ready"] {
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 rgba(9,46,48,0.96), stop:1 rgba(10,35,59,0.96));
+    border:1px solid #25b7ba;
+}
+QFrame#MetricPill[role="evidence"] {
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 rgba(9,31,52,0.96), stop:1 rgba(10,45,60,0.96));
+    border:1px solid #2c80c4;
+}
+QPushButton#AIPrimaryButton {
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #18b4ff, stop:1 #89f2ff);
+    border:1px solid #9af5ff;
+    color:#03131d;
+    font-weight:900;
+}
+QPushButton#AIPrimaryButton:hover {
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #45c9ff, stop:1 #b2fbff);
+}
+QPushButton#AIExportButton {
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #3a2360, stop:1 #123d58);
+    border:1px solid #8a6dff;
+    color:#f4ecff;
+    font-weight:900;
+}
+QPushButton#AIExportButton:hover {
+    border-color:#ff9fbd;
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #4b2d78, stop:1 #174d6d);
+}
+
+/* v12.10.20 AI Calibrated Guardian: deeper purple/teal contrast and calmer text density */
+QFrame#AIGuardianHero {
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:1,
+        stop:0 #061126,
+        stop:0.34 #171744,
+        stop:0.66 #0f3040,
+        stop:1 #07111b);
+    border:1px solid #4a8ed8;
+}
+QFrame#MetricPill[role="ai"] {
+    background-color:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 rgba(45,20,65,0.97), stop:0.54 rgba(19,42,72,0.97), stop:1 rgba(11,58,66,0.97));
+    border:1px solid #a06bff;
+}
+QFrame#MetricPill[role="ai"] QLabel#MetricPillValue { color:#ffe9ff; }
+QFrame#MetricPill[role="danger"] QLabel#MetricPillValue { color:#ffdce4; }
+QFrame#MetricPill[role="privacy"] QLabel#MetricPillValue { color:#ece4ff; }
+QFrame#MetricPill[role="ready"] QLabel#MetricPillValue { color:#dfffff; }
 
 """

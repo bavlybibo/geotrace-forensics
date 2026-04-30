@@ -33,7 +33,11 @@ class MapURLSignal:
 
 _URL_RE = re.compile(r"(?:https?://|www\.)[^\s<>'\"()]+", re.IGNORECASE)
 _GOOGLE_AT_RE = re.compile(r"@\s*(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{1,3}\.\d{4,})(?:\s*,\s*(\d+(?:\.\d+)?z))?", re.I)
-_QUERY_COORD_RE = re.compile(r"(?:q|ll|center|query)=\s*(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{1,3}\.\d{4,})", re.I)
+_QUERY_COORD_RE = re.compile(r"(?:q|ll|center|query|destination|origin|daddr|saddr)\s*=\s*(-?\d{1,2}\.\d{4,})\s*(?:,|;|\+|\s)+\s*(-?\d{1,3}\.\d{4,})", re.I)
+_OSM_MLAT_RE = re.compile(r"(?:mlat|lat)=\s*(-?\d{1,2}\.\d{4,}).{0,80}?(?:mlon|lon)=\s*(-?\d{1,3}\.\d{4,})", re.I)
+_OSM_HASH_RE = re.compile(r"#map=\d+(?:\.\d+)?/(-?\d{1,2}\.\d{4,})/(-?\d{1,3}\.\d{4,})", re.I)
+_GOOGLE_BANG_RE = re.compile(r"!3d(-?\d{1,2}\.\d{4,})!4d(-?\d{1,3}\.\d{4,})", re.I)
+_LABELLED_COORD_RE = re.compile(r"(?:lat(?:itude)?|خط العرض)\s*[:=]\s*(-?\d{1,2}\.\d{4,}).{0,80}?(?:lon(?:gitude)?|lng|خط الطول)\s*[:=]\s*(-?\d{1,3}\.\d{4,})", re.I)
 _PLAIN_COORD_RE = re.compile(r"\b(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{1,3}\.\d{4,})\b")
 _GEO_RE = re.compile(r"\bgeo:\s*(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{1,3}\.\d{4,})", re.I)
 _DMS_RE = re.compile(
@@ -100,7 +104,6 @@ def extract_candidate_texts(text: str) -> list[str]:
         if key and key not in seen:
             seen.add(key)
             candidates.append(candidate)
-    # Keep raw text too because screenshots/OCR may expose coordinates without complete URLs.
     raw_key = _normalise_raw(value)
     if value.strip() and raw_key not in seen:
         candidates.append(value)
@@ -112,6 +115,17 @@ def _place_from_url(decoded: str) -> str:
     if not place_match:
         return "Unavailable"
     return re.sub(r"[+_]+", " ", place_match.group(1)).strip() or "Unavailable"
+
+
+def _append_coordinate_signal(out: list[MapURLSignal], seen: set[str], *, provider: str, raw: str, coords: tuple[float, float] | None, source: str, confidence: int, key_prefix: str, zoom: str = "Unavailable") -> bool:
+    if not coords:
+        return False
+    key = f"coord:{key_prefix}:{provider}:{coords}:{raw[:180].lower()}"
+    if key in seen:
+        return False
+    seen.add(key)
+    out.append(MapURLSignal(provider, raw, coords, zoom=zoom, source=source, confidence=confidence))
+    return True
 
 
 def parse_map_url_signals(texts: Iterable[str], *, source: str = "visible_text", limit: int = 12) -> list[MapURLSignal]:
@@ -130,49 +144,46 @@ def parse_map_url_signals(texts: Iterable[str], *, source: str = "visible_text",
 
             for match in _GOOGLE_AT_RE.finditer(decoded):
                 coords = _to_float_pair(match.group(1), match.group(2))
-                if not coords:
-                    continue
                 zoom = match.group(3) or "Unavailable"
-                key = f"coord:{provider}:{coords}:{zoom}:{raw_key[:160]}"
-                if key not in seen:
-                    seen.add(key)
-                    candidate_has_precise_signal = True
-                    out.append(MapURLSignal(provider, decoded, coords, zoom=zoom, source=source, confidence=92))
+                candidate_has_precise_signal |= _append_coordinate_signal(out, seen, provider=provider, raw=decoded, coords=coords, source=source, confidence=92, key_prefix="google-at", zoom=zoom)
 
             for match in _QUERY_COORD_RE.finditer(decoded):
                 coords = _to_float_pair(match.group(1), match.group(2))
-                if not coords:
-                    continue
-                key = f"coord:{provider}:{coords}:query:{raw_key[:160]}"
-                if key not in seen:
-                    seen.add(key)
-                    candidate_has_precise_signal = True
-                    out.append(MapURLSignal(provider, decoded, coords, source=source, confidence=88))
+                candidate_has_precise_signal |= _append_coordinate_signal(out, seen, provider=provider, raw=decoded, coords=coords, source=source, confidence=88, key_prefix="query")
 
             for match in _GEO_RE.finditer(decoded):
                 coords = _to_float_pair(match.group(1), match.group(2))
-                if not coords:
-                    continue
-                key = f"coord:Geo URI:{coords}:{raw_key[:160]}"
-                if key not in seen:
-                    seen.add(key)
-                    candidate_has_precise_signal = True
-                    out.append(MapURLSignal("Geo URI", decoded, coords, source=source, confidence=90))
+                candidate_has_precise_signal |= _append_coordinate_signal(out, seen, provider="Geo URI", raw=decoded, coords=coords, source=source, confidence=90, key_prefix="geo")
+
+            for match in _OSM_MLAT_RE.finditer(decoded):
+                coords = _to_float_pair(match.group(1), match.group(2))
+                provider_for_osm = provider if provider != "Map/coordinate text" else "OpenStreetMap"
+                candidate_has_precise_signal |= _append_coordinate_signal(out, seen, provider=provider_for_osm, raw=decoded, coords=coords, source=source, confidence=88, key_prefix="osm-mlat")
+
+            for match in _OSM_HASH_RE.finditer(decoded):
+                coords = _to_float_pair(match.group(1), match.group(2))
+                provider_for_osm = provider if provider != "Map/coordinate text" else "OpenStreetMap"
+                candidate_has_precise_signal |= _append_coordinate_signal(out, seen, provider=provider_for_osm, raw=decoded, coords=coords, source=source, confidence=87, key_prefix="osm-hash")
+
+            for match in _GOOGLE_BANG_RE.finditer(decoded):
+                coords = _to_float_pair(match.group(1), match.group(2))
+                candidate_has_precise_signal |= _append_coordinate_signal(out, seen, provider="Google Maps", raw=decoded, coords=coords, source=source, confidence=90, key_prefix="google-bang")
+
+            for match in _LABELLED_COORD_RE.finditer(decoded):
+                coords = _to_float_pair(match.group(1), match.group(2))
+                candidate_has_precise_signal |= _append_coordinate_signal(out, seen, provider="Visible labelled coordinate", raw=match.group(0), coords=coords, source=source, confidence=84, key_prefix="labelled")
 
             for match in _DMS_RE.finditer(decoded):
                 coords = _dms_to_decimal(match)
-                if not coords:
-                    continue
-                key = f"coord:DMS:{coords}:{match.group(0).lower()}"
-                if key not in seen:
-                    seen.add(key)
-                    candidate_has_precise_signal = True
-                    out.append(MapURLSignal("DMS coordinate text", match.group(0), coords, source=source, confidence=84))
+                candidate_has_precise_signal |= _append_coordinate_signal(out, seen, provider="DMS coordinate text", raw=match.group(0), coords=coords, source=source, confidence=84, key_prefix="dms")
+
+            for match in _PLAIN_COORD_RE.finditer(decoded):
+                coords = _to_float_pair(match.group(1), match.group(2))
+                provider_for_plain = provider if provider != "Map/coordinate text" else "Visible coordinate text"
+                candidate_has_precise_signal |= _append_coordinate_signal(out, seen, provider=provider_for_plain, raw=match.group(0), coords=coords, source=source, confidence=86, key_prefix="plain")
 
             if provider != "Map/coordinate text":
                 place = _place_from_url(decoded)
-                # A precise URL should not also produce a generic provider-only duplicate.
-                # Keep the generic signal only when it adds a stable place label.
                 if place != "Unavailable" or not candidate_has_precise_signal:
                     key = f"provider-url:{provider}:{place.lower()}:{raw_key[:180]}"
                     if key not in seen:

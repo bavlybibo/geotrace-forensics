@@ -58,6 +58,7 @@ def _crop_plan(width: int, height: int, *, map_like: bool, text_heavy: bool) -> 
     plan = [
         {"name": "top_search_header", "box": [0.0, 0.0, 1.0, 0.22], "why": "map/search/header labels often hold place names or app context"},
         {"name": "center_map_canvas", "box": [0.14, 0.16, 0.88, 0.84], "why": "central map/image area usually contains road labels, landmarks, or visible signs"},
+        {"name": "center_context_menu", "box": [0.30, 0.30, 0.70, 0.76], "why": "Google Maps right-click/context menus often expose exact coordinates at the top"},
         {"name": "lower_status_labels", "box": [0.0, 0.72, 1.0, 1.0], "why": "bottom UI bars often contain route duration, city labels, watermarks, or coordinates"},
     ]
     if width >= height * 1.35:
@@ -68,7 +69,7 @@ def _crop_plan(width: int, height: int, *, map_like: bool, text_heavy: bool) -> 
         plan.append({"name": "middle_phone_map", "box": [0.06, 0.18, 0.94, 0.72], "why": "phone map area may need isolated OCR to read small labels"})
     if text_heavy and not map_like:
         plan.append({"name": "document_text_body", "box": [0.04, 0.12, 0.96, 0.92], "why": "text-heavy screenshot/document body crop"})
-    return plan[:6]
+    return plan[:7]
 
 
 def extract_ctf_visual_clues(path: Path | str) -> CTFVisualClueProfile:

@@ -1,0 +1,48 @@
+{
+  "_schema": "GeoTrace validation ground truth v2",
+  "_instructions": [
+    "Replace sample filenames with a real labelled validation dataset before claiming accuracy.",
+    "Every key maps to a filename produced in analyzed records.json.",
+    "Use only facts you manually verified: GPS, map screenshot, hidden payload, parser failure, OCR quality, duplicate relation, etc."
+  ],
+  "clean_original_gps.jpg": {
+    "has_gps": true,
+    "derived_geo": false,
+    "map_detected": false,
+    "hidden_detected": false,
+    "parser_failure": false,
+    "image_detail_generated": true,
+    "semantic_fingerprint_generated": true,
+    "expected_note": "Known original camera photo with native GPS and no hidden payload."
+  },
+  "map_screenshot_route.png": {
+    "has_gps": false,
+    "derived_geo": true,
+    "map_detected": true,
+    "map_route_detected": true,
+    "hidden_detected": false,
+    "ocr_confidence_min": 35,
+    "semantic_fingerprint_generated": true,
+    "expected_note": "Known map screenshot with route labels."
+  },
+  "metadata_stripped_social.jpg": {
+    "has_gps": false,
+    "metadata_stripped": true,
+    "hidden_detected": false,
+    "parser_failure": false,
+    "expected_note": "Known social-media recompressed image with stripped EXIF."
+  },
+  "embedded_payload_test.png": {
+    "hidden_detected": true,
+    "hidden_payload": true,
+    "parser_failure": false,
+    "image_detail_generated": true,
+    "expected_note": "Known synthetic payload/stego test fixture."
+  },
+  "corrupt_header_test.jpg": {
+    "parser_failure": true,
+    "has_gps": false,
+    "hidden_detected": false,
+    "expected_note": "Known corrupted header fixture."
+  }
+}

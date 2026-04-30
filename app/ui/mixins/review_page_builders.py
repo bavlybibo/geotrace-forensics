@@ -35,7 +35,7 @@ class ReviewPageBuilderMixin:
         splitter.addWidget(self._build_inventory_panel())
         splitter.addWidget(self._build_review_center())
         splitter.addWidget(self._build_review_sidebar())
-        splitter.setSizes([380, 1200, 470])
+        splitter.setSizes([350, 1240, 430])
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 0)
@@ -45,22 +45,22 @@ class ReviewPageBuilderMixin:
     def _build_inventory_panel(self) -> QWidget:
         frame = QFrame()
         frame.setObjectName("PanelFrame")
-        frame.setMinimumWidth(350)
-        frame.setMaximumWidth(440)
+        frame.setMinimumWidth(320)
+        frame.setMaximumWidth(410)
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(10)
 
-        title = QLabel("Evidence Queue")
+        title = QLabel("Evidence Inbox")
         title.setObjectName("SectionLabel")
-        meta = QLabel("Compact evidence cards with one calm scroll lane.")
+        meta = QLabel("Search, filter, and select evidence without crowding the review stage.")
         meta.setObjectName("SectionMetaLabel")
 
         self.inventory_meta = QLabel("No evidence loaded in the current case.")
         self.inventory_meta.setObjectName("MutedLabel")
 
         self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("Search evidence • gps:yes • risk:high")
+        self.search_box.setPlaceholderText("Search evidence • gps:yes • geo:yes • risk:high")
         self.search_box.textChanged.connect(self.apply_filters)
 
         filter_row = QHBoxLayout()
@@ -69,6 +69,7 @@ class ReviewPageBuilderMixin:
         self.filter_combo.addItems([
             "All Evidence",
             "Has GPS",
+            "Has Geo Anchor",
             "High Risk",
             "Medium Risk",
             "Low Risk",
@@ -112,11 +113,11 @@ class ReviewPageBuilderMixin:
     def _build_review_center(self) -> QWidget:
         self.review_tabs = QTabWidget()
         self.review_tabs.setObjectName("ReviewTabs")
-        self.review_tabs.setUsesScrollButtons(False)
+        self.review_tabs.setUsesScrollButtons(True)
         self.review_tabs.setDocumentMode(True)
         tab_bar = self.review_tabs.tabBar()
-        tab_bar.setElideMode(Qt.ElideNone)
-        tab_bar.setExpanding(True)
+        tab_bar.setElideMode(Qt.ElideRight)
+        tab_bar.setExpanding(False)
         tab_bar.setMinimumHeight(38)
 
         self.review_tab_preview = self._build_preview_shell()
@@ -233,8 +234,8 @@ class ReviewPageBuilderMixin:
 
     def _build_review_sidebar(self) -> QWidget:
         widget = QWidget()
-        widget.setMinimumWidth(400)
-        widget.setMaximumWidth(460)
+        widget.setMinimumWidth(360)
+        widget.setMaximumWidth(430)
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
@@ -247,7 +248,7 @@ class ReviewPageBuilderMixin:
         verdict_layout.setSpacing(12)
         top_title = QLabel("Decision Rail")
         top_title.setObjectName("SectionLabel")
-        top_meta = QLabel("Triage score, value, and the next move for the selected item.")
+        top_meta = QLabel("Score, value, and next move for the selected item.")
         top_meta.setObjectName("SectionMetaLabel")
 
         self.decision_empty_hint = QLabel("Choose one item to load score, value, integrity, and next actions.")
@@ -313,9 +314,9 @@ class ReviewPageBuilderMixin:
         scores_row.addWidget(self.score_meta_badge)
         scores_row.addWidget(self.score_tech_badge)
 
-        self.selection_verdict_view = AutoHeightNarrativeView("Select an item to load a focused verdict summary.", max_auto_height=360)
-        self.agent_insight_view = AutoHeightNarrativeView("AI review is ready. Select evidence to see the local agent plus batch AI risk context.", max_auto_height=280)
-        self.review_pivots_text = AutoHeightNarrativeView("Select evidence to load next-step pivots.", max_auto_height=300)
+        self.selection_verdict_view = AutoHeightNarrativeView("Select an item to load a focused verdict summary.", max_auto_height=260)
+        self.agent_insight_view = AutoHeightNarrativeView("AI review is ready. Select evidence to see local risk context.", max_auto_height=210)
+        self.review_pivots_text = AutoHeightNarrativeView("Select evidence to load next-step pivots.", max_auto_height=230)
         verdict_layout.addWidget(top_title)
         verdict_layout.addWidget(top_meta)
         verdict_layout.addWidget(self.decision_empty_hint)
@@ -419,8 +420,8 @@ class ReviewPageBuilderMixin:
         preview_frame.setObjectName("PreviewCanvasFrame")
         preview_frame_layout = QVBoxLayout(preview_frame)
         preview_frame_layout.setContentsMargins(6, 6, 6, 6)
-        self.image_preview = ResizableImageLabel("Choose one evidence item to start review. The hero stage stays large and calm while deep details live in the tabs.", min_height=620)
-        self.image_preview.setMinimumHeight(620)
+        self.image_preview = ResizableImageLabel("Choose one evidence item. Deep details live in tabs, not on the image stage.", min_height=560)
+        self.image_preview.setMinimumHeight(560)
         preview_frame_layout.addWidget(self.image_preview, 1)
 
         meta_grid = QGridLayout()

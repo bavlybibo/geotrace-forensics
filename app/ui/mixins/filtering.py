@@ -26,9 +26,11 @@ class FilteringMixin:
             item.setData(Qt.UserRole, record.evidence_id)
             item.setSizeHint(QSize(0, 148))
             card = EvidenceListCard()
+            has_geo_anchor = bool(record.has_gps or getattr(record, "derived_geo_display", "Unavailable") != "Unavailable" or int(getattr(record, "map_answer_readiness_score", 0) or 0) >= 70)
+            geo_badge = "Native GPS" if record.has_gps else "Map Anchor" if has_geo_anchor else "No Geo"
             badge_bits = [
                 f"● {record.risk_level}",
-                f"● {'GPS' if record.has_gps else 'No GPS'}",
+                f"● {geo_badge}",
                 f"● {record.source_subtype if record.source_subtype not in {'Unknown', record.source_type} else record.source_type}",
             ]
             if record.duplicate_group:
@@ -108,6 +110,8 @@ class FilteringMixin:
                 continue
             if mode == "Has GPS" and not record.has_gps:
                 continue
+            if mode == "Has Geo Anchor" and not (record.has_gps or getattr(record, "derived_geo_display", "Unavailable") != "Unavailable" or int(getattr(record, "map_answer_readiness_score", 0) or 0) >= 70):
+                continue
             if mode == "High Risk" and record.risk_level != "High":
                 continue
             if mode == "Medium Risk" and record.risk_level != "Medium":
@@ -159,6 +163,12 @@ class FilteringMixin:
                 if key == 'gps':
                     expected = value in {'yes', 'true', '1', 'on'}
                     if record.has_gps != expected:
+                        return False
+                    continue
+                if key == 'geo':
+                    expected = value in {'yes', 'true', '1', 'on'}
+                    has_geo_anchor = bool(record.has_gps or getattr(record, "derived_geo_display", "Unavailable") != "Unavailable" or int(getattr(record, "map_answer_readiness_score", 0) or 0) >= 70)
+                    if has_geo_anchor != expected:
                         return False
                     continue
                 if key == 'risk' and record.risk_level.lower() != value:

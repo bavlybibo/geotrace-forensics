@@ -294,7 +294,8 @@
       "khan el khalili",
       "khan el-khalili",
       "خان الخليلي",
-      "خان الخليلى"
+      "خان الخليلى",
+      "khan al khalili"
     ],
     "visual_tags": [
       "market",
@@ -896,6 +897,480 @@
       "rock-cut",
       "desert",
       "jordan"
+    ]
+  },
+  {
+    "name": "Mount Sinai",
+    "country": "Egypt",
+    "city": "South Sinai",
+    "level": "area",
+    "aliases": [
+      "mount sinai",
+      "jabal mousa",
+      "jebel musa",
+      "جبل موسى",
+      "جبل موسي"
+    ],
+    "visual_tags": [
+      "mountain",
+      "desert",
+      "sunrise"
+    ]
+  },
+  {
+    "name": "Ras Mohammed National Park",
+    "country": "Egypt",
+    "city": "Sharm El Sheikh",
+    "level": "area",
+    "aliases": [
+      "ras mohammed",
+      "ras muhammad",
+      "رأس محمد",
+      "راس محمد"
+    ],
+    "visual_tags": [
+      "reef",
+      "sea",
+      "desert"
+    ]
+  },
+  {
+    "name": "White Desert National Park",
+    "country": "Egypt",
+    "city": "Farafra",
+    "level": "area",
+    "aliases": [
+      "white desert",
+      "white desert national park",
+      "الصحراء البيضاء"
+    ],
+    "visual_tags": [
+      "desert",
+      "white rocks",
+      "limestone"
+    ]
+  },
+  {
+    "name": "Park Güell",
+    "country": "Spain",
+    "city": "Barcelona",
+    "level": "poi",
+    "aliases": [
+      "park guell",
+      "park güell",
+      "parc guell"
+    ],
+    "visual_tags": [
+      "mosaic",
+      "gaudi",
+      "park"
+    ]
+  },
+  {
+    "name": "Royal Palace of Madrid",
+    "country": "Spain",
+    "city": "Madrid",
+    "level": "poi",
+    "aliases": [
+      "royal palace of madrid",
+      "palacio real"
+    ],
+    "visual_tags": [
+      "palace",
+      "madrid",
+      "courtyard"
+    ]
+  },
+  {
+    "name": "Plaza Mayor Madrid",
+    "country": "Spain",
+    "city": "Madrid",
+    "level": "area",
+    "aliases": [
+      "plaza mayor madrid",
+      "plaza mayor"
+    ],
+    "visual_tags": [
+      "square",
+      "arches",
+      "madrid"
+    ]
+  },
+  {
+    "name": "Alhambra",
+    "country": "Spain",
+    "city": "Granada",
+    "level": "poi",
+    "aliases": [
+      "alhambra",
+      "la alhambra",
+      "الحمراء"
+    ],
+    "visual_tags": [
+      "palace",
+      "granada",
+      "islamic architecture"
+    ]
+  },
+  {
+    "name": "Belem Tower",
+    "country": "Portugal",
+    "city": "Lisbon",
+    "level": "poi",
+    "aliases": [
+      "belem tower",
+      "belém tower",
+      "torre de belem"
+    ],
+    "visual_tags": [
+      "tower",
+      "river",
+      "lisbon"
+    ]
+  },
+  {
+    "name": "Jerónimos Monastery",
+    "country": "Portugal",
+    "city": "Lisbon",
+    "level": "poi",
+    "aliases": [
+      "jeronimos monastery",
+      "jerónimos monastery",
+      "mosteiro dos jeronimos"
+    ],
+    "visual_tags": [
+      "monastery",
+      "lisbon",
+      "arches"
+    ]
+  },
+  {
+    "name": "Arc de Triomphe",
+    "country": "France",
+    "city": "Paris",
+    "level": "poi",
+    "aliases": [
+      "arc de triomphe",
+      "triumphal arch paris"
+    ],
+    "visual_tags": [
+      "arch",
+      "roundabout",
+      "paris"
+    ]
+  },
+  {
+    "name": "Notre-Dame de Paris",
+    "country": "France",
+    "city": "Paris",
+    "level": "poi",
+    "aliases": [
+      "notre dame paris",
+      "notre-dame de paris",
+      "notre dame cathedral"
+    ],
+    "visual_tags": [
+      "cathedral",
+      "gothic",
+      "paris"
+    ]
+  },
+  {
+    "name": "Mont Saint-Michel",
+    "country": "France",
+    "city": "Normandy",
+    "level": "poi",
+    "aliases": [
+      "mont saint michel",
+      "mont-saint-michel"
+    ],
+    "visual_tags": [
+      "island",
+      "abbey",
+      "normandy"
+    ]
+  },
+  {
+    "name": "Leaning Tower of Pisa",
+    "country": "Italy",
+    "city": "Pisa",
+    "level": "poi",
+    "aliases": [
+      "leaning tower of pisa",
+      "pisa tower",
+      "torre di pisa"
+    ],
+    "visual_tags": [
+      "tower",
+      "pisa",
+      "leaning"
+    ]
+  },
+  {
+    "name": "Duomo di Milano",
+    "country": "Italy",
+    "city": "Milan",
+    "level": "poi",
+    "aliases": [
+      "duomo di milano",
+      "milan cathedral",
+      "duomo milan"
+    ],
+    "visual_tags": [
+      "cathedral",
+      "spires",
+      "milan"
+    ]
+  },
+  {
+    "name": "Burj Al Arab",
+    "country": "United Arab Emirates",
+    "city": "Dubai",
+    "level": "poi",
+    "aliases": [
+      "burj al arab",
+      "برج العرب"
+    ],
+    "visual_tags": [
+      "hotel",
+      "sail",
+      "sea"
+    ]
+  },
+  {
+    "name": "Palm Jumeirah",
+    "country": "United Arab Emirates",
+    "city": "Dubai",
+    "level": "area",
+    "aliases": [
+      "palm jumeirah",
+      "the palm dubai",
+      "نخلة جميرا"
+    ],
+    "visual_tags": [
+      "island",
+      "aerial",
+      "dubai"
+    ]
+  },
+  {
+    "name": "Lusail Boulevard",
+    "country": "Qatar",
+    "city": "Lusail",
+    "level": "area",
+    "aliases": [
+      "lusail boulevard",
+      "lusail",
+      "لوسيل"
+    ],
+    "visual_tags": [
+      "boulevard",
+      "modern city",
+      "qatar"
+    ]
+  },
+  {
+    "name": "Museum of Islamic Art Doha",
+    "country": "Qatar",
+    "city": "Doha",
+    "level": "poi",
+    "aliases": [
+      "museum of islamic art doha",
+      "mia doha",
+      "متحف الفن الإسلامي"
+    ],
+    "visual_tags": [
+      "museum",
+      "doha",
+      "waterfront"
+    ]
+  },
+  {
+    "name": "Brooklyn Bridge",
+    "country": "United States",
+    "city": "New York",
+    "level": "poi",
+    "aliases": [
+      "brooklyn bridge"
+    ],
+    "visual_tags": [
+      "bridge",
+      "new york",
+      "cables"
+    ]
+  },
+  {
+    "name": "Empire State Building",
+    "country": "United States",
+    "city": "New York",
+    "level": "poi",
+    "aliases": [
+      "empire state building"
+    ],
+    "visual_tags": [
+      "skyscraper",
+      "new york",
+      "skyline"
+    ]
+  },
+  {
+    "name": "Hollywood Sign",
+    "country": "United States",
+    "city": "Los Angeles",
+    "level": "poi",
+    "aliases": [
+      "hollywood sign"
+    ],
+    "visual_tags": [
+      "sign",
+      "hills",
+      "los angeles"
+    ]
+  },
+  {
+    "name": "Grand Canyon",
+    "country": "United States",
+    "city": "Arizona",
+    "level": "area",
+    "aliases": [
+      "grand canyon"
+    ],
+    "visual_tags": [
+      "canyon",
+      "desert",
+      "cliffs"
+    ]
+  },
+  {
+    "name": "Mount Fuji",
+    "country": "Japan",
+    "city": "Yamanashi/Shizuoka",
+    "level": "area",
+    "aliases": [
+      "mount fuji",
+      "fuji mountain",
+      "富士山"
+    ],
+    "visual_tags": [
+      "mountain",
+      "snowcap",
+      "japan"
+    ]
+  },
+  {
+    "name": "Fushimi Inari Taisha",
+    "country": "Japan",
+    "city": "Kyoto",
+    "level": "poi",
+    "aliases": [
+      "fushimi inari",
+      "fushimi inari taisha"
+    ],
+    "visual_tags": [
+      "torii",
+      "shrine",
+      "kyoto"
+    ]
+  },
+  {
+    "name": "Marina Bay Sands",
+    "country": "Singapore",
+    "city": "Singapore",
+    "level": "poi",
+    "aliases": [
+      "marina bay sands",
+      "mbs singapore"
+    ],
+    "visual_tags": [
+      "hotel",
+      "skypark",
+      "singapore"
+    ]
+  },
+  {
+    "name": "Merlion Park",
+    "country": "Singapore",
+    "city": "Singapore",
+    "level": "poi",
+    "aliases": [
+      "merlion park",
+      "merlion"
+    ],
+    "visual_tags": [
+      "statue",
+      "waterfront",
+      "singapore"
+    ]
+  },
+  {
+    "name": "CN Tower",
+    "country": "Canada",
+    "city": "Toronto",
+    "level": "poi",
+    "aliases": [
+      "cn tower"
+    ],
+    "visual_tags": [
+      "tower",
+      "toronto",
+      "skyline"
+    ]
+  },
+  {
+    "name": "Niagara Falls",
+    "country": "Canada/United States",
+    "city": "Niagara",
+    "level": "area",
+    "aliases": [
+      "niagara falls"
+    ],
+    "visual_tags": [
+      "waterfall",
+      "mist",
+      "river"
+    ]
+  },
+  {
+    "name": "Table Mountain",
+    "country": "South Africa",
+    "city": "Cape Town",
+    "level": "area",
+    "aliases": [
+      "table mountain"
+    ],
+    "visual_tags": [
+      "mountain",
+      "cape town",
+      "flat top"
+    ]
+  },
+  {
+    "name": "Machu Picchu",
+    "country": "Peru",
+    "city": "Cusco Region",
+    "level": "poi",
+    "aliases": [
+      "machu picchu"
+    ],
+    "visual_tags": [
+      "ruins",
+      "mountains",
+      "peru"
+    ]
+  },
+  {
+    "name": "Chichen Itza",
+    "country": "Mexico",
+    "city": "Yucatan",
+    "level": "poi",
+    "aliases": [
+      "chichen itza",
+      "chichén itzá"
+    ],
+    "visual_tags": [
+      "pyramid",
+      "ruins",
+      "mexico"
     ]
   }
 ]

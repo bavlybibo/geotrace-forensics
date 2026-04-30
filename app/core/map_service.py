@@ -8,6 +8,7 @@ import folium
 
 from .anomalies import parse_timestamp
 from .models import EvidenceRecord
+from .map.evidence import anchor_kind_from_source, claim_policy_for_anchor
 
 
 PLACE_COORDINATES: dict[str, tuple[float, float, str]] = {
@@ -48,11 +49,11 @@ class MapService:
         self.export_dir = export_dir
         self.export_dir.mkdir(parents=True, exist_ok=True)
 
-    def _geo_point_for_record(self, record: EvidenceRecord) -> tuple[float, float, str, int, bool] | None:
+    def _geo_point_for_record(self, record: EvidenceRecord) -> tuple[float, float, str, int, str] | None:
         if record.has_gps and record.gps_latitude is not None and record.gps_longitude is not None:
-            return float(record.gps_latitude), float(record.gps_longitude), f"Native GPS ({record.gps_source})", int(record.gps_confidence or 0), True
+            return float(record.gps_latitude), float(record.gps_longitude), f"Native GPS ({record.gps_source})", int(record.gps_confidence or 0), "native_gps"
         if record.derived_latitude is not None and record.derived_longitude is not None:
-            return float(record.derived_latitude), float(record.derived_longitude), f"Derived/visible coordinate ({record.derived_geo_source})", int(record.derived_geo_confidence or 0), True
+            return float(record.derived_latitude), float(record.derived_longitude), f"Derived/visible coordinate ({record.derived_geo_source})", int(record.derived_geo_confidence or 0), "derived_coordinate"
 
         # Approximate place fallback for map screenshots after OCR/dictionary extraction.
         # This intentionally never triggers for visual-only strings like "light tiled map canvas".
@@ -65,7 +66,7 @@ class MapService:
             if place in PLACE_COORDINATES:
                 lat, lon, kind = PLACE_COORDINATES[place]
                 confidence = max(35, min(72, int(getattr(record, "map_answer_readiness_score", 0) or getattr(record, "map_intelligence_confidence", 0) or 0)))
-                return lat, lon, f"Approximate {kind}: {place}", confidence, False
+                return lat, lon, f"Approximate {kind}: {place}", confidence, "approximate_place"
         return None
 
     def _write_context_board(self, records: list[EvidenceRecord]) -> Path:
@@ -114,12 +115,12 @@ class MapService:
 
     def create_map(self, records: Iterable[EvidenceRecord]) -> Path | None:
         all_records = list(records)
-        point_rows: list[tuple[EvidenceRecord, float, float, str, int, bool]] = []
+        point_rows: list[tuple[EvidenceRecord, float, float, str, int, str]] = []
         for record in all_records:
             point = self._geo_point_for_record(record)
             if point is not None:
-                lat, lon, source, confidence, exact = point
-                point_rows.append((record, lat, lon, source, confidence, exact))
+                lat, lon, source, confidence, anchor_kind = point
+                point_rows.append((record, lat, lon, source, confidence, anchor_kind))
         if not point_rows:
             context_records = [record for record in all_records if getattr(record, "map_intelligence_confidence", 0) > 0 or getattr(record, "route_overlay_detected", False)]
             if context_records:
@@ -136,7 +137,7 @@ class MapService:
 
         points = []
         risk_colors = {"High": "red", "Medium": "orange", "Low": "blue"}
-        for idx, (record, latitude, longitude, point_source, point_confidence, exact_anchor) in enumerate(ordered_records, start=1):
+        for idx, (record, latitude, longitude, point_source, point_confidence, anchor_kind) in enumerate(ordered_records, start=1):
             points.append([latitude, longitude])
             safe_file = html.escape(record.file_name)
             safe_evidence_id = html.escape(record.evidence_id)
@@ -149,6 +150,11 @@ class MapService:
             safe_gps = html.escape(record.gps_display)
             safe_derived_geo = html.escape(record.derived_geo_display)
             safe_point_source = html.escape(point_source)
+            policy = claim_policy_for_anchor(anchor_kind_from_source(point_source, has_native_gps=anchor_kind == "native_gps", has_coordinates=True), confidence=point_confidence, source=point_source)
+            exact_anchor = anchor_kind in {"native_gps", "derived_coordinate"}
+            safe_claim_label = html.escape(policy.claim_label)
+            safe_proof_level = html.escape(policy.proof_level)
+            safe_rule = html.escape(policy.verification_rule)
             safe_map_type = html.escape(getattr(record, "map_type", "Unknown"))
             safe_answer = html.escape(getattr(record, "map_answer_readiness_label", "Not answer-ready"))
             safe_sha = html.escape(f"{record.sha256[:16]}…{record.sha256[-12:]}")
@@ -157,7 +163,9 @@ class MapService:
                 <h4 style='margin:0 0 8px 0;'>#{idx:02d} • {safe_evidence_id}</h4>
                 <b>File:</b> {safe_file}<br>
                 <b>Point source:</b> {safe_point_source}<br>
-                <b>Anchor:</b> {'Exact/coordinate' if exact_anchor else 'Approximate place lead'} • {point_confidence}%<br>
+                <b>Claim type:</b> {safe_claim_label} • {safe_proof_level}<br>
+                <b>Anchor:</b> {'Coordinate anchor' if exact_anchor else 'Approximate place lead'} • {point_confidence}%<br>
+                <b>Verification:</b> {safe_rule}<br>
                 <b>Map type:</b> {safe_map_type}<br>
                 <b>Answer readiness:</b> {safe_answer} ({getattr(record, 'map_answer_readiness_score', 0)}%)<br>
                 <b>Time:</b> {safe_timestamp} ({safe_timestamp_source}, {record.timestamp_confidence}%)<br>
@@ -174,17 +182,17 @@ class MapService:
                 [latitude, longitude],
                 popup=popup_html,
                 tooltip=f"#{idx:02d} • {safe_evidence_id} • {point_source}",
-                icon=folium.Icon(color=risk_colors.get(record.risk_level, "blue") if exact_anchor else "purple", icon="camera" if record.has_gps else "map-pin", prefix="fa"),
+                icon=folium.Icon(color="green" if anchor_kind == "native_gps" else "cadetblue" if anchor_kind == "derived_coordinate" else "purple", icon="camera" if record.has_gps else "map-pin", prefix="fa"),
             ).add_to(evidence_map)
-            confidence_radius = 55 + point_confidence * 3.1
+            confidence_radius = policy.radius_m or (55 + point_confidence * 3.1)
             folium.Circle(
                 location=[latitude, longitude],
                 radius=confidence_radius,
-                color="#38d8ff" if exact_anchor else "#b48cff",
+                color="#00d084" if anchor_kind == "native_gps" else "#38d8ff" if anchor_kind == "derived_coordinate" else "#b48cff",
                 fill=True,
                 fill_opacity=0.12,
                 weight=2,
-                tooltip=f"{'Exact' if exact_anchor else 'Approximate'} anchor confidence • {point_confidence}%",
+                tooltip=f"{policy.claim_label} • confidence {point_confidence}% • radius ~{int(confidence_radius)}m",
             ).add_to(evidence_map)
 
         if len(points) > 1:
@@ -197,9 +205,10 @@ class MapService:
         legend = """
         <div style="position: fixed; bottom: 24px; left: 24px; z-index: 9999; background: rgba(7,17,27,0.92); color: #eaf7ff; border: 1px solid #1b4c71; border-radius: 12px; padding: 12px 14px; min-width: 250px; font-family: Segoe UI, Arial, sans-serif; font-size: 13px; box-shadow: 0 12px 30px rgba(0,0,0,0.28);">
             <div style="font-weight:700; margin-bottom:6px;">GeoTrace map intelligence</div>
-            <div>Blue halo = exact/native or visible coordinate anchor.</div>
-            <div>Purple halo = approximate place/landmark lead.</div>
-            <div style="margin-top:6px;">Approximate leads require manual corroboration before reporting as a final location.</div>
+            <div>Green halo = Native GPS metadata anchor.</div>
+            <div>Blue halo = Derived Geo Anchor from visible map/OCR/URL coordinates.</div>
+            <div>Purple halo = approximate Map Search Lead.</div>
+            <div style="margin-top:6px;">Approximate leads use broad radii and require manual corroboration before reporting as a final location.</div>
         </div>
         """
         evidence_map.get_root().html.add_child(folium.Element(legend))

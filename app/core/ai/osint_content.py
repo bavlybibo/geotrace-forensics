@@ -9,10 +9,13 @@ signals, and lightweight visual statistics into analyst-safe OSINT cues.
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import logging
 import re
 from typing import Iterable, TYPE_CHECKING
 
 from PIL import Image, ImageStat
+
+LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..models import EvidenceRecord
@@ -103,7 +106,8 @@ def _visual_layout_cues(file_path: Path) -> tuple[list[str], int]:
             sample = rgb.resize((96, 96))
             pixels = list(sample.getdata())
             stat = ImageStat.Stat(sample)
-    except Exception:
+    except Exception as exc:
+        LOGGER.debug("Visual layout cue extraction failed for %s: %s", file_path, exc)
         return ["visual analysis unavailable"], 0
 
     total = max(1, len(pixels))
@@ -143,8 +147,8 @@ def _visual_layout_cues(file_path: Path) -> tuple[list[str], int]:
             cues.append("low-detail/flat exported image")
         elif mean_std > 58:
             cues.append("high-detail visual texture")
-    except Exception:
-        pass
+    except Exception as exc:
+        LOGGER.debug("Visual statistics cue extraction failed for %s: %s", file_path, exc)
     return _unique(cues, limit=8), max(0, min(100, score))
 
 

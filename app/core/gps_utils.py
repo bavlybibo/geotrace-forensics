@@ -4,21 +4,40 @@ from typing import Iterable, Tuple
 
 
 def ratio_to_float(value) -> float:
+    """Convert EXIF/Pillow/GPS ratio values into floats.
+
+    Different parsers represent DMS GPS values differently: exifread exposes
+    Ratio objects with num/den, Pillow may expose IFDRational objects with
+    numerator/denominator, and some images carry tuple/list pairs such as
+    (num, den). A weak converter here causes valid GPS to be shown as missing,
+    so keep this function deliberately tolerant.
+    """
+    if value is None:
+        raise ValueError("GPS ratio value is None")
     if hasattr(value, "num") and hasattr(value, "den"):
-        return float(value.num) / float(value.den)
-    if isinstance(value, str) and "/" in value:
-        num, den = value.split("/", 1)
-        return float(num) / float(den)
+        return float(value.num) / float(value.den or 1)
+    if hasattr(value, "numerator") and hasattr(value, "denominator"):
+        return float(value.numerator) / float(value.denominator or 1)
+    if isinstance(value, (tuple, list)) and len(value) == 2:
+        return float(value[0]) / float(value[1] or 1)
+    if isinstance(value, str):
+        cleaned = value.strip().strip("[]()")
+        if "/" in cleaned:
+            num, den = cleaned.split("/", 1)
+            return float(num.strip()) / float(den.strip() or 1)
+        return float(cleaned)
     return float(value)
 
 
 def dms_to_decimal(values: Iterable, ref: str) -> float:
     values = list(values)
+    if len(values) < 3:
+        raise ValueError(f"GPS DMS sequence is incomplete: {values!r}")
     degrees = ratio_to_float(values[0])
     minutes = ratio_to_float(values[1])
     seconds = ratio_to_float(values[2])
     result = degrees + (minutes / 60.0) + (seconds / 3600.0)
-    if ref in {"S", "W"}:
+    if str(ref or "").upper().strip() in {"S", "W"}:
         result *= -1
     return round(result, 6)
 

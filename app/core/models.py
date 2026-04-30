@@ -258,6 +258,12 @@ class EvidenceRecord:
     map_offline_geocoder_hits: List[Dict[str, object]] = field(default_factory=list)
     map_source_comparison: List[str] = field(default_factory=list)
     map_interactive_payload: Dict[str, object] = field(default_factory=dict)
+    map_provider_bridge: Dict[str, object] = field(default_factory=dict)
+    map_provider_links: List[Dict[str, object]] = field(default_factory=list)
+    map_provider_queries: List[str] = field(default_factory=list)
+    map_reverse_lookup_label: str = "Unavailable"
+    map_reverse_lookup_confidence: int = 0
+    map_bridge_status: str = "not_evaluated"
     place_candidate_rankings: List[str] = field(default_factory=list)
     filename_location_hints: List[str] = field(default_factory=list)
     ctf_clues: List[Dict[str, object]] = field(default_factory=list)
@@ -291,10 +297,51 @@ class EvidenceRecord:
     pixel_hidden_metrics: Dict[str, object] = field(default_factory=dict)
     pixel_hidden_limitations: List[str] = field(default_factory=list)
     pixel_hidden_next_actions: List[str] = field(default_factory=list)
+    digital_final_call: str = "CLEAR"
+    digital_risk_score: int = 0
+    digital_confidence_score: int = 0
+    digital_confirmation_level: str = "clean"
+    digital_one_line: str = "CLEAR: no strong hidden payload, injection marker, or color-plane artifact detected."
+    digital_danger_zones: List[str] = field(default_factory=list)
+    digital_evidence_brief: List[str] = field(default_factory=list)
+    digital_artifact_status: str = "no_artifact_detected"
+    digital_execution_status: str = "no_execution_evidence"
+    digital_false_positive_guards: List[str] = field(default_factory=list)
+    digital_next_actions: List[str] = field(default_factory=list)
+    digital_verdict_payload: Dict[str, object] = field(default_factory=dict)
+    image_risk_label: str = "SAFE"
+    image_risk_score: int = 0
+    image_risk_confidence: int = 0
+    image_risk_is_dangerous: bool = False
+    image_risk_summary: str = "SAFE: no current evidence that the image is dangerous."
+    image_risk_primary_reason: str = "No hidden payload, parser mismatch, or strong pixel-stego indicator was detected."
+    image_risk_danger_zones: List[str] = field(default_factory=list)
+    image_risk_evidence_matrix: List[str] = field(default_factory=list)
+    image_risk_false_positive_guards: List[str] = field(default_factory=list)
+    image_risk_privacy_findings: List[str] = field(default_factory=list)
+    image_risk_manipulation_findings: List[str] = field(default_factory=list)
+    image_risk_next_actions: List[str] = field(default_factory=list)
+    image_risk_decision_path: List[str] = field(default_factory=list)
+    image_risk_badge: str = "SAFE"
+    image_risk_threat_family: str = "clean"
+    image_risk_decision_lane: str = "benign_or_normal_preservation"
+    image_risk_technical_signal_count: int = 0
+    image_risk_contributor_matrix: List[str] = field(default_factory=list)
+    image_risk_analyst_verdict_hint: str = "No danger-handling escalation needed."
+    image_risk_evidence_grade: str = "D"
+    image_risk_review_priority: str = "P3"
+    image_risk_risk_temperature: str = "COOL"
+    image_risk_calibration_notes: List[str] = field(default_factory=list)
+    image_risk_missing_evidence: List[str] = field(default_factory=list)
+    image_risk_safe_handling_profile: str = "normal_evidence_preservation"
+    image_risk_export_policy: str = "Shareable after standard case redaction."
+    image_risk_verdict_payload: Dict[str, object] = field(default_factory=dict)
     manual_crop_assets: List[str] = field(default_factory=list)
     ocr_diagnostics: Dict[str, object] = field(default_factory=dict)
     validation_hits: List[str] = field(default_factory=list)
     validation_misses: List[str] = field(default_factory=list)
+    claim_to_evidence_links: List[Dict[str, object]] = field(default_factory=list)
+    timeline_confidence_profile: Dict[str, object] = field(default_factory=dict)
     extracted_strings: List[str] = field(default_factory=list)
     visible_text_lines: List[str] = field(default_factory=list)
     ocr_raw_text: str = ""

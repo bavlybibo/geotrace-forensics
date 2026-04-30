@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 import re
 from typing import Iterable
+from .package_signature import verify_package_signature
 
 try:
     from .package_assets import SENSITIVE_STRICT_ASSET_NAMES
@@ -203,6 +204,12 @@ def verify_export_package(package_dir: Path | str, privacy_level: str | None = N
         result.add_check("Manifest artifact section is present.")
     else:
         result.fail("Manifest contains no artifacts to verify.")
+
+    signature_ok, signature_message = verify_package_signature(package)
+    if signature_ok:
+        result.add_check(signature_message)
+    else:
+        result.warn(signature_message)
 
     if strict_mode:
         _verify_strict_asset_policy(result, package, report_assets)

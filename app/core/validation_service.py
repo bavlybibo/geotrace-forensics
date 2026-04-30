@@ -69,6 +69,22 @@ def evaluate_record(record: EvidenceRecord, expected: dict) -> tuple[List[str], 
     check("metadata stripped", not bool(record.exif), _truth_bool(expected.get("metadata_stripped")))
     check("duplicate grouping", bool(record.duplicate_group), _truth_bool(expected.get("duplicate_expected")))
     check("time conflict", bool(record.time_conflicts), _truth_bool(expected.get("time_conflict")))
+    metrics = dict(getattr(record, "image_detail_metrics", {}) or {})
+    semantic = metrics.get("semantic_fingerprint") if isinstance(metrics.get("semantic_fingerprint"), dict) else {}
+    local_vision = metrics.get("local_vision") if isinstance(metrics.get("local_vision"), dict) else {}
+    check("image detail generated", bool(getattr(record, "image_detail_confidence", 0)), _truth_bool(expected.get("image_detail_generated")))
+    check("semantic fingerprint", bool(semantic.get("fingerprint")), _truth_bool(expected.get("semantic_fingerprint_generated")))
+    check("local vision executed", bool(local_vision.get("executed")), _truth_bool(expected.get("local_vision_executed")))
+    check("map route detected", bool(getattr(record, "route_overlay_detected", False)), _truth_bool(expected.get("map_route_detected")))
+    if expected.get("ocr_confidence_min") is not None:
+        try:
+            threshold = int(expected.get("ocr_confidence_min"))
+            if int(getattr(record, "ocr_confidence", 0) or 0) >= threshold:
+                hits.append("ocr confidence minimum")
+            else:
+                misses.append(f"ocr confidence expected >= {threshold} got {getattr(record, 'ocr_confidence', 0)}")
+        except Exception:
+            misses.append("ocr confidence minimum expected value is invalid")
 
     if expected.get("software_contains"):
         term = str(expected["software_contains"]).lower()

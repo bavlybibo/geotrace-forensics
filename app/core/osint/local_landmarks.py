@@ -7,18 +7,38 @@ visual tags only. It does not call external services or claim exact visual recog
 """
 
 import json
+import os
 from pathlib import Path
 from typing import Iterable, Any
 
 _DATA_PATH = Path(__file__).resolve().parents[3] / "data" / "osint" / "local_landmarks.json"
 
 
-def load_local_landmarks() -> list[dict[str, Any]]:
+def _load_json_list(path: Path) -> list[dict[str, Any]]:
     try:
-        data = json.loads(_DATA_PATH.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return []
+    if isinstance(data, dict):
+        data = data.get("landmarks", [])
     return [item for item in data if isinstance(item, dict)]
+
+
+def load_local_landmarks() -> list[dict[str, Any]]:
+    built_in = _load_json_list(_DATA_PATH)
+    custom_path = os.environ.get("GEOTRACE_LANDMARK_INDEX", "").strip()
+    if not custom_path:
+        return built_in
+    custom = _load_json_list(Path(custom_path))
+    seen: set[str] = set()
+    merged: list[dict[str, Any]] = []
+    for item in custom + built_in:
+        key = str(item.get("name", "")).strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    return merged
 
 
 def match_local_landmarks(texts: Iterable[str], visual_tags: Iterable[str] = (), *, limit: int = 8) -> list[dict[str, Any]]:

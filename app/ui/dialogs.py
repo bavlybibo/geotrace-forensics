@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 from PyQt5.QtCore import QPoint, QPropertyAnimation, Qt, QTimer
@@ -15,6 +16,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QLineEdit,
     QPushButton,
     QTextEdit,
     QVBoxLayout,
@@ -193,6 +195,159 @@ class OnboardingDialog(QDialog):
         self.accept()
 
 
+class FirstRunSetupWizardDialog(QDialog):
+    def __init__(self, project_root: Path, values: Dict[str, object], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.project_root = Path(project_root)
+        self._values = dict(values)
+        self.setObjectName('ThemedDialog')
+        self.setStyleSheet(DIALOG_STYLESHEET)
+        self.setWindowTitle('First Run Setup Wizard')
+        self.resize(860, 660)
+
+        try:
+            from ..core.dependency_check import ensure_runtime_folders, run_dependency_check
+        except ImportError:  # pragma: no cover
+            from app.core.dependency_check import ensure_runtime_folders, run_dependency_check
+
+        self._ensure_runtime_folders = ensure_runtime_folders
+        report = run_dependency_check(self.project_root)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(12)
+
+        title = QLabel('First Run Setup Wizard')
+        title.setStyleSheet('font-size: 20pt; font-weight: 900; color: #95e8ff;')
+        subtitle = QLabel(
+            'Prepare GeoTrace safely before the first demo/build: create runtime folders, keep privacy-safe logs, bound OCR timeouts, and verify dependencies without any network calls.'
+        )
+        subtitle.setWordWrap(True)
+        subtitle.setProperty('role', 'muted')
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+
+        hero = QFrame()
+        hero.setObjectName('DialogCard')
+        hero_layout = QVBoxLayout(hero)
+        hero_layout.setContentsMargins(14, 14, 14, 14)
+        status_text = 'READY' if report.app_ready else 'NEEDS SETUP'
+        status = QLabel(f'Status: {status_text} • Required dependencies {report.required_ok}/{report.required_total} • Optional {report.optional_ok}/{report.optional_total}')
+        status.setStyleSheet('font-size: 12pt; font-weight: 900; color: #e8f8ff;')
+        status.setWordWrap(True)
+        hero_layout.addWidget(status)
+        note = QLabel('This wizard never sends evidence outside your machine. Local AI adapters stay disabled unless you configure them explicitly.')
+        note.setWordWrap(True)
+        note.setProperty('role', 'muted')
+        hero_layout.addWidget(note)
+        layout.addWidget(hero)
+
+        config_card = QFrame()
+        config_card.setObjectName('DialogCard')
+        config_layout = QVBoxLayout(config_card)
+        config_layout.setContentsMargins(14, 14, 14, 14)
+        config_layout.setSpacing(8)
+        self.create_runtime_folders = QCheckBox('Create missing runtime folders: cases, exports, logs, reports, tmp, data/validation')
+        self.create_runtime_folders.setChecked(True)
+        self.safe_ocr_defaults = QCheckBox('Use safe OCR defaults: mode=quick, per-call timeout=0.8s, global budget=5s, max calls=4')
+        self.safe_ocr_defaults.setChecked(True)
+        self.redacted_logs = QCheckBox('Keep logs privacy-safe/redacted by default')
+        self.redacted_logs.setChecked(True)
+        self.disable_local_ai = QCheckBox('Keep optional local AI disabled until a reviewed offline runner is configured')
+        self.disable_local_ai.setChecked(True)
+        self.skip_onboarding = QCheckBox('Do not show the welcome onboarding after this setup')
+        self.skip_onboarding.setChecked(False)
+        for widget in [self.create_runtime_folders, self.safe_ocr_defaults, self.redacted_logs, self.disable_local_ai, self.skip_onboarding]:
+            config_layout.addWidget(widget)
+        layout.addWidget(config_card)
+
+        body = QTextEdit()
+        body.setReadOnly(True)
+        body.setMinimumHeight(260)
+        body.setPlainText(report.to_text())
+        layout.addWidget(body, 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def values(self) -> Dict[str, object]:
+        values: Dict[str, object] = {}
+        if self.create_runtime_folders.isChecked():
+            self._ensure_runtime_folders(self.project_root)
+        if self.safe_ocr_defaults.isChecked():
+            values.update({
+                'ocr_mode': 'quick',
+                'ocr_timeout': '0.8',
+                'ocr_global_timeout': '5.0',
+                'ocr_max_calls': '4',
+            })
+        if self.redacted_logs.isChecked():
+            values['log_privacy'] = 'redacted'
+        if self.disable_local_ai.isChecked():
+            values['local_ai_enabled'] = False
+        if self.skip_onboarding.isChecked():
+            values['show_onboarding'] = False
+        return values
+
+
+class OCRSetupWizardDialog(QDialog):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName('ThemedDialog')
+        self.setStyleSheet(DIALOG_STYLESHEET)
+        self.setWindowTitle('OCR Setup Wizard')
+        self.resize(800, 600)
+
+        try:
+            from ..core.ocr_setup import build_ocr_setup_status
+        except ImportError:  # pragma: no cover - direct execution fallback
+            from app.core.ocr_setup import build_ocr_setup_status
+
+        status = build_ocr_setup_status()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(12)
+
+        title = QLabel('OCR Setup Wizard')
+        title.setStyleSheet('font-size: 20pt; font-weight: 900; color: #95e8ff;')
+        subtitle = QLabel(
+            'Pre-flight checker for Tesseract, language packs, and map/text OCR readiness. '
+            'Use this before CTF or geolocation work so the engine can extract labels instead of relying on visual-only hints.'
+        )
+        subtitle.setWordWrap(True)
+        subtitle.setProperty('role', 'muted')
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+
+        card = QFrame()
+        card.setObjectName('DialogCard')
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(14, 14, 14, 14)
+        card_layout.setSpacing(8)
+
+        readiness = 'READY' if status.ready else 'NEEDS SETUP'
+        diag = status.diagnostic or {}
+        tesseract_label = 'installed' if diag.get('tesseract_installed') else 'missing'
+        lang_label = ', '.join(diag.get('available_languages') or []) or 'none'
+        status_label = QLabel(f'Status: {readiness}  •  Tesseract: {tesseract_label}  •  Languages: {lang_label}')
+        status_label.setStyleSheet('font-size: 11.5pt; font-weight: 800; color: #e9f8ff;')
+        status_label.setWordWrap(True)
+        body = QTextEdit()
+        body.setReadOnly(True)
+        body.setPlainText(status.to_text())
+        body.setMinimumHeight(360)
+        card_layout.addWidget(status_label)
+        card_layout.addWidget(body)
+        layout.addWidget(card, 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
+        layout.addWidget(buttons)
+
+
 class SettingsDialog(QDialog):
     def __init__(self, values: Dict[str, object], parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -255,17 +410,39 @@ class SettingsDialog(QDialog):
         self.show_onboarding = QCheckBox('Show onboarding flow on startup')
         self.show_onboarding.setChecked(bool(values.get('show_onboarding', True)))
 
+        self.ocr_mode = QComboBox()
+        self.ocr_mode.addItems(['off', 'quick', 'deep', 'map_deep'])
+        self.ocr_mode.setCurrentText(str(values.get('ocr_mode', 'quick')))
+        self.ocr_timeout = QLineEdit(str(values.get('ocr_timeout', '0.8')))
+        self.ocr_global_timeout = QLineEdit(str(values.get('ocr_global_timeout', '5.0')))
+        self.ocr_max_calls = QLineEdit(str(values.get('ocr_max_calls', '4')))
+        self.log_privacy = QComboBox()
+        self.log_privacy.addItems(['redacted', 'full'])
+        self.log_privacy.setCurrentText(str(values.get('log_privacy', 'redacted')))
+        self.local_ai_enabled = QCheckBox('Enable optional local AI/vision adapters when configured')
+        self.local_ai_enabled.setChecked(bool(values.get('local_ai_enabled', False)))
+
         grid.addWidget(QLabel('Analyst label'), 0, 0)
         grid.addWidget(self.analyst_combo, 0, 1)
         grid.addWidget(QLabel('Default landing page'), 1, 0)
         grid.addWidget(self.default_page, 1, 1)
         grid.addWidget(QLabel('Default evidence sort'), 2, 0)
         grid.addWidget(self.sort_mode, 2, 1)
+        grid.addWidget(QLabel('OCR mode'), 3, 0)
+        grid.addWidget(self.ocr_mode, 3, 1)
+        grid.addWidget(QLabel('OCR per-call timeout seconds'), 4, 0)
+        grid.addWidget(self.ocr_timeout, 4, 1)
+        grid.addWidget(QLabel('OCR global budget seconds'), 5, 0)
+        grid.addWidget(self.ocr_global_timeout, 5, 1)
+        grid.addWidget(QLabel('OCR max calls per image'), 6, 0)
+        grid.addWidget(self.ocr_max_calls, 6, 1)
+        grid.addWidget(QLabel('Log privacy'), 7, 0)
+        grid.addWidget(self.log_privacy, 7, 1)
         settings_layout.addLayout(grid)
-        for widget in [self.auto_reopen, self.open_reports_after_export, self.show_toasts, self.confirm_before_new_case, self.show_onboarding]:
+        for widget in [self.auto_reopen, self.open_reports_after_export, self.show_toasts, self.confirm_before_new_case, self.show_onboarding, self.local_ai_enabled]:
             settings_layout.addWidget(widget)
 
-        notes = QLabel('Tip: review tabs now separate overview, metadata, raw tags, notes, and audit focus so the preview stage keeps a cleaner hierarchy.')
+        notes = QLabel('Tip: OCR is bounded by default to prevent freezing. Use map_deep/manual crop OCR only when a map screenshot needs deeper extraction.')
         notes.setWordWrap(True)
         notes.setProperty('role', 'muted')
         settings_layout.addWidget(notes)
@@ -286,6 +463,12 @@ class SettingsDialog(QDialog):
             'show_toasts': self.show_toasts.isChecked(),
             'confirm_before_new_case': self.confirm_before_new_case.isChecked(),
             'show_onboarding': self.show_onboarding.isChecked(),
+            'ocr_mode': self.ocr_mode.currentText(),
+            'ocr_timeout': self.ocr_timeout.text().strip() or '0.8',
+            'ocr_global_timeout': self.ocr_global_timeout.text().strip() or '5.0',
+            'ocr_max_calls': self.ocr_max_calls.text().strip() or '4',
+            'log_privacy': self.log_privacy.currentText(),
+            'local_ai_enabled': self.local_ai_enabled.isChecked(),
         }
 
 

@@ -30,8 +30,11 @@ from reportlab.platypus import Image as RLImage, PageBreak, Paragraph, SimpleDoc
 from ..anomalies import parse_timestamp
 from ..models import EvidenceRecord
 from ..validation_service import build_validation_metrics
+from ..launch_readiness import evaluate_launch_readiness, render_launch_gate_text
 from ..osint.privacy_review import build_osint_privacy_review
 from ..reports.osint_appendix import build_osint_appendix_text
+from ..redaction_engine import redact_text as privacy_redact_text
+from ..evidence_claims import build_claim_links
 from ..ai import build_evidence_graph, case_readiness_scores, explain_contradictions, guardian_narrative, privacy_audit_status
 try:
     from ...config import APP_COPYRIGHT, APP_NAME, APP_VERSION, APP_BUILD_CHANNEL
@@ -105,13 +108,7 @@ class ReportService:
         return value
 
     def _redact_text(self, value: str, privacy_level: str) -> str:
-        if not self._is_strict_redacted(privacy_level) or not value:
-            return value
-        redacted = re.sub(r"https?://\S+|www\.\S+", "[REDACTED_URL]", value)
-        redacted = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[REDACTED_EMAIL]", redacted)
-        redacted = re.sub(r"(?<![\w.])@[A-Za-z0-9_.-]{2,}", "[REDACTED_USERNAME]", redacted)
-        redacted = re.sub(r"\b-?\d{1,3}\.\d{4,}\s*,\s*-?\d{1,3}\.\d{4,}\b", "[REDACTED_COORDINATES]", redacted)
-        return redacted
+        return privacy_redact_text(value, privacy_level)
 
     def _redact_collection(self, values: Any, privacy_level: str, *, replacement: str | None = None) -> Any:
         if not self._is_strict_redacted(privacy_level):
@@ -534,6 +531,49 @@ class ReportService:
                         "readable_strings": self._redact_collection(record.extracted_strings, privacy_level, replacement="[REDACTED_TEXT]"),
                         "urls": self._redact_collection(record.urls_found, privacy_level, replacement="[REDACTED_URL]"),
                         "stego_suspicion": record.stego_suspicion,
+                        "image_threat_ai": {
+                            "label": getattr(record, "image_risk_label", "SAFE"),
+                            "score": getattr(record, "image_risk_score", 0),
+                            "confidence": getattr(record, "image_risk_confidence", 0),
+                            "is_dangerous": getattr(record, "image_risk_is_dangerous", False),
+                            "badge": getattr(record, "image_risk_badge", "SAFE"),
+                            "threat_family": getattr(record, "image_risk_threat_family", getattr(record, "image_risk_verdict_payload", {}).get("threat_family", "clean")),
+                            "decision_lane": getattr(record, "image_risk_decision_lane", getattr(record, "image_risk_verdict_payload", {}).get("decision_lane", "benign_or_normal_preservation")),
+                            "technical_signal_count": getattr(record, "image_risk_technical_signal_count", getattr(record, "image_risk_verdict_payload", {}).get("technical_signal_count", 0)),
+                            "evidence_grade": getattr(record, "image_risk_evidence_grade", getattr(record, "image_risk_verdict_payload", {}).get("evidence_grade", "D")),
+                            "review_priority": getattr(record, "image_risk_review_priority", getattr(record, "image_risk_verdict_payload", {}).get("review_priority", "P3")),
+                            "risk_temperature": getattr(record, "image_risk_risk_temperature", getattr(record, "image_risk_verdict_payload", {}).get("risk_temperature", "COOL")),
+                            "technical_threat": getattr(record, "image_risk_technical_threat", getattr(record, "image_risk_verdict_payload", {}).get("technical_threat", "Low")),
+                            "privacy_exposure": getattr(record, "image_risk_privacy_exposure", getattr(record, "image_risk_verdict_payload", {}).get("privacy_exposure", "Low")),
+                            "geo_sensitivity": getattr(record, "image_risk_geo_sensitivity", getattr(record, "image_risk_verdict_payload", {}).get("geo_sensitivity", "Low")),
+                            "manipulation_suspicion": getattr(record, "image_risk_manipulation_suspicion", getattr(record, "image_risk_verdict_payload", {}).get("manipulation_suspicion", "Low")),
+                            "safe_handling_profile": getattr(record, "image_risk_safe_handling_profile", getattr(record, "image_risk_verdict_payload", {}).get("safe_handling_profile", "normal_evidence_preservation")),
+                            "export_policy": self._redact_freeform_text(getattr(record, "image_risk_export_policy", getattr(record, "image_risk_verdict_payload", {}).get("export_policy", "")), privacy_level),
+                            "calibration_notes": getattr(record, "image_risk_calibration_notes", getattr(record, "image_risk_verdict_payload", {}).get("calibration_notes", [])),
+                            "missing_evidence": self._redact_collection(getattr(record, "image_risk_missing_evidence", getattr(record, "image_risk_verdict_payload", {}).get("missing_evidence", [])), privacy_level, replacement="[REDACTED_IMAGE_MISSING_EVIDENCE]"),
+                            "contributor_matrix": self._redact_collection(getattr(record, "image_risk_contributor_matrix", getattr(record, "image_risk_verdict_payload", {}).get("contributor_matrix", [])), privacy_level, replacement="[REDACTED_IMAGE_RISK_CONTRIBUTOR]"),
+                            "analyst_verdict_hint": self._redact_freeform_text(getattr(record, "image_risk_analyst_verdict_hint", getattr(record, "image_risk_verdict_payload", {}).get("analyst_verdict_hint", "")), privacy_level),
+                            "summary": self._redact_freeform_text(getattr(record, "image_risk_summary", ""), privacy_level),
+                            "primary_reason": self._redact_freeform_text(getattr(record, "image_risk_primary_reason", ""), privacy_level),
+                            "danger_zones": self._redact_collection(getattr(record, "image_risk_danger_zones", []), privacy_level),
+                            "evidence_matrix": self._redact_collection(getattr(record, "image_risk_evidence_matrix", []), privacy_level, replacement="[REDACTED_IMAGE_RISK_EVIDENCE]"),
+                            "privacy_findings": self._redact_collection(getattr(record, "image_risk_privacy_findings", []), privacy_level, replacement="[REDACTED_IMAGE_PRIVACY]"),
+                            "false_positive_guards": getattr(record, "image_risk_false_positive_guards", []),
+                            "next_actions": self._redact_collection(getattr(record, "image_risk_next_actions", []), privacy_level),
+                        },
+                        "digital_risk": {
+                            "final_call": getattr(record, "digital_final_call", "CLEAR"),
+                            "risk_score": getattr(record, "digital_risk_score", 0),
+                            "confidence_score": getattr(record, "digital_confidence_score", 0),
+                            "confirmation_level": getattr(record, "digital_confirmation_level", "clean"),
+                            "one_line": self._redact_freeform_text(getattr(record, "digital_one_line", ""), privacy_level),
+                            "danger_zones": self._redact_collection(getattr(record, "digital_danger_zones", []), privacy_level),
+                            "evidence_brief": self._redact_collection(getattr(record, "digital_evidence_brief", []), privacy_level, replacement="[REDACTED_DIGITAL_EVIDENCE]"),
+                            "artifact_status": getattr(record, "digital_artifact_status", "no_artifact_detected"),
+                            "execution_status": getattr(record, "digital_execution_status", "no_execution_evidence"),
+                            "false_positive_guards": getattr(record, "digital_false_positive_guards", []),
+                            "next_actions": self._redact_collection(getattr(record, "digital_next_actions", []), privacy_level),
+                        },
                         "pixel_forensics": {
                             "score": record.pixel_hidden_score,
                             "verdict": record.pixel_hidden_verdict,
@@ -641,6 +681,8 @@ class ReportService:
                         "corroboration_matrix": self._redact_collection(record.ai_corroboration_matrix, privacy_level),
                         "breakdown": self._redact_collection(record.ai_breakdown, privacy_level, replacement="[REDACTED_AI_BREAKDOWN]"),
                     },
+                    "claim_to_evidence_links": self._redact_collection(getattr(record, "claim_to_evidence_links", []) or [claim.to_dict() for claim in build_claim_links(record)], privacy_level, replacement="[REDACTED_CLAIM]"),
+                    "timeline_confidence_profile": getattr(record, "timeline_confidence_profile", {}),
                     "validation": {
                         "hits": self._redact_collection(record.validation_hits, privacy_level),
                         "misses": self._redact_collection(record.validation_misses, privacy_level),
@@ -746,15 +788,30 @@ class ReportService:
                     lines.append("  Extraction plan: " + " | ".join(self._redact_collection(getattr(record, "map_extraction_plan", [])[:3], privacy_level, replacement="[REDACTED_LOCATION_ACTION]")))
         else:
             lines.append("- No map/navigation intelligence detected yet.")
-        lines.extend(["", "Pixel-Level Hidden Content", "--------------------------"])
-        pixel_records = [record for record in records if getattr(record, "pixel_hidden_score", 0) >= 15 or getattr(record, "pixel_lsb_strings", [])]
-        if pixel_records:
-            for record in sorted(pixel_records, key=lambda item: (-getattr(item, "pixel_hidden_score", 0), item.evidence_id))[:20]:
-                lines.append(f"- {record.evidence_id}: {record.pixel_hidden_verdict} | score={record.pixel_hidden_score}% | {self._redact_text(record.pixel_hidden_summary, privacy_level)}")
-                if record.pixel_lsb_strings:
-                    lines.append("  LSB strings: " + self._join_redacted(record.pixel_lsb_strings, privacy_level, limit=3, replacement="[REDACTED_PIXEL_STRING]"))
+        lines.extend(["", "Digital Risk Verdicts", "---------------------"])
+        digital_records = [
+            record for record in records
+            if getattr(record, "digital_final_call", "CLEAR") in {"ISOLATE", "REVIEW", "WATCH"}
+            or getattr(record, "pixel_hidden_score", 0) >= 15
+            or getattr(record, "pixel_lsb_strings", [])
+        ]
+        if digital_records:
+            order = {"ISOLATE": 0, "REVIEW": 1, "WATCH": 2, "CLEAR": 3}
+            for record in sorted(digital_records, key=lambda item: (order.get(getattr(item, "digital_final_call", "CLEAR"), 9), -getattr(item, "digital_risk_score", 0), item.evidence_id))[:20]:
+                lines.append(
+                    f"- {record.evidence_id}: {getattr(record, 'digital_final_call', 'CLEAR')} | "
+                    f"risk={getattr(record, 'digital_risk_score', 0)}% | "
+                    f"confidence={getattr(record, 'digital_confidence_score', 0)}% | "
+                    f"{self._redact_text(getattr(record, 'digital_one_line', ''), privacy_level)}"
+                )
+                zones = getattr(record, "digital_danger_zones", []) or []
+                evidence = getattr(record, "digital_evidence_brief", []) or []
+                if zones:
+                    lines.append("  Danger zone: " + self._join_redacted(zones, privacy_level, limit=4, replacement="[REDACTED_DIGITAL_ZONE]"))
+                if evidence:
+                    lines.append("  Evidence: " + self._join_redacted(evidence, privacy_level, limit=3, replacement="[REDACTED_DIGITAL_EVIDENCE]"))
         else:
-            lines.append("- No elevated pixel-level hidden-content indicators detected yet.")
+            lines.append("- CLEAR: no elevated digital-risk indicators detected by the precision layer.")
         lines.extend(["", "AI Evidence Graph", "-----------------"])
         if graph:
             lines.extend(f"- {edge.source_id} <-> {edge.target_id} [{edge.relation}, {edge.weight}%]: {self._redact_text(edge.reason, privacy_level)}" for edge in graph[:30])
@@ -802,6 +859,7 @@ class ReportService:
         native_gps = sum(1 for record in records if record.gps_confidence >= 80)
         hidden_hits = sum(1 for record in records if record.hidden_code_indicators or getattr(record, "pixel_hidden_score", 0) >= 40 or getattr(record, "pixel_lsb_strings", []))
         validation = build_validation_metrics(records)
+        launch_gate = evaluate_launch_readiness(records, privacy_level=privacy_level, validation_metrics=validation)
         lines = [
             f"{APP_NAME} — Validation Summary",
             f"Case ID: {case_id}",
@@ -821,6 +879,9 @@ class ReportService:
             f"Courtroom-ready posture (>=60%): {sum(1 for record in records if record.courtroom_strength >= 60)}/{total}",
             f"OCR/entity-rich items: {sum(1 for record in records if (record.ocr_location_entities or record.ocr_time_entities or record.ocr_url_entities or record.ocr_username_entities))}/{total}",
             f"Validation dataset summary: {validation.get('summary', 'No linked validation dataset was found.')}",
+            "",
+            "Launch Readiness Gate:",
+            render_launch_gate_text(launch_gate),
             "",
             "Interpretation:",
             "- Strong time anchors = Native EXIF Original or equivalent embedded source.",
@@ -900,6 +961,43 @@ class ReportService:
             actions = record.location_estimate_next_actions or record.map_recommended_actions or ["Corroborate OCR/map-derived place leads before submitting a final CTF answer."]
             lines.extend(f"- {self._redact_text(str(action), privacy_level)}" for action in actions[:6])
             lines.append("")
+        output.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
+        return output
+
+    def export_claim_matrix(self, records: List[EvidenceRecord], case_id: str, case_name: str, *, privacy_mode: bool = True, privacy_level: str | None = None) -> Path:
+        privacy_level = self._normalize_privacy_level(privacy_mode, privacy_level)
+        output = self.export_dir / f"claim_to_evidence_matrix_{self._privacy_suffix(privacy_level)}.md"
+        lines = [
+            f"# {APP_NAME} — Claim-to-Evidence Matrix",
+            "",
+            f"Case ID: `{case_id}`",
+            f"Case Name: **{case_name}**",
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            self._privacy_note(privacy_level),
+            "",
+            "Every location, OCR, hidden-content, AI, timeline, or integrity statement below is classified as proof, evidence, lead, weak signal, advisory, or needs review.",
+            "",
+        ]
+        any_claim = False
+        for record in sorted(records, key=lambda item: item.evidence_id):
+            claims = build_claim_links(record)
+            if not claims:
+                continue
+            any_claim = True
+            lines.extend([f"## {record.evidence_id} — {self._safe_file_name(record, privacy_level)}", ""])
+            for claim in claims:
+                safe_claim = self._redact_freeform_text(claim.claim, privacy_level, replacement="[REDACTED_CLAIM]")
+                safe_basis = self._redact_collection(claim.basis, privacy_level, replacement="[REDACTED_BASIS]")
+                safe_limits = self._redact_collection(claim.limitations, privacy_level, replacement="[REDACTED_LIMITATION]")
+                lines.append(
+                    f"- **{claim.claim_id}** `{claim.source_family}` `{claim.status}` — {safe_claim} "
+                    f"(confidence {claim.confidence}%, strength {claim.strength})."
+                )
+                lines.append(f"  - Basis: {', '.join(str(x) for x in safe_basis[:5]) if safe_basis else 'none captured'}")
+                lines.append(f"  - Limits: {', '.join(str(x) for x in safe_limits[:4]) if safe_limits else 'none recorded'}")
+            lines.append("")
+        if not any_claim:
+            lines.append("No claim links were generated for this case yet.")
         output.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
         return output
 
@@ -1027,7 +1125,16 @@ class ReportService:
                     <p><strong>Courtroom note:</strong> {html.escape(self._redact_freeform_text(record.courtroom_notes, privacy_level))}</p>
                     <p><strong>GPS verification:</strong> {html.escape(self._redact_freeform_text(record.gps_verification, privacy_level))}</p>
                     <p><strong>Derived geo:</strong> {html.escape(self._redact_freeform_text(record.derived_geo_note, privacy_level))}</p>
-                    <p><strong>Hidden/content summary:</strong> {html.escape(self._redact_freeform_text(record.hidden_code_summary, privacy_level))}</p>
+                    <p><strong>Image Threat AI:</strong> {html.escape(str(getattr(record, 'image_risk_label', 'SAFE')))} / {html.escape(str(getattr(record, 'image_risk_badge', 'SAFE')))} • score {html.escape(str(getattr(record, 'image_risk_score', 0)))}% • confidence {html.escape(str(getattr(record, 'image_risk_confidence', 0)))}% — {html.escape(self._redact_freeform_text(getattr(record, 'image_risk_summary', ''), privacy_level))}</p>
+                    <p><strong>Image risk reason:</strong> {html.escape(self._redact_freeform_text(getattr(record, 'image_risk_primary_reason', ''), privacy_level))}</p>
+                    <p><strong>Image AI lane:</strong> {html.escape(str(getattr(record, 'image_risk_threat_family', getattr(record, 'image_risk_verdict_payload', {}).get('threat_family', 'clean'))))} • {html.escape(str(getattr(record, 'image_risk_decision_lane', getattr(record, 'image_risk_verdict_payload', {}).get('decision_lane', 'benign_or_normal_preservation'))))} • technical sensors {html.escape(str(getattr(record, 'image_risk_technical_signal_count', getattr(record, 'image_risk_verdict_payload', {}).get('technical_signal_count', 0))))}</p>
+                    <p><strong>Image AI dimensions:</strong> technical {html.escape(str(getattr(record, 'image_risk_technical_threat', getattr(record, 'image_risk_verdict_payload', {}).get('technical_threat', 'Low'))))} • privacy {html.escape(str(getattr(record, 'image_risk_privacy_exposure', getattr(record, 'image_risk_verdict_payload', {}).get('privacy_exposure', 'Low'))))} • geo {html.escape(str(getattr(record, 'image_risk_geo_sensitivity', getattr(record, 'image_risk_verdict_payload', {}).get('geo_sensitivity', 'Low'))))} • manipulation {html.escape(str(getattr(record, 'image_risk_manipulation_suspicion', getattr(record, 'image_risk_verdict_payload', {}).get('manipulation_suspicion', 'Low'))))}</p>
+                    <p><strong>Image AI calibration:</strong> grade {html.escape(str(getattr(record, 'image_risk_evidence_grade', getattr(record, 'image_risk_verdict_payload', {}).get('evidence_grade', 'D'))))} • priority {html.escape(str(getattr(record, 'image_risk_review_priority', getattr(record, 'image_risk_verdict_payload', {}).get('review_priority', 'P3'))))} • temperature {html.escape(str(getattr(record, 'image_risk_risk_temperature', getattr(record, 'image_risk_verdict_payload', {}).get('risk_temperature', 'COOL'))))} • handling {html.escape(str(getattr(record, 'image_risk_safe_handling_profile', getattr(record, 'image_risk_verdict_payload', {}).get('safe_handling_profile', 'normal_evidence_preservation'))))}</p>
+                    <p><strong>Image AI export policy:</strong> {html.escape(self._redact_freeform_text(getattr(record, 'image_risk_export_policy', getattr(record, 'image_risk_verdict_payload', {}).get('export_policy', 'Shareable after standard case redaction.')), privacy_level))}</p>
+                    <p><strong>Image AI missing evidence:</strong> {html.escape(self._join_redacted(getattr(record, 'image_risk_missing_evidence', getattr(record, 'image_risk_verdict_payload', {}).get('missing_evidence', [])), privacy_level, limit=3, replacement='[REDACTED_IMAGE_MISSING_EVIDENCE]'))}</p>
+                    <p><strong>Image AI calibration notes:</strong> {html.escape(' | '.join(str(x) for x in getattr(record, 'image_risk_calibration_notes', getattr(record, 'image_risk_verdict_payload', {}).get('calibration_notes', []))[:5]) or 'No calibration notes.')}</p>
+                    <p><strong>Digital risk:</strong> {html.escape(str(getattr(record, 'digital_final_call', 'CLEAR')))} • risk {html.escape(str(getattr(record, 'digital_risk_score', 0)))}% • confidence {html.escape(str(getattr(record, 'digital_confidence_score', 0)))}% — {html.escape(self._redact_freeform_text(getattr(record, 'digital_one_line', ''), privacy_level))}</p>
+                    <p><strong>Danger zone:</strong> {html.escape(' | '.join(str(x) for x in getattr(record, 'digital_danger_zones', [])[:4]) or 'none')}</p>
                     <p><strong>Pixel-level hidden scan:</strong> {html.escape(record.pixel_hidden_verdict)} • {record.pixel_hidden_score}% — {html.escape(self._redact_freeform_text(record.pixel_hidden_summary, privacy_level))}</p>
                     <p><strong>Deep image intelligence:</strong> {html.escape(record.image_detail_label)} • {record.image_detail_confidence}% — {html.escape(self._redact_freeform_text(record.image_detail_summary, privacy_level))}</p>
                     <p><strong>Image reasoning strategy:</strong> {html.escape(str(record.image_detail_metrics.get('analysis_strategy', 'balanced visual review')))} • OCR {html.escape(str(record.image_detail_metrics.get('ocr_priority_score', 0)))} • Map {html.escape(str(record.image_detail_metrics.get('map_review_priority_score', 0)))} • Geo {html.escape(str(record.image_detail_metrics.get('geolocation_potential_score', 0)))} • Hidden {html.escape(str(record.image_detail_metrics.get('hidden_content_priority_score', 0)))} • Gate {html.escape(str(record.image_detail_metrics.get('quality_gate', 'ready_for_triage')))}</p>

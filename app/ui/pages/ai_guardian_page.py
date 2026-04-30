@@ -35,6 +35,8 @@ def _guardian_shell(window, title: str, attr: str, placeholder: str, subtitle: s
 def _metric_pill(window, label_text: str, value_attr: str, note_attr: str, value_text: str = "—", note_text: str = "Awaiting evidence") -> QFrame:
     frame = QFrame()
     frame.setObjectName("MetricPill")
+    role_map = {"High Risk": "danger", "Image AI": "ai", "Privacy": "privacy", "Readiness": "ready", "Evidence": "evidence"}
+    frame.setProperty("role", role_map.get(label_text, "neutral"))
     layout = QVBoxLayout(frame)
     layout.setContentsMargins(12, 10, 12, 10)
     layout.setSpacing(3)
@@ -63,11 +65,92 @@ def _mini_card(title: str, value: str, note: str = "", tone: str = "#84dcff") ->
     )
 
 
+def _risk_palette(label: str, *, dangerous: bool = False) -> dict[str, str]:
+    label = str(label or "SAFE").upper()
+    if label == "CRITICAL" or dangerous:
+        return {"border": "#ff4d7d", "bg": "#23101a", "title": "#ffd5df", "accent": "#ff6d96", "text": "#ffeef4", "muted": "#d8a9b8"}
+    if label == "HIGH":
+        return {"border": "#ff8a4c", "bg": "#24160e", "title": "#ffe0c7", "accent": "#ffad6b", "text": "#fff2e8", "muted": "#d8b79f"}
+    if label == "MEDIUM":
+        return {"border": "#ffd166", "bg": "#211b0e", "title": "#fff1bc", "accent": "#ffd166", "text": "#fff9df", "muted": "#d7c487"}
+    if label == "LOW":
+        return {"border": "#3de0a7", "bg": "#0d1d18", "title": "#c7ffe9", "accent": "#66efbd", "text": "#eafff6", "muted": "#97d6bd"}
+    return {"border": "#37c6ff", "bg": "#0b1721", "title": "#dff7ff", "accent": "#8de9ff", "text": "#edfaff", "muted": "#9ebed2"}
+
+
+def _payload_value(record, key: str, default=None):
+    payload = getattr(record, "image_risk_verdict_payload", {}) or {}
+    attr = f"image_risk_{key}"
+    return getattr(record, attr, payload.get(key, default))
+
+
+def _render_image_triage_deck(records) -> str:
+    """Compact command deck for the calibrated image AI decision layer."""
+    rows = [r for r in records if int(getattr(r, "image_risk_score", 0) or 0) > 0 or getattr(r, "image_risk_is_dangerous", False)]
+    if not rows:
+        return (
+            "<div style='border:1px solid #214461;border-radius:16px;padding:14px;background:#0a1520;'>"
+            "<div style='color:#9ee6bc;font-weight:950;font-size:15px;'>No active image triage queue</div>"
+            "<div style='color:#9fb2c7;margin-top:8px;'>Load/analyze images to populate calibrated SAFE/LOW/MEDIUM/HIGH decisions, review priority, evidence grade, and export policy.</div>"
+            "</div>"
+        )
+    priority_rank = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
+    label_rank = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "SAFE": 4}
+    cards: list[str] = []
+    for record in sorted(
+        rows,
+        key=lambda item: (
+            priority_rank.get(str(_payload_value(item, "review_priority", "P3")), 9),
+            label_rank.get(str(getattr(item, "image_risk_label", "SAFE")).upper(), 9),
+            -int(getattr(item, "image_risk_score", 0) or 0),
+            item.evidence_id,
+        ),
+    )[:8]:
+        label = str(getattr(record, "image_risk_label", "SAFE")).upper()
+        palette = _risk_palette(label, dangerous=bool(getattr(record, "image_risk_is_dangerous", False)))
+        grade = escape(str(_payload_value(record, "evidence_grade", "D")))
+        priority = escape(str(_payload_value(record, "review_priority", "P3")))
+        temp = escape(str(_payload_value(record, "risk_temperature", "COOL")))
+        score = escape(str(getattr(record, "image_risk_score", 0)))
+        conf = escape(str(getattr(record, "image_risk_confidence", 0)))
+        family = escape(str(_payload_value(record, "threat_family", "clean")))
+        lane = escape(str(_payload_value(record, "decision_lane", "benign_or_normal_preservation")))
+        handling = escape(str(_payload_value(record, "safe_handling_profile", "normal_evidence_preservation")))
+        export = escape(str(_payload_value(record, "export_policy", "Shareable after standard case redaction.")))
+        technical_threat = escape(str(_payload_value(record, "technical_threat", "Low")))
+        privacy_exposure = escape(str(_payload_value(record, "privacy_exposure", "Low")))
+        geo_sensitivity = escape(str(_payload_value(record, "geo_sensitivity", "Low")))
+        manipulation_suspicion = escape(str(_payload_value(record, "manipulation_suspicion", "Low")))
+        missing = _payload_value(record, "missing_evidence", []) or []
+        calibration = _payload_value(record, "calibration_notes", []) or []
+        missing_line = escape(" | ".join(str(x) for x in list(missing)[:3]) or "No major missing evidence note.")
+        calibration_line = escape(" | ".join(str(x) for x in list(calibration)[:4]) or "No calibration notes.")
+        primary = escape(str(getattr(record, "image_risk_primary_reason", "No primary reason recorded.")))
+        cards.append(
+            f"<div style='border:1px solid {palette['border']};border-radius:16px;padding:13px;margin:0 0 12px 0;background:{palette['bg']};'>"
+            f"<div style='display:flex;justify-content:space-between;gap:8px;'>"
+            f"<div style='color:{palette['title']};font-weight:950;'>{escape(record.evidence_id)} • {escape(label)} {score}%</div>"
+            f"<div style='color:{palette['accent']};font-weight:950;'>Grade {grade} • {priority} • {temp}</div>"
+            "</div>"
+            f"<div style='margin-top:7px;color:{palette['text']};'><b>Lane:</b> {lane} • <b>Family:</b> {family} • <b>Confidence:</b> {conf}%</div>"
+            f"<div style='margin-top:7px;color:{palette['text']};'><b>Technical:</b> {technical_threat} • <b>Privacy:</b> {privacy_exposure} • <b>Geo:</b> {geo_sensitivity} • <b>Manipulation:</b> {manipulation_suspicion}</div>"
+            f"<div style='margin-top:7px;color:{palette['muted']};'><b>Reason:</b> {primary}</div>"
+            f"<div style='margin-top:7px;color:{palette['text']};'><b>Handling:</b> {handling}</div>"
+            f"<div style='margin-top:7px;color:#c9d7e6;'><b>Missing evidence:</b> {missing_line}</div>"
+            f"<div style='margin-top:7px;color:#9fb2c7;'><b>Calibration:</b> {calibration_line}</div>"
+            f"<div style='margin-top:7px;color:{palette['accent']};'><b>Export policy:</b> {export}</div>"
+            "</div>"
+        )
+    return "".join(cards)
+
+
 def _render_guardian_summary_cards(records, readiness: dict, custody_ok, privacy: dict) -> str:
-    high = sum(1 for record in records if getattr(record, "risk_level", "Low") == "High")
+    high = sum(1 for record in records if getattr(record, "risk_level", "Low") == "High" or getattr(record, "image_risk_is_dangerous", False))
     ai_flagged = sum(1 for record in records if getattr(record, "ai_flags", []))
     map_items = sum(1 for record in records if getattr(record, "map_intelligence_confidence", 0) > 0)
     ocr_ready = sum(1 for record in records if getattr(record, "ocr_confidence", 0) > 0)
+    dangerous_images = sum(1 for record in records if getattr(record, "image_risk_is_dangerous", False))
+    review_images = sum(1 for record in records if getattr(record, "image_risk_label", "SAFE") in {"MEDIUM", "HIGH", "CRITICAL"})
     strongest = max(records, key=lambda item: getattr(item, "evidence_strength_score", 0), default=None)
     custody_text = "Verified" if custody_ok is True else "Needs review" if custody_ok is False else "Not checked"
     cards = [
@@ -75,6 +158,7 @@ def _render_guardian_summary_cards(records, readiness: dict, custody_ok, privacy
         _mini_card("Custody Chain", custody_text, "Audit-chain state for the active case."),
         _mini_card("High-risk Queue", str(high), f"AI/manual review flagged {ai_flagged} item(s)."),
         _mini_card("Map/OCR Signals", f"{map_items} map • {ocr_ready} OCR", "Use OCR/map leads as triage unless corroborated."),
+        _mini_card("Image Threat AI", f"{dangerous_images} dangerous • {review_images} review", "Direct SAFE/LOW/MEDIUM/HIGH/CRITICAL image judgement.", "#ffb0c8" if dangerous_images else "#f9d98d" if review_images else "#9ee6bc"),
     ]
     top_lines = []
     if strongest is not None:
@@ -195,30 +279,98 @@ def _render_osint_hypothesis_cards(records) -> str:
             "</div>"
         )
 
-    pixel_cards: list[str] = []
-    for record in sorted(records, key=lambda item: (-getattr(item, "pixel_hidden_score", 0), item.evidence_id))[:10]:
-        if getattr(record, "pixel_hidden_score", 0) < 15 and not getattr(record, "pixel_lsb_strings", []):
+    threat_cards: list[str] = []
+    threat_rank = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "SAFE": 4}
+    for record in sorted(records, key=lambda item: (threat_rank.get(getattr(item, "image_risk_label", "SAFE"), 9), -getattr(item, "image_risk_score", 0), item.evidence_id))[:10]:
+        label = str(getattr(record, "image_risk_label", "SAFE")).upper()
+        if label == "SAFE" and getattr(record, "image_risk_score", 0) <= 0:
             continue
-        indicators = escape(" | ".join(str(x) for x in getattr(record, "pixel_hidden_indicators", [])[:3]) or "No strong indicator list recorded.")
-        lsb = escape(" | ".join(str(x) for x in getattr(record, "pixel_lsb_strings", [])[:3]) or "No readable LSB strings recovered.")
-        channels = escape(" | ".join(str(x) for x in getattr(record, "pixel_channel_notes", [])[:3]) or "No channel notes recorded.")
-        pixel_cards.append(
-            "<div style='border:1px solid #4a3140; border-radius:12px; padding:12px; margin:0 0 10px 0; background:#1b1018;'>"
-            f"<div style='font-weight:900; color:#ffd6f0; font-size:14px;'>{escape(record.evidence_id)} • Pixel Hidden-Content Scan</div>"
-            f"<div style='margin-top:5px; color:#f3e4ee;'><b>{escape(getattr(record, 'pixel_hidden_verdict', 'Not evaluated'))}</b> — {escape(str(getattr(record, 'pixel_hidden_score', 0)))}%</div>"
-            f"<div style='margin-top:6px; color:#cdb8c6;'>{escape(getattr(record, 'pixel_hidden_summary', 'Pixel scan unavailable.'))}</div>"
-            f"<div style='margin-top:6px; color:#bda6b5;'><b>Indicators:</b> {indicators}</div>"
-            f"<div style='margin-top:6px; color:#bda6b5;'><b>LSB strings:</b> {lsb}</div>"
-            f"<div style='margin-top:6px; color:#bda6b5;'><b>Channel notes:</b> {channels}</div>"
+        palette = _risk_palette(label, dangerous=bool(getattr(record, "image_risk_is_dangerous", False)))
+        badge = escape(str(getattr(record, "image_risk_badge", label)))
+        score = escape(str(getattr(record, "image_risk_score", 0)))
+        conf = escape(str(getattr(record, "image_risk_confidence", 0)))
+        summary = escape(str(getattr(record, "image_risk_summary", "No image risk judgement generated.")))
+        primary = escape(str(getattr(record, "image_risk_primary_reason", "No primary reason recorded.")))
+        zones = escape(" | ".join(str(x) for x in getattr(record, "image_risk_danger_zones", [])[:4]) or "none")
+        privacy = escape(" | ".join(str(x) for x in getattr(record, "image_risk_privacy_findings", [])[:3]) or "none")
+        guards = escape(" | ".join(str(x) for x in getattr(record, "image_risk_false_positive_guards", [])[:3]) or "No guardrail triggered.")
+        evidence = escape(" | ".join(str(x) for x in getattr(record, "image_risk_evidence_matrix", [])[:3]) or "No direct image-threat evidence recorded.")
+        actions = escape(" | ".join(str(x) for x in getattr(record, "image_risk_next_actions", [])[:3]) or "No specific action generated.")
+        family = escape(str(_payload_value(record, "threat_family", "clean")))
+        lane = escape(str(_payload_value(record, "decision_lane", "benign_or_normal_preservation")))
+        sensors = escape(str(_payload_value(record, "technical_signal_count", 0)))
+        hint = escape(str(_payload_value(record, "analyst_verdict_hint", "No hint generated.")))
+        contributors = _payload_value(record, "contributor_matrix", []) or []
+        contributors_line = escape(" | ".join(str(x) for x in list(contributors)[:3]) or "No weighted contributors available.")
+        grade = escape(str(_payload_value(record, "evidence_grade", "D")))
+        priority = escape(str(_payload_value(record, "review_priority", "P3")))
+        temperature = escape(str(_payload_value(record, "risk_temperature", "COOL")))
+        handling = escape(str(_payload_value(record, "safe_handling_profile", "normal_evidence_preservation")))
+        export_policy = escape(str(_payload_value(record, "export_policy", "Shareable after standard case redaction.")))
+        missing = _payload_value(record, "missing_evidence", []) or []
+        calibration = _payload_value(record, "calibration_notes", []) or []
+        missing_line = escape(" | ".join(str(x) for x in list(missing)[:2]) or "No major missing evidence note.")
+        calibration_line = escape(" | ".join(str(x) for x in list(calibration)[:3]) or "No calibration notes.")
+        dangerous_text = "YES — isolate" if getattr(record, "image_risk_is_dangerous", False) else "NO — controlled review/normal preservation"
+        threat_cards.append(
+            f"<div style='border:1px solid {palette['border']}; border-radius:14px; padding:13px; margin:0 0 12px 0; background:{palette['bg']};'>"
+            f"<div style='display:flex; justify-content:space-between; gap:8px;'>"
+            f"<div style='font-weight:950; color:{palette['title']}; font-size:14px;'>{escape(record.evidence_id)} • Image Threat AI</div>"
+            f"<div style='color:{palette['accent']}; font-weight:950;'>{escape(label)} / {badge}</div>"
+            "</div>"
+            f"<div style='margin-top:6px; color:{palette['text']};'><b>Dangerous:</b> {dangerous_text} • score {score}% • confidence {conf}% • sensors {sensors}</div>"
+            f"<div style='margin-top:7px; color:{palette['muted']};'>{summary}</div>"
+            f"<div style='margin-top:7px; color:{palette['text']};'><b>Grade:</b> {grade} • <b>Priority:</b> {priority} • <b>Temp:</b> {temperature}</div>"
+            f"<div style='margin-top:7px; color:{palette['text']};'><b>Lane:</b> {lane} • <b>Family:</b> {family}</div>"
+            f"<div style='margin-top:7px; color:{palette['muted']};'><b>Primary reason:</b> {primary}</div>"
+            f"<div style='margin-top:7px; color:{palette['muted']};'><b>Danger zones:</b> {zones}</div>"
+            f"<div style='margin-top:7px; color:{palette['muted']};'><b>Evidence:</b> {evidence}</div>"
+            f"<div style='margin-top:7px; color:{palette['muted']};'><b>Top contributors:</b> {contributors_line}</div>"
+            f"<div style='margin-top:7px; color:{palette['text']};'><b>Handling:</b> {handling}</div>"
+            f"<div style='margin-top:7px; color:#c9d7e6;'><b>Missing evidence:</b> {missing_line}</div>"
+            f"<div style='margin-top:7px; color:#9fb2c7;'><b>Calibration:</b> {calibration_line}</div>"
+            f"<div style='margin-top:7px; color:#9fb2c7;'><b>Privacy:</b> {privacy}</div>"
+            f"<div style='margin-top:7px; color:#8fa1b2;'><b>Guardrails:</b> {guards}</div>"
+            f"<div style='margin-top:7px; color:{palette['text']};'><b>Analyst hint:</b> {hint}</div>"
+            f"<div style='margin-top:7px; color:{palette['accent']};'><b>Export policy:</b> {export_policy}</div>"
+            f"<div style='margin-top:7px; color:{palette['accent']};'><b>Next:</b> {actions}</div>"
             "</div>"
         )
-    if not cards and not pixel_cards and not image_cards:
+    pixel_cards: list[str] = []
+    call_rank = {"ISOLATE": 0, "REVIEW": 1, "WATCH": 2, "CLEAR": 3}
+    for record in sorted(records, key=lambda item: (call_rank.get(getattr(item, "digital_final_call", "CLEAR"), 9), -getattr(item, "digital_risk_score", 0), item.evidence_id))[:10]:
+        if (
+            getattr(record, "digital_final_call", "CLEAR") == "CLEAR"
+            and getattr(record, "pixel_hidden_score", 0) < 15
+            and not getattr(record, "pixel_lsb_strings", [])
+        ):
+            continue
+        zones = escape(" | ".join(str(x) for x in getattr(record, "digital_danger_zones", [])[:4]) or "none")
+        evidence = escape(" | ".join(str(x) for x in getattr(record, "digital_evidence_brief", [])[:3]) or "No focused evidence recorded.")
+        guards = escape(" | ".join(str(x) for x in getattr(record, "digital_false_positive_guards", [])[:2]) or "No extra guardrails triggered.")
+        call = escape(str(getattr(record, "digital_final_call", "CLEAR")))
+        risk = escape(str(getattr(record, "digital_risk_score", 0)))
+        conf = escape(str(getattr(record, "digital_confidence_score", 0)))
+        one_line = escape(str(getattr(record, "digital_one_line", "No digital-risk verdict generated.")))
+        pixel_cards.append(
+            "<div style='border:1px solid #4a3140; border-radius:12px; padding:12px; margin:0 0 10px 0; background:#1b1018;'>"
+            f"<div style='font-weight:900; color:#ffd6f0; font-size:14px;'>{escape(record.evidence_id)} • Digital Risk Verdict</div>"
+            f"<div style='margin-top:5px; color:#f3e4ee;'><b>{call}</b> — risk {risk}% / confidence {conf}%</div>"
+            f"<div style='margin-top:6px; color:#cdb8c6;'>{one_line}</div>"
+            f"<div style='margin-top:6px; color:#bda6b5;'><b>Danger zone:</b> {zones}</div>"
+            f"<div style='margin-top:6px; color:#bda6b5;'><b>Evidence:</b> {evidence}</div>"
+            f"<div style='margin-top:6px; color:#8fa1b2;'><b>Guardrails:</b> {guards}</div>"
+            "</div>"
+        )
+    if not cards and not pixel_cards and not image_cards and not threat_cards:
         return "<p>No OSINT hypothesis cards generated yet.</p>"
     output = "<h3 style='color:#f4f7fb; margin-top:0;'>Structured OSINT Hypothesis Cards</h3>"
     if image_cards:
-        output += "<h3 style='color:#b8e7ff;'>Deep Image Intelligence</h3>" + "".join(image_cards)
+        output += "<h3 style='color:#8de9ff;'>Deep Image Intelligence</h3>" + "".join(image_cards)
+    if threat_cards:
+        output += "<h3 style='color:#ff9fbd;'>Image Threat AI — Danger / Privacy / False-positive Lane</h3>" + "".join(threat_cards)
     if pixel_cards:
-        output += "<h3 style='color:#ffd6f0;'>Pixel-Level Hidden Content</h3>" + "".join(pixel_cards)
+        output += "<h3 style='color:#ffd166;'>Digital Risk Verdicts</h3>" + "".join(pixel_cards)
     return output + "".join(cards)
 
 
@@ -229,7 +381,7 @@ def build_ai_guardian_page(window) -> QWidget:
     layout.setSpacing(14)
 
     hero = QFrame()
-    hero.setObjectName("PanelFrame")
+    hero.setObjectName("AIGuardianHero")
     hero_layout = QVBoxLayout(hero)
     hero_layout.setContentsMargins(16, 16, 16, 16)
     hero_layout.setSpacing(10)
@@ -250,14 +402,17 @@ def build_ai_guardian_page(window) -> QWidget:
     metrics.addWidget(_metric_pill(window, "Evidence", "ai_metric_evidence_value", "ai_metric_evidence_note", "0", "No evidence loaded."))
     metrics.addWidget(_metric_pill(window, "Readiness", "ai_metric_readiness_value", "ai_metric_readiness_note", "0%", "Overall case readiness."))
     metrics.addWidget(_metric_pill(window, "High Risk", "ai_metric_risk_value", "ai_metric_risk_note", "0", "Priority review queue."))
+    metrics.addWidget(_metric_pill(window, "Image AI", "ai_metric_image_value", "ai_metric_image_note", "SAFE", "No image danger judgement yet."))
     metrics.addWidget(_metric_pill(window, "Privacy", "ai_metric_privacy_value", "ai_metric_privacy_note", "—", "Export posture."))
     hero_layout.addLayout(metrics)
 
     action_row = QHBoxLayout()
     action_row.setSpacing(8)
     window.btn_refresh_ai_guardian = QPushButton("Refresh Guardian")
+    window.btn_refresh_ai_guardian.setObjectName("AIPrimaryButton")
     window.btn_refresh_ai_guardian.clicked.connect(window.refresh_ai_guardian)
     window.btn_export_ai_guardian = QPushButton("Export Report Package")
+    window.btn_export_ai_guardian.setObjectName("AIExportButton")
     window.btn_export_ai_guardian.clicked.connect(window.generate_reports)
     action_row.addWidget(window.btn_refresh_ai_guardian)
     action_row.addWidget(window.btn_export_ai_guardian)
@@ -281,12 +436,21 @@ def build_ai_guardian_page(window) -> QWidget:
             0,
         ),
         (
+            "Image AI Triage Queue",
+            "ai_image_triage_view",
+            "Image AI triage queue will appear here.",
+            "Calibrated evidence grade, review priority, risk temperature, safe handling, and export policy.",
+            250,
+            0,
+            1,
+        ),
+        (
             "Case Readiness Score",
             "ai_readiness_view",
             "Case readiness score will appear here.",
             "Timeline/location/integrity/privacy/courtroom readiness.",
             210,
-            0,
+            1,
             1,
         ),
         (
@@ -304,7 +468,7 @@ def build_ai_guardian_page(window) -> QWidget:
             "Map/route intelligence will appear here.",
             "Google Maps detection, route overlay, candidate city/place, and landmark pivots.",
             220,
-            1,
+            2,
             1,
         ),
         (
@@ -312,8 +476,8 @@ def build_ai_guardian_page(window) -> QWidget:
             "ai_osint_content_view",
             "OSINT and deep image understanding will appear here.",
             "What appears inside the image, pixel/hidden leads, visual detail cues, sensitive pivots, and next actions.",
-            220,
-            2,
+            240,
+            3,
             0,
         ),
         (
@@ -322,7 +486,7 @@ def build_ai_guardian_page(window) -> QWidget:
             "AI evidence relationship graph will appear here.",
             "Relationship map across duplicates, devices, places, and AI links.",
             260,
-            2,
+            3,
             1,
         ),
         (
@@ -331,7 +495,7 @@ def build_ai_guardian_page(window) -> QWidget:
             "Contradiction explainer will appear here.",
             "Human-readable why-this-is-suspicious explanations.",
             220,
-            3,
+            4,
             0,
         ),
         (
@@ -340,7 +504,7 @@ def build_ai_guardian_page(window) -> QWidget:
             "AI Privacy Auditor will appear here.",
             "Pre-export external sharing safety check.",
             200,
-            3,
+            4,
             1,
         ),
         (
@@ -349,7 +513,7 @@ def build_ai_guardian_page(window) -> QWidget:
             "OCR/Tesseract diagnostic will appear here.",
             "Detects whether English/Arabic OCR is ready on the demo machine.",
             185,
-            4,
+            5,
             0,
         ),
     ]
@@ -383,10 +547,14 @@ def refresh_ai_guardian_page(window) -> None:
             window.ai_metric_risk_note.setText("No high-risk evidence in queue yet.")
             window.ai_metric_privacy_value.setText("Awaiting")
             window.ai_metric_privacy_note.setText("Privacy export posture activates after analysis.")
+            if hasattr(window, "ai_metric_image_value"):
+                window.ai_metric_image_value.setText("SAFE")
+                window.ai_metric_image_note.setText("No image danger judgement yet.")
         empty = "Load evidence to activate AI Guardian."
         for attr in [
             "ai_guardian_summary",
             "ai_readiness_view",
+            "ai_image_triage_view",
             "ai_strength_view",
             "ai_graph_view",
             "ai_map_intelligence_view",
@@ -402,18 +570,31 @@ def refresh_ai_guardian_page(window) -> None:
         contradictions = explain_contradictions(records)
         privacy = privacy_audit_status(records, "redacted_text")
         if hasattr(window, "ai_metric_readiness_value"):
-            high = sum(1 for record in records if getattr(record, "risk_level", "Low") == "High")
+            high = sum(1 for record in records if getattr(record, "risk_level", "Low") == "High" or getattr(record, "image_risk_is_dangerous", False))
+            dangerous_images = sum(1 for record in records if getattr(record, "image_risk_is_dangerous", False))
+            review_images = sum(1 for record in records if getattr(record, "image_risk_label", "SAFE") in {"MEDIUM", "HIGH", "CRITICAL"})
+            image_scores = [int(getattr(record, "image_risk_score", 0) or 0) for record in records]
+            max_image_score = max(image_scores or [0])
+            max_image_record = max(records, key=lambda item: int(getattr(item, "image_risk_score", 0) or 0), default=None)
+            max_image_label = str(getattr(max_image_record, "image_risk_label", "SAFE") if max_image_record else "SAFE")
             osint_sensitive = sum(1 for r in records if getattr(r, "osint_privacy_review", {}).get("records_with_sensitive_osint", 0))
             window.ai_metric_readiness_value.setText(f"{readiness.get('case_readiness', 0)}%")
             window.ai_metric_readiness_note.setText(readiness.get("summary", "Readiness unavailable.")[:72])
             window.ai_metric_risk_value.setText(str(high))
             window.ai_metric_risk_note.setText("Evidence items flagged High risk by scoring or AI review.")
+            if hasattr(window, "ai_metric_image_value"):
+                p0_images = sum(1 for record in records if str(_payload_value(record, "review_priority", "P3")) == "P0")
+                p1_images = sum(1 for record in records if str(_payload_value(record, "review_priority", "P3")) == "P1")
+                window.ai_metric_image_value.setText(f"{max_image_label} {max_image_score}%")
+                window.ai_metric_image_note.setText(f"{dangerous_images} dangerous • P0 {p0_images} • P1 {p1_images} • review {review_images}")
             posture = "Redacted" if osint_sensitive or readiness.get("privacy_readiness", 0) < 100 else "Shareable"
             window.ai_metric_privacy_value.setText(posture)
             window.ai_metric_privacy_note.setText(privacy.get("summary", "Privacy audit unavailable.")[:72])
 
         if hasattr(window, "ai_guardian_summary"):
             window.ai_guardian_summary.setHtml(_render_guardian_summary_cards(records, readiness, custody_ok, privacy))
+        if hasattr(window, "ai_image_triage_view"):
+            window.ai_image_triage_view.setHtml(_render_image_triage_deck(records))
         if hasattr(window, "ai_readiness_view"):
             window.ai_readiness_view.setPlainText(
                 f"Case Readiness: {readiness['case_readiness']}%\n"
@@ -478,7 +659,7 @@ def refresh_ai_guardian_page(window) -> None:
             content_items = [
                 r
                 for r in records
-                if getattr(r, "osint_content_confidence", 0) > 0 or getattr(r, "osint_hypothesis_cards", [])
+                if getattr(r, "osint_content_confidence", 0) > 0 or getattr(r, "osint_hypothesis_cards", []) or getattr(r, "image_risk_score", 0) > 0
             ]
             if content_items:
                 window.ai_osint_content_view.setHtml(_render_osint_hypothesis_cards(content_items))

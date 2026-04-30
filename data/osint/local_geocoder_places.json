@@ -1,0 +1,1951 @@
+{
+  "schema": "GeoTrace offline geocoder seed v3",
+  "notes": "Expanded offline seed for triage only; verify every location manually. Use tools/build_offline_geocoder_index.py for GeoNames/Natural Earth imports.",
+  "places": [
+    {
+      "name": "Cairo Tower",
+      "level": "poi",
+      "country": "Egypt",
+      "city": "Cairo",
+      "lat": 30.0459,
+      "lon": 31.2243,
+      "aliases": [
+        "cairo tower",
+        "برج القاهرة",
+        "برج القاهره"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Tahrir Square",
+      "level": "area",
+      "country": "Egypt",
+      "city": "Cairo",
+      "lat": 30.0444,
+      "lon": 31.2357,
+      "aliases": [
+        "tahrir square",
+        "tahrir",
+        "ميدان التحرير"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 70
+    },
+    {
+      "name": "Pyramids of Giza",
+      "level": "poi",
+      "country": "Egypt",
+      "city": "Giza",
+      "lat": 29.9792,
+      "lon": 31.1342,
+      "aliases": [
+        "pyramids of giza",
+        "giza pyramids",
+        "الأهرامات"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Great Sphinx of Giza",
+      "level": "poi",
+      "country": "Egypt",
+      "city": "Giza",
+      "lat": 29.9753,
+      "lon": 31.1376,
+      "aliases": [
+        "great sphinx",
+        "sphinx of giza",
+        "أبو الهول"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Khan el-Khalili",
+      "level": "area",
+      "country": "Egypt",
+      "city": "Cairo",
+      "lat": 30.0477,
+      "lon": 31.2625,
+      "aliases": [
+        "khan el khalili",
+        "خان الخليلي",
+        "khan el-khalili",
+        "khan al khalili",
+        "خان الخليلى"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 70
+    },
+    {
+      "name": "Al-Azhar Mosque",
+      "level": "poi",
+      "country": "Egypt",
+      "city": "Cairo",
+      "lat": 30.0457,
+      "lon": 31.2626,
+      "aliases": [
+        "al azhar mosque",
+        "جامع الأزهر"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Stanley Bridge",
+      "level": "poi",
+      "country": "Egypt",
+      "city": "Alexandria",
+      "lat": 31.2242,
+      "lon": 29.9668,
+      "aliases": [
+        "stanley bridge",
+        "stanley"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Bibliotheca Alexandrina",
+      "level": "poi",
+      "country": "Egypt",
+      "city": "Alexandria",
+      "lat": 31.2089,
+      "lon": 29.9092,
+      "aliases": [
+        "bibliotheca alexandrina",
+        "alexandria library",
+        "مكتبة الإسكندرية",
+        "مكتبه الاسكندريه"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Qaitbay Citadel",
+      "level": "poi",
+      "country": "Egypt",
+      "city": "Alexandria",
+      "lat": 31.2139,
+      "lon": 29.8856,
+      "aliases": [
+        "qaitbay citadel",
+        "قلعة قايتباي"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Luxor Temple",
+      "level": "poi",
+      "country": "Egypt",
+      "city": "Luxor",
+      "lat": 25.6995,
+      "lon": 32.6391,
+      "aliases": [
+        "luxor temple",
+        "معبد الأقصر",
+        "معبد الاقصر"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Karnak Temple",
+      "level": "poi",
+      "country": "Egypt",
+      "city": "Luxor",
+      "lat": 25.7188,
+      "lon": 32.6573,
+      "aliases": [
+        "karnak temple",
+        "معبد الكرنك",
+        "الكرنك"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Abu Simbel Temples",
+      "level": "poi",
+      "country": "Egypt",
+      "city": "Abu Simbel",
+      "lat": 22.3372,
+      "lon": 31.6258,
+      "aliases": [
+        "abu simbel",
+        "أبو سمبل"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Mount Sinai",
+      "level": "area",
+      "country": "Egypt",
+      "city": "South Sinai",
+      "lat": 28.5393,
+      "lon": 33.9749,
+      "aliases": [
+        "mount sinai",
+        "جبل موسى"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 70
+    },
+    {
+      "name": "White Desert National Park",
+      "level": "area",
+      "country": "Egypt",
+      "city": "Farafra",
+      "lat": 27.285,
+      "lon": 27.995,
+      "aliases": [
+        "white desert",
+        "الصحراء البيضاء"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 70
+    },
+    {
+      "name": "Madrid",
+      "level": "city",
+      "country": "Spain",
+      "city": "Madrid",
+      "lat": 40.4168,
+      "lon": -3.7038,
+      "aliases": [
+        "madrid",
+        "مدريد"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 70
+    },
+    {
+      "name": "Barcelona",
+      "level": "city",
+      "country": "Spain",
+      "city": "Barcelona",
+      "lat": 41.3851,
+      "lon": 2.1734,
+      "aliases": [
+        "barcelona",
+        "برشلونة"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 70
+    },
+    {
+      "name": "Sagrada Familia",
+      "level": "poi",
+      "country": "Spain",
+      "city": "Barcelona",
+      "lat": 41.4036,
+      "lon": 2.1744,
+      "aliases": [
+        "sagrada familia"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Park Güell",
+      "level": "poi",
+      "country": "Spain",
+      "city": "Barcelona",
+      "lat": 41.4145,
+      "lon": 2.1527,
+      "aliases": [
+        "park guell",
+        "park güell"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Alhambra",
+      "level": "poi",
+      "country": "Spain",
+      "city": "Granada",
+      "lat": 37.1761,
+      "lon": -3.5881,
+      "aliases": [
+        "alhambra",
+        "الحمراء"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Lisbon",
+      "level": "city",
+      "country": "Portugal",
+      "city": "Lisbon",
+      "lat": 38.7223,
+      "lon": -9.1393,
+      "aliases": [
+        "lisbon",
+        "lisboa",
+        "لشبونة"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 70
+    },
+    {
+      "name": "Belem Tower",
+      "level": "poi",
+      "country": "Portugal",
+      "city": "Lisbon",
+      "lat": 38.6916,
+      "lon": -9.216,
+      "aliases": [
+        "belem tower",
+        "belém tower"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Porto",
+      "level": "city",
+      "country": "Portugal",
+      "city": "Porto",
+      "lat": 41.1579,
+      "lon": -8.6291,
+      "aliases": [
+        "porto",
+        "oporto"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 70
+    },
+    {
+      "name": "Eiffel Tower",
+      "level": "poi",
+      "country": "France",
+      "city": "Paris",
+      "lat": 48.8584,
+      "lon": 2.2945,
+      "aliases": [
+        "eiffel tower",
+        "tour eiffel"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Louvre Museum",
+      "level": "poi",
+      "country": "France",
+      "city": "Paris",
+      "lat": 48.8606,
+      "lon": 2.3376,
+      "aliases": [
+        "louvre",
+        "louvre museum"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Arc de Triomphe",
+      "level": "poi",
+      "country": "France",
+      "city": "Paris",
+      "lat": 48.8738,
+      "lon": 2.295,
+      "aliases": [
+        "arc de triomphe",
+        "قوس النصر باريس"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Notre-Dame de Paris",
+      "level": "poi",
+      "country": "France",
+      "city": "Paris",
+      "lat": 48.853,
+      "lon": 2.3499,
+      "aliases": [
+        "notre dame paris",
+        "notre dame",
+        "notre-dame de paris",
+        "نوتردام"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Mont Saint-Michel",
+      "level": "poi",
+      "country": "France",
+      "city": "Normandy",
+      "lat": 48.6361,
+      "lon": -1.5115,
+      "aliases": [
+        "mont saint michel"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Colosseum",
+      "level": "poi",
+      "country": "Italy",
+      "city": "Rome",
+      "lat": 41.8902,
+      "lon": 12.4922,
+      "aliases": [
+        "colosseum",
+        "colosseo"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Trevi Fountain",
+      "level": "poi",
+      "country": "Italy",
+      "city": "Rome",
+      "lat": 41.9009,
+      "lon": 12.4833,
+      "aliases": [
+        "trevi fountain",
+        "نافورة تريفي"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Leaning Tower of Pisa",
+      "level": "poi",
+      "country": "Italy",
+      "city": "Pisa",
+      "lat": 43.723,
+      "lon": 10.3966,
+      "aliases": [
+        "leaning tower of pisa",
+        "pisa tower"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Duomo di Milano",
+      "level": "poi",
+      "country": "Italy",
+      "city": "Milan",
+      "lat": 45.4642,
+      "lon": 9.1916,
+      "aliases": [
+        "duomo di milano",
+        "milan cathedral"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Burj Khalifa",
+      "level": "poi",
+      "country": "United Arab Emirates",
+      "city": "Dubai",
+      "lat": 25.1972,
+      "lon": 55.2744,
+      "aliases": [
+        "burj khalifa",
+        "برج خليفة"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Dubai Mall",
+      "level": "poi",
+      "country": "United Arab Emirates",
+      "city": "Dubai",
+      "lat": 25.1975,
+      "lon": 55.2796,
+      "aliases": [
+        "dubai mall",
+        "دبي مول"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Burj Al Arab",
+      "level": "poi",
+      "country": "United Arab Emirates",
+      "city": "Dubai",
+      "lat": 25.1412,
+      "lon": 55.1853,
+      "aliases": [
+        "burj al arab",
+        "برج العرب"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Palm Jumeirah",
+      "level": "area",
+      "country": "United Arab Emirates",
+      "city": "Dubai",
+      "lat": 25.1124,
+      "lon": 55.139,
+      "aliases": [
+        "palm jumeirah",
+        "نخلة جميرا",
+        "نخله جميرا"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 70
+    },
+    {
+      "name": "Sheikh Zayed Grand Mosque",
+      "level": "poi",
+      "country": "United Arab Emirates",
+      "city": "Abu Dhabi",
+      "lat": 24.4128,
+      "lon": 54.4749,
+      "aliases": [
+        "sheikh zayed grand mosque",
+        "جامع الشيخ زايد"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Doha Corniche",
+      "level": "area",
+      "country": "Qatar",
+      "city": "Doha",
+      "lat": 25.2948,
+      "lon": 51.5392,
+      "aliases": [
+        "doha corniche",
+        "كورنيش الدوحة"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 70
+    },
+    {
+      "name": "Museum of Islamic Art Doha",
+      "level": "poi",
+      "country": "Qatar",
+      "city": "Doha",
+      "lat": 25.2953,
+      "lon": 51.539,
+      "aliases": [
+        "museum of islamic art doha",
+        "متحف الفن الإسلامي"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Lusail Boulevard",
+      "level": "area",
+      "country": "Qatar",
+      "city": "Lusail",
+      "lat": 25.4199,
+      "lon": 51.51,
+      "aliases": [
+        "lusail boulevard",
+        "lusail",
+        "لوسيل"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 70
+    },
+    {
+      "name": "Statue of Liberty",
+      "level": "poi",
+      "country": "United States",
+      "city": "New York",
+      "lat": 40.6892,
+      "lon": -74.0445,
+      "aliases": [
+        "statue of liberty"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Times Square",
+      "level": "area",
+      "country": "United States",
+      "city": "New York",
+      "lat": 40.758,
+      "lon": -73.9855,
+      "aliases": [
+        "times square"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 70
+    },
+    {
+      "name": "Brooklyn Bridge",
+      "level": "poi",
+      "country": "United States",
+      "city": "New York",
+      "lat": 40.7061,
+      "lon": -73.9969,
+      "aliases": [
+        "brooklyn bridge"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Empire State Building",
+      "level": "poi",
+      "country": "United States",
+      "city": "New York",
+      "lat": 40.7484,
+      "lon": -73.9857,
+      "aliases": [
+        "empire state building",
+        "مبنى إمباير ستيت"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Golden Gate Bridge",
+      "level": "poi",
+      "country": "United States",
+      "city": "San Francisco",
+      "lat": 37.8199,
+      "lon": -122.4783,
+      "aliases": [
+        "golden gate bridge"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Hollywood Sign",
+      "level": "poi",
+      "country": "United States",
+      "city": "Los Angeles",
+      "lat": 34.1341,
+      "lon": -118.3215,
+      "aliases": [
+        "hollywood sign",
+        "علامة هوليوود"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Grand Canyon",
+      "level": "area",
+      "country": "United States",
+      "city": "Arizona",
+      "lat": 36.1069,
+      "lon": -112.1129,
+      "aliases": [
+        "grand canyon"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 70
+    },
+    {
+      "name": "Christ the Redeemer",
+      "level": "poi",
+      "country": "Brazil",
+      "city": "Rio de Janeiro",
+      "lat": -22.9519,
+      "lon": -43.2105,
+      "aliases": [
+        "christ the redeemer",
+        "cristo redentor"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Sugarloaf Mountain",
+      "level": "poi",
+      "country": "Brazil",
+      "city": "Rio de Janeiro",
+      "lat": -22.9492,
+      "lon": -43.1545,
+      "aliases": [
+        "sugarloaf mountain"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Tokyo Tower",
+      "level": "poi",
+      "country": "Japan",
+      "city": "Tokyo",
+      "lat": 35.6586,
+      "lon": 139.7454,
+      "aliases": [
+        "tokyo tower"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Shibuya Crossing",
+      "level": "area",
+      "country": "Japan",
+      "city": "Tokyo",
+      "lat": 35.6595,
+      "lon": 139.7005,
+      "aliases": [
+        "shibuya crossing"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 70
+    },
+    {
+      "name": "Mount Fuji",
+      "level": "area",
+      "country": "Japan",
+      "city": "Yamanashi/Shizuoka",
+      "lat": 35.3606,
+      "lon": 138.7274,
+      "aliases": [
+        "mount fuji",
+        "富士山"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 70
+    },
+    {
+      "name": "Fushimi Inari Taisha",
+      "level": "poi",
+      "country": "Japan",
+      "city": "Kyoto",
+      "lat": 34.9671,
+      "lon": 135.7727,
+      "aliases": [
+        "fushimi inari",
+        "fushimi inari taisha"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Sydney Opera House",
+      "level": "poi",
+      "country": "Australia",
+      "city": "Sydney",
+      "lat": -33.8568,
+      "lon": 151.2153,
+      "aliases": [
+        "sydney opera house"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Big Ben",
+      "level": "poi",
+      "country": "United Kingdom",
+      "city": "London",
+      "lat": 51.5007,
+      "lon": -0.1246,
+      "aliases": [
+        "big ben",
+        "elizabeth tower"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Tower Bridge",
+      "level": "poi",
+      "country": "United Kingdom",
+      "city": "London",
+      "lat": 51.5055,
+      "lon": -0.0754,
+      "aliases": [
+        "tower bridge"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Hagia Sophia",
+      "level": "poi",
+      "country": "Türkiye",
+      "city": "Istanbul",
+      "lat": 41.0086,
+      "lon": 28.9802,
+      "aliases": [
+        "hagia sophia",
+        "ayasofya",
+        "آيا صوفيا"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Blue Mosque",
+      "level": "poi",
+      "country": "Türkiye",
+      "city": "Istanbul",
+      "lat": 41.0054,
+      "lon": 28.9768,
+      "aliases": [
+        "blue mosque",
+        "sultan ahmed mosque"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Petra Treasury",
+      "level": "poi",
+      "country": "Jordan",
+      "city": "Petra",
+      "lat": 30.3285,
+      "lon": 35.4444,
+      "aliases": [
+        "petra treasury",
+        "al khazneh",
+        "الخزنة"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Marina Bay Sands",
+      "level": "poi",
+      "country": "Singapore",
+      "city": "Singapore",
+      "lat": 1.2834,
+      "lon": 103.8607,
+      "aliases": [
+        "marina bay sands"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Merlion Park",
+      "level": "poi",
+      "country": "Singapore",
+      "city": "Singapore",
+      "lat": 1.2868,
+      "lon": 103.8545,
+      "aliases": [
+        "merlion park",
+        "merlion"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "CN Tower",
+      "level": "poi",
+      "country": "Canada",
+      "city": "Toronto",
+      "lat": 43.6426,
+      "lon": -79.3871,
+      "aliases": [
+        "cn tower"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Niagara Falls",
+      "level": "area",
+      "country": "Canada/United States",
+      "city": "Niagara",
+      "lat": 43.0962,
+      "lon": -79.0377,
+      "aliases": [
+        "niagara falls"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 70
+    },
+    {
+      "name": "Table Mountain",
+      "level": "area",
+      "country": "South Africa",
+      "city": "Cape Town",
+      "lat": -33.9628,
+      "lon": 18.4098,
+      "aliases": [
+        "table mountain"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 70
+    },
+    {
+      "name": "Machu Picchu",
+      "level": "poi",
+      "country": "Peru",
+      "city": "Cusco Region",
+      "lat": -13.1631,
+      "lon": -72.545,
+      "aliases": [
+        "machu picchu",
+        "ماتشو بيتشو"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "Chichen Itza",
+      "level": "poi",
+      "country": "Mexico",
+      "city": "Yucatan",
+      "lat": 20.6843,
+      "lon": -88.5678,
+      "aliases": [
+        "chichen itza",
+        "chichén itzá"
+      ],
+      "source": "offline_seed_v2",
+      "confidence": 76
+    },
+    {
+      "name": "New Administrative Capital",
+      "level": "city",
+      "country": "Egypt",
+      "city": "New Administrative Capital",
+      "lat": 30.0094,
+      "lon": 31.7245,
+      "aliases": [
+        "new administrative capital",
+        "nac",
+        "العاصمة الإدارية",
+        "العاصمه الاداريه"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Nasr City",
+      "level": "area",
+      "country": "Egypt",
+      "city": "Cairo",
+      "lat": 30.0561,
+      "lon": 31.33,
+      "aliases": [
+        "nasr city",
+        "مدينة نصر",
+        "مدينه نصر"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "New Cairo",
+      "level": "area",
+      "country": "Egypt",
+      "city": "Cairo",
+      "lat": 30.0131,
+      "lon": 31.4913,
+      "aliases": [
+        "new cairo",
+        "التجمع الخامس",
+        "القاهرة الجديدة",
+        "القاهره الجديده"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Heliopolis",
+      "level": "area",
+      "country": "Egypt",
+      "city": "Cairo",
+      "lat": 30.1006,
+      "lon": 31.3448,
+      "aliases": [
+        "heliopolis",
+        "مصر الجديدة",
+        "مصر الجديده"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Maadi",
+      "level": "area",
+      "country": "Egypt",
+      "city": "Cairo",
+      "lat": 29.9602,
+      "lon": 31.2569,
+      "aliases": [
+        "maadi",
+        "المعادي",
+        "المعادى"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Zamalek",
+      "level": "area",
+      "country": "Egypt",
+      "city": "Cairo",
+      "lat": 30.061,
+      "lon": 31.2194,
+      "aliases": [
+        "zamalek",
+        "الزمالك"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Dokki",
+      "level": "area",
+      "country": "Egypt",
+      "city": "Giza",
+      "lat": 30.0381,
+      "lon": 31.2122,
+      "aliases": [
+        "dokki",
+        "الدقي",
+        "الدقى"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Mohandessin",
+      "level": "area",
+      "country": "Egypt",
+      "city": "Giza",
+      "lat": 30.0556,
+      "lon": 31.2007,
+      "aliases": [
+        "mohandessin",
+        "المهندسين"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Cairo International Airport",
+      "level": "poi",
+      "country": "Egypt",
+      "city": "Cairo",
+      "lat": 30.112,
+      "lon": 31.4,
+      "aliases": [
+        "cairo international airport",
+        "cai airport",
+        "مطار القاهرة",
+        "مطار القاهره"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Egyptian Museum",
+      "level": "poi",
+      "country": "Egypt",
+      "city": "Cairo",
+      "lat": 30.0478,
+      "lon": 31.2336,
+      "aliases": [
+        "egyptian museum",
+        "المتحف المصري",
+        "المتحف المصرى"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Grand Egyptian Museum",
+      "level": "poi",
+      "country": "Egypt",
+      "city": "Giza",
+      "lat": 29.993,
+      "lon": 31.1193,
+      "aliases": [
+        "grand egyptian museum",
+        "gem egypt",
+        "المتحف المصري الكبير"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Suez Canal",
+      "level": "area",
+      "country": "Egypt",
+      "city": "Suez/Ismailia/Port Said",
+      "lat": 30.5852,
+      "lon": 32.2654,
+      "aliases": [
+        "suez canal",
+        "قناة السويس",
+        "قناه السويس"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Abu Simbel",
+      "level": "poi",
+      "country": "Egypt",
+      "city": "Aswan",
+      "lat": 22.3372,
+      "lon": 31.6258,
+      "aliases": [
+        "abu simbel",
+        "أبو سمبل",
+        "ابو سمبل"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Citadel of Qaitbay",
+      "level": "poi",
+      "country": "Egypt",
+      "city": "Alexandria",
+      "lat": 31.2139,
+      "lon": 29.8856,
+      "aliases": [
+        "qaitbay citadel",
+        "قلعة قايتباي",
+        "قلعه قايتباي"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Riyadh",
+      "level": "city",
+      "country": "Saudi Arabia",
+      "city": "Riyadh",
+      "lat": 24.7136,
+      "lon": 46.6753,
+      "aliases": [
+        "riyadh",
+        "الرياض"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Jeddah",
+      "level": "city",
+      "country": "Saudi Arabia",
+      "city": "Jeddah",
+      "lat": 21.4858,
+      "lon": 39.1925,
+      "aliases": [
+        "jeddah",
+        "جدة",
+        "جده"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Mecca",
+      "level": "city",
+      "country": "Saudi Arabia",
+      "city": "Mecca",
+      "lat": 21.3891,
+      "lon": 39.8579,
+      "aliases": [
+        "mecca",
+        "makkah",
+        "مكة",
+        "مكه"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Medina",
+      "level": "city",
+      "country": "Saudi Arabia",
+      "city": "Medina",
+      "lat": 24.5247,
+      "lon": 39.5692,
+      "aliases": [
+        "medina",
+        "madinah",
+        "المدينة",
+        "المدينه"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Masjid al-Haram",
+      "level": "poi",
+      "country": "Saudi Arabia",
+      "city": "Mecca",
+      "lat": 21.4225,
+      "lon": 39.8262,
+      "aliases": [
+        "masjid al haram",
+        "al haram mosque",
+        "المسجد الحرام",
+        "الحرم المكي"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Al-Masjid an-Nabawi",
+      "level": "poi",
+      "country": "Saudi Arabia",
+      "city": "Medina",
+      "lat": 24.4672,
+      "lon": 39.6111,
+      "aliases": [
+        "prophet mosque",
+        "al masjid an nabawi",
+        "المسجد النبوي"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Kingdom Centre",
+      "level": "poi",
+      "country": "Saudi Arabia",
+      "city": "Riyadh",
+      "lat": 24.7117,
+      "lon": 46.6744,
+      "aliases": [
+        "kingdom centre",
+        "kingdom tower riyadh",
+        "برج المملكة",
+        "برج المملكه"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Dubai",
+      "level": "city",
+      "country": "United Arab Emirates",
+      "city": "Dubai",
+      "lat": 25.2048,
+      "lon": 55.2708,
+      "aliases": [
+        "dubai",
+        "دبي"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Abu Dhabi",
+      "level": "city",
+      "country": "United Arab Emirates",
+      "city": "Abu Dhabi",
+      "lat": 24.4539,
+      "lon": 54.3773,
+      "aliases": [
+        "abu dhabi",
+        "أبوظبي",
+        "ابوظبي"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Museum of the Future",
+      "level": "poi",
+      "country": "United Arab Emirates",
+      "city": "Dubai",
+      "lat": 25.2194,
+      "lon": 55.281,
+      "aliases": [
+        "museum of the future",
+        "متحف المستقبل"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Louvre Abu Dhabi",
+      "level": "poi",
+      "country": "United Arab Emirates",
+      "city": "Abu Dhabi",
+      "lat": 24.5337,
+      "lon": 54.398,
+      "aliases": [
+        "louvre abu dhabi",
+        "لوفر أبوظبي",
+        "لوفر ابوظبي"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Doha",
+      "level": "city",
+      "country": "Qatar",
+      "city": "Doha",
+      "lat": 25.2854,
+      "lon": 51.531,
+      "aliases": [
+        "doha",
+        "الدوحة",
+        "الدوحه"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "The Pearl-Qatar",
+      "level": "area",
+      "country": "Qatar",
+      "city": "Doha",
+      "lat": 25.3748,
+      "lon": 51.5515,
+      "aliases": [
+        "the pearl qatar",
+        "pearl qatar",
+        "اللؤلؤة قطر",
+        "اللؤلؤه قطر"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Souq Waqif",
+      "level": "area",
+      "country": "Qatar",
+      "city": "Doha",
+      "lat": 25.2867,
+      "lon": 51.533,
+      "aliases": [
+        "souq waqif",
+        "سوق واقف"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Amman",
+      "level": "city",
+      "country": "Jordan",
+      "city": "Amman",
+      "lat": 31.9539,
+      "lon": 35.9106,
+      "aliases": [
+        "amman",
+        "عمّان",
+        "عمان"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Dead Sea",
+      "level": "area",
+      "country": "Jordan/Palestine/Israel",
+      "city": "Dead Sea",
+      "lat": 31.559,
+      "lon": 35.4732,
+      "aliases": [
+        "dead sea",
+        "البحر الميت"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Petra",
+      "level": "area",
+      "country": "Jordan",
+      "city": "Petra",
+      "lat": 30.3285,
+      "lon": 35.4444,
+      "aliases": [
+        "petra",
+        "البتراء"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Beirut",
+      "level": "city",
+      "country": "Lebanon",
+      "city": "Beirut",
+      "lat": 33.8938,
+      "lon": 35.5018,
+      "aliases": [
+        "beirut",
+        "بيروت"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Casablanca",
+      "level": "city",
+      "country": "Morocco",
+      "city": "Casablanca",
+      "lat": 33.5731,
+      "lon": -7.5898,
+      "aliases": [
+        "casablanca",
+        "الدار البيضاء",
+        "كازابلانكا"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Marrakesh",
+      "level": "city",
+      "country": "Morocco",
+      "city": "Marrakesh",
+      "lat": 31.6295,
+      "lon": -7.9811,
+      "aliases": [
+        "marrakesh",
+        "marrakech",
+        "مراكش"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Hassan II Mosque",
+      "level": "poi",
+      "country": "Morocco",
+      "city": "Casablanca",
+      "lat": 33.6083,
+      "lon": -7.6326,
+      "aliases": [
+        "hassan ii mosque",
+        "مسجد الحسن الثاني"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Tunis",
+      "level": "city",
+      "country": "Tunisia",
+      "city": "Tunis",
+      "lat": 36.8065,
+      "lon": 10.1815,
+      "aliases": [
+        "tunis",
+        "تونس العاصمة"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Algiers",
+      "level": "city",
+      "country": "Algeria",
+      "city": "Algiers",
+      "lat": 36.7538,
+      "lon": 3.0588,
+      "aliases": [
+        "algiers",
+        "الجزائر العاصمة"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Istanbul",
+      "level": "city",
+      "country": "Türkiye",
+      "city": "Istanbul",
+      "lat": 41.0082,
+      "lon": 28.9784,
+      "aliases": [
+        "istanbul",
+        "إسطنبول",
+        "اسطنبول"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Galata Tower",
+      "level": "poi",
+      "country": "Türkiye",
+      "city": "Istanbul",
+      "lat": 41.0256,
+      "lon": 28.9741,
+      "aliases": [
+        "galata tower",
+        "برج غلطة",
+        "برج غلطه"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Topkapi Palace",
+      "level": "poi",
+      "country": "Türkiye",
+      "city": "Istanbul",
+      "lat": 41.0115,
+      "lon": 28.9834,
+      "aliases": [
+        "topkapi palace",
+        "قصر طوب قابي"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Paris",
+      "level": "city",
+      "country": "France",
+      "city": "Paris",
+      "lat": 48.8566,
+      "lon": 2.3522,
+      "aliases": [
+        "paris",
+        "باريس"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Rome",
+      "level": "city",
+      "country": "Italy",
+      "city": "Rome",
+      "lat": 41.9028,
+      "lon": 12.4964,
+      "aliases": [
+        "rome",
+        "roma",
+        "روما"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Vatican City",
+      "level": "country",
+      "country": "Vatican City",
+      "city": "Vatican City",
+      "lat": 41.9029,
+      "lon": 12.4534,
+      "aliases": [
+        "vatican city",
+        "vatican",
+        "الفاتيكان"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Venice",
+      "level": "city",
+      "country": "Italy",
+      "city": "Venice",
+      "lat": 45.4408,
+      "lon": 12.3155,
+      "aliases": [
+        "venice",
+        "venezia",
+        "البندقية",
+        "البندقيه"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Milan Cathedral",
+      "level": "poi",
+      "country": "Italy",
+      "city": "Milan",
+      "lat": 45.4642,
+      "lon": 9.1916,
+      "aliases": [
+        "milan cathedral",
+        "duomo di milano",
+        "كاتدرائية ميلانو"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "London",
+      "level": "city",
+      "country": "United Kingdom",
+      "city": "London",
+      "lat": 51.5072,
+      "lon": -0.1276,
+      "aliases": [
+        "london",
+        "لندن"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Buckingham Palace",
+      "level": "poi",
+      "country": "United Kingdom",
+      "city": "London",
+      "lat": 51.5014,
+      "lon": -0.1419,
+      "aliases": [
+        "buckingham palace",
+        "قصر باكنغهام"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "London Eye",
+      "level": "poi",
+      "country": "United Kingdom",
+      "city": "London",
+      "lat": 51.5033,
+      "lon": -0.1195,
+      "aliases": [
+        "london eye",
+        "عين لندن"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Berlin",
+      "level": "city",
+      "country": "Germany",
+      "city": "Berlin",
+      "lat": 52.52,
+      "lon": 13.405,
+      "aliases": [
+        "berlin",
+        "برلين"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Brandenburg Gate",
+      "level": "poi",
+      "country": "Germany",
+      "city": "Berlin",
+      "lat": 52.5163,
+      "lon": 13.3777,
+      "aliases": [
+        "brandenburg gate",
+        "بوابة براندنبورغ"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Amsterdam",
+      "level": "city",
+      "country": "Netherlands",
+      "city": "Amsterdam",
+      "lat": 52.3676,
+      "lon": 4.9041,
+      "aliases": [
+        "amsterdam",
+        "أمستردام",
+        "امستردام"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Athens",
+      "level": "city",
+      "country": "Greece",
+      "city": "Athens",
+      "lat": 37.9838,
+      "lon": 23.7275,
+      "aliases": [
+        "athens",
+        "أثينا",
+        "اثينا"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Acropolis of Athens",
+      "level": "poi",
+      "country": "Greece",
+      "city": "Athens",
+      "lat": 37.9715,
+      "lon": 23.7257,
+      "aliases": [
+        "acropolis",
+        "acropolis of athens",
+        "أكروبوليس"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "New York",
+      "level": "city",
+      "country": "United States",
+      "city": "New York",
+      "lat": 40.7128,
+      "lon": -74.006,
+      "aliases": [
+        "new york",
+        "new york city",
+        "nyc",
+        "نيويورك"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Central Park",
+      "level": "area",
+      "country": "United States",
+      "city": "New York",
+      "lat": 40.7829,
+      "lon": -73.9654,
+      "aliases": [
+        "central park",
+        "سنترال بارك"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Los Angeles",
+      "level": "city",
+      "country": "United States",
+      "city": "Los Angeles",
+      "lat": 34.0522,
+      "lon": -118.2437,
+      "aliases": [
+        "los angeles",
+        "la",
+        "لوس أنجلوس",
+        "لوس انجلوس"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Las Vegas Strip",
+      "level": "area",
+      "country": "United States",
+      "city": "Las Vegas",
+      "lat": 36.1147,
+      "lon": -115.1728,
+      "aliases": [
+        "las vegas strip",
+        "strip vegas",
+        "لاس فيغاس ستريب"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Tokyo",
+      "level": "city",
+      "country": "Japan",
+      "city": "Tokyo",
+      "lat": 35.6762,
+      "lon": 139.6503,
+      "aliases": [
+        "tokyo",
+        "طوكيو",
+        "東京"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Tokyo Skytree",
+      "level": "poi",
+      "country": "Japan",
+      "city": "Tokyo",
+      "lat": 35.7101,
+      "lon": 139.8107,
+      "aliases": [
+        "tokyo skytree",
+        "طوكيو سكاي تري"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Kyoto",
+      "level": "city",
+      "country": "Japan",
+      "city": "Kyoto",
+      "lat": 35.0116,
+      "lon": 135.7681,
+      "aliases": [
+        "kyoto",
+        "كيوتو",
+        "京都"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Beijing",
+      "level": "city",
+      "country": "China",
+      "city": "Beijing",
+      "lat": 39.9042,
+      "lon": 116.4074,
+      "aliases": [
+        "beijing",
+        "بكين",
+        "北京"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Great Wall of China",
+      "level": "area",
+      "country": "China",
+      "city": "Beijing/Hebei",
+      "lat": 40.4319,
+      "lon": 116.5704,
+      "aliases": [
+        "great wall of china",
+        "great wall",
+        "سور الصين العظيم"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 74
+    },
+    {
+      "name": "Shanghai",
+      "level": "city",
+      "country": "China",
+      "city": "Shanghai",
+      "lat": 31.2304,
+      "lon": 121.4737,
+      "aliases": [
+        "shanghai",
+        "شنغهاي",
+        "上海"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Sydney",
+      "level": "city",
+      "country": "Australia",
+      "city": "Sydney",
+      "lat": -33.8688,
+      "lon": 151.2093,
+      "aliases": [
+        "sydney",
+        "سيدني"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Melbourne",
+      "level": "city",
+      "country": "Australia",
+      "city": "Melbourne",
+      "lat": -37.8136,
+      "lon": 144.9631,
+      "aliases": [
+        "melbourne",
+        "ملبورن"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Toronto",
+      "level": "city",
+      "country": "Canada",
+      "city": "Toronto",
+      "lat": 43.6532,
+      "lon": -79.3832,
+      "aliases": [
+        "toronto",
+        "تورونتو"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Vancouver",
+      "level": "city",
+      "country": "Canada",
+      "city": "Vancouver",
+      "lat": 49.2827,
+      "lon": -123.1207,
+      "aliases": [
+        "vancouver",
+        "فانكوفر"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Cape Town",
+      "level": "city",
+      "country": "South Africa",
+      "city": "Cape Town",
+      "lat": -33.9249,
+      "lon": 18.4241,
+      "aliases": [
+        "cape town",
+        "كيب تاون"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Rio de Janeiro",
+      "level": "city",
+      "country": "Brazil",
+      "city": "Rio de Janeiro",
+      "lat": -22.9068,
+      "lon": -43.1729,
+      "aliases": [
+        "rio de janeiro",
+        "ريو دي جانيرو"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    },
+    {
+      "name": "Mexico City",
+      "level": "city",
+      "country": "Mexico",
+      "city": "Mexico City",
+      "lat": 19.4326,
+      "lon": -99.1332,
+      "aliases": [
+        "mexico city",
+        "مكسيكو سيتي"
+      ],
+      "source": "offline_seed_v3_enriched",
+      "confidence": 68
+    }
+  ]
+}

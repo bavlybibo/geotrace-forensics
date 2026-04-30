@@ -48,10 +48,16 @@ from ..exif_service import (
 from ..visual_clues import extract_visible_text_clues, infer_source_profile, parse_derived_geo, profile_source_details
 from ..vision.image_intelligence import analyze_image_details
 from ..vision.pixel_stego import analyze_pixel_forensics
+from ..vision.map_visuals import classify_visual_map_profile
+from ..digital_risk import build_digital_risk_verdict
+from ..image_risk_ai import assess_image_threat
 from ..hashing import compute_hashes
 from ..map_intelligence import analyze_map_intelligence
+from ..map.provider_bridge import build_map_provider_bridge
 from ..models import CaseInfo, CaseStats, EvidenceRecord
 from ..explainability import apply_explainability
+from ..evidence_claims import attach_claim_links
+from ..timeline_confidence import attach_timeline_confidence
 from ..validation_service import build_validation_metrics
 from ..migrations import run_migrations
 
@@ -245,6 +251,8 @@ class CaseManager:
                 self._apply_osint_signal_profile(record)
                 self._apply_location_estimate(record)
                 apply_explainability(record)
+                attach_timeline_confidence(record, combined)
+                attach_claim_links(record)
                 record.analyst_verdict = self._derive_analyst_verdict(record)
                 record.courtroom_notes = self._derive_courtroom_notes(record)
                 if not record.osint_leads:
@@ -414,16 +422,43 @@ class CaseManager:
         image_profile = analyze_image_details(staged_path)
         carved_files = self._carve_hidden_payloads(evidence_id, list(embedded_scan.get("recoverable_segments", [])))
         lower_name = original_path.name.lower()
-        is_map_candidate = any(token in lower_name for token in ("map", "maps", "route", "directions", "geo", "location", "cairo", "giza", "القاهرة", "الجيزة"))
+        # v12.10.5: do not rely on the filename to decide whether a screenshot needs map OCR.
+        # Real user captures are commonly named "Screenshot 2026-..." and still contain
+        # Google Maps/OpenStreetMap/Apple Maps labels, coordinates, or right-click context menus.
+        visual_map_hint = classify_visual_map_profile(staged_path)
+        visual_map_score = int(visual_map_hint.get("map_score", 0) or 0)
+        visual_route_score = int(visual_map_hint.get("route_score", 0) or 0)
+        is_map_candidate = (
+            any(token in lower_name for token in (
+                "map", "maps", "route", "directions", "geo", "location",
+                "cairo", "giza", "القاهرة", "الجيزة", "spain", "portugal", "madrid", "barcelona",
+            ))
+            or visual_map_score >= 34
+            or visual_route_score >= 34
+            or str(visual_map_hint.get("provider_hint", "")).lower().startswith("google maps")
+        )
         ocr_mode = "map_deep" if is_map_candidate else None
         visible = extract_visible_text_clues(
             staged_path,
             int(basic["width"]),
             int(basic["height"]),
             source_hint=initial_source_type,
-            force=(initial_source_type in {"Screenshot", "Screenshot / Export", "Messaging Export"} or (not normalized_exif and file_path.suffix.lower() == ".png") or is_map_candidate),
+            force=(
+                initial_source_type in {"Screenshot", "Screenshot / Export", "Messaging Export"}
+                # v12.10.12: a plain PNG without EXIF is not enough to force OCR.
+                # Forcing OCR on every no-EXIF PNG made imports feel frozen on clean images.
+                # Map/route candidates and screenshot-like sources still get OCR automatically.
+                or is_map_candidate
+            ),
             mode=ocr_mode,
             cache_dir=self.case_root / self.active_case_id / "ocr_cache",
+        )
+        digital_verdict = build_digital_risk_verdict(
+            embedded_scan=embedded_scan,
+            pixel_profile=pixel_profile,
+            visible=visible,
+            basic=basic,
+            file_path=staged_path,
         )
         map_intel = analyze_map_intelligence(staged_path, visible)
         visible_app = str(visible.get("app_detected", "Unknown"))
@@ -461,6 +496,21 @@ class CaseManager:
             source_subtype = "Map Screenshot" if not map_intel.route_overlay_detected else "Navigation / Route Screenshot"
         source_profile_confidence = max(int(source_profile.get("confidence", 0)), map_intel.confidence if map_intel.detected else 0)
         source_profile_reasons = list(source_profile.get("reasons", []))
+        image_risk = assess_image_threat(
+            embedded_scan=embedded_scan,
+            pixel_profile=pixel_profile,
+            visible=visible,
+            basic=basic,
+            digital_verdict=digital_verdict,
+            image_profile=image_profile,
+            map_intel=map_intel,
+            context={
+                "has_gps": lat is not None and lon is not None,
+                "gps_display": gps_display,
+                "initial_source_type": initial_source_type,
+                "file_name": original_path.name,
+            },
+        )
         time_assessment = build_time_assessment(normalized_exif, original_path, list(visible.get("visible_time_strings", [])))
         timestamp = str(time_assessment.get("timestamp", "Unknown"))
         timestamp_source = str(time_assessment.get("source", "Unavailable"))
@@ -600,6 +650,45 @@ class CaseManager:
             pixel_hidden_metrics=dict(pixel_profile.metrics),
             pixel_hidden_limitations=list(pixel_profile.limitations),
             pixel_hidden_next_actions=list(pixel_profile.next_actions),
+            digital_final_call=str(digital_verdict.get("final_call", "CLEAR")),
+            digital_risk_score=int(digital_verdict.get("risk_score", 0) or 0),
+            digital_confidence_score=int(digital_verdict.get("confidence_score", 0) or 0),
+            digital_confirmation_level=str(digital_verdict.get("confirmation_level", "clean")),
+            digital_one_line=str(digital_verdict.get("one_line", "")),
+            digital_danger_zones=list(digital_verdict.get("danger_zones", [])),
+            digital_evidence_brief=list(digital_verdict.get("evidence_brief", [])),
+            digital_artifact_status=str(digital_verdict.get("artifact_status", "no_artifact_detected")),
+            digital_execution_status=str(digital_verdict.get("execution_status", "no_execution_evidence")),
+            digital_false_positive_guards=list(digital_verdict.get("false_positive_guards", [])),
+            digital_next_actions=list(digital_verdict.get("next_actions", [])),
+            digital_verdict_payload=dict(digital_verdict),
+            image_risk_label=image_risk.label,
+            image_risk_score=int(image_risk.score),
+            image_risk_confidence=int(image_risk.confidence),
+            image_risk_is_dangerous=bool(image_risk.is_dangerous),
+            image_risk_summary=image_risk.summary,
+            image_risk_primary_reason=image_risk.primary_reason,
+            image_risk_danger_zones=list(image_risk.danger_zones),
+            image_risk_evidence_matrix=list(image_risk.evidence_matrix),
+            image_risk_false_positive_guards=list(image_risk.false_positive_guards),
+            image_risk_privacy_findings=list(image_risk.privacy_findings),
+            image_risk_manipulation_findings=list(image_risk.manipulation_findings),
+            image_risk_next_actions=list(image_risk.next_actions),
+            image_risk_decision_path=list(image_risk.decision_path),
+            image_risk_badge=image_risk.badge,
+            image_risk_threat_family=image_risk.threat_family,
+            image_risk_decision_lane=image_risk.decision_lane,
+            image_risk_technical_signal_count=int(image_risk.technical_signal_count),
+            image_risk_contributor_matrix=list(image_risk.contributor_matrix),
+            image_risk_analyst_verdict_hint=image_risk.analyst_verdict_hint,
+            image_risk_evidence_grade=image_risk.evidence_grade,
+            image_risk_review_priority=image_risk.review_priority,
+            image_risk_risk_temperature=image_risk.risk_temperature,
+            image_risk_calibration_notes=list(image_risk.calibration_notes),
+            image_risk_missing_evidence=list(image_risk.missing_evidence),
+            image_risk_safe_handling_profile=image_risk.safe_handling_profile,
+            image_risk_export_policy=image_risk.export_policy,
+            image_risk_verdict_payload=image_risk.to_dict(),
             image_detail_label=image_profile.label,
             image_detail_confidence=int(image_profile.confidence),
             image_detail_summary=image_profile.summary,
@@ -641,6 +730,23 @@ class CaseManager:
         record.map_answer_readiness_score = int(getattr(map_intel, "answer_readiness_score", 0) or 0)
         record.map_answer_readiness_label = str(getattr(map_intel, "answer_readiness_label", "Not answer-ready"))
         record.map_extraction_plan = list(getattr(map_intel, "extraction_plan", []) or [])
+        # v12.10.8: persist advanced map/route/geocoder fields during the initial import,
+        # not only during manual rescan. This keeps dashboard, Geo, CTF, and map workspace
+        # fields consistent immediately after a file is analyzed.
+        record.map_route_start_label = str(getattr(map_intel, "route_start_label", "") or "")
+        record.map_route_end_label = str(getattr(map_intel, "route_end_label", "") or "")
+        record.map_label_clusters = list(getattr(map_intel, "label_clusters", []) or [])
+        record.map_confidence_radius_m = int(getattr(map_intel, "confidence_radius_m", 0) or 0)
+        record.map_offline_geocoder_hits = list(getattr(map_intel, "offline_geocoder_hits", []) or [])
+        record.map_source_comparison = list(getattr(map_intel, "source_comparison", []) or [])
+        record.map_interactive_payload = dict(getattr(map_intel, "interactive_map_payload", {}) or {})
+        map_bridge = build_map_provider_bridge(record)
+        record.map_provider_bridge = map_bridge.to_dict()
+        record.map_provider_links = [item.to_dict() for item in map_bridge.provider_links]
+        record.map_provider_queries = list(map_bridge.search_queries)
+        record.map_reverse_lookup_label = map_bridge.reverse_lookup_label
+        record.map_reverse_lookup_confidence = int(map_bridge.reverse_lookup_confidence)
+        record.map_bridge_status = map_bridge.status
         record.place_candidate_rankings = list(map_intel.place_candidate_rankings)
         record.filename_location_hints = list(getattr(map_intel, "filename_location_hints", []))
         scene_prediction = predict_osint_scene(record)
@@ -691,6 +797,8 @@ class CaseManager:
             record.osint_leads.append("On-screen text was recovered through OCR. Preserve the screenshot origin and any matching browser/application logs.")
         if record.possible_geo_clues:
             record.osint_leads.append("Possible geo leads from OCR/map labels: " + ", ".join(record.possible_geo_clues[:3]) + ".")
+        if getattr(record, "map_provider_links", None):
+            record.osint_leads.append("Map provider bridge is ready: open/copy the generated OSM/Google/Apple verification links after privacy approval.")
         if record.source_profile_reasons:
             record.osint_leads.append("Source-profile reasons: " + "; ".join(record.source_profile_reasons[:2]) + ".")
         if record.osint_scene_summary:
