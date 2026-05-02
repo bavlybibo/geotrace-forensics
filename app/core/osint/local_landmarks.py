@@ -48,7 +48,7 @@ def match_local_landmarks(texts: Iterable[str], visual_tags: Iterable[str] = (),
     for item in load_local_landmarks():
         aliases = [str(x).lower() for x in item.get("aliases", [])]
         tags = {str(x).lower() for x in item.get("visual_tags", [])}
-        alias_hits = [alias for alias in aliases if alias and alias in blob]
+        alias_hits = [alias for alias in aliases if alias and _alias_in_text(alias, blob)]
         visual_hits = sorted(visual.intersection(tags))
         score = 0
         reasons: list[str] = []

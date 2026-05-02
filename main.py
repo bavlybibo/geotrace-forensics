@@ -1,45 +1,49 @@
 from __future__ import annotations
 
+"""GeoTrace Forensics X application entry point."""
+
+import os
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 
-from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QApplication
+def _prepare_runtime(project_root: Path) -> None:
+    """Create local runtime folders before Qt starts."""
+    try:
+        from app.core.runtime_paths import ensure_project_runtime_dirs
 
-from app.config import APP_NAME, APP_ORGANIZATION
-from app.ui.main_window import GeoTraceMainWindow
-from app.ui.splash import build_splash
+        ensure_project_runtime_dirs(project_root)
+    except Exception:
+        # Startup must remain resilient even if the package import path is unusual.
+        for name in ("case_data", "cases", "exports", "logs", "cache", "reports", "tmp", "data/validation", "data/validation_cases"):
+            (project_root / name).mkdir(parents=True, exist_ok=True)
+    # Safe OCR defaults. Analysts can override from Settings or environment variables.
+    os.environ.setdefault("GEOTRACE_OCR_MODE", "quick")
+    os.environ.setdefault("GEOTRACE_OCR_TIMEOUT", "0.8")
+    os.environ.setdefault("GEOTRACE_OCR_GLOBAL_TIMEOUT", "5.0")
+    os.environ.setdefault("GEOTRACE_OCR_MAX_CALLS", "4")
+    os.environ.setdefault("GEOTRACE_LOG_PRIVACY", "redacted")
 
 
-def configure_application(project_root: Path) -> QApplication:
+def main() -> int:
+    project_root = Path(__file__).resolve().parent
+    _prepare_runtime(project_root)
+
+    try:
+        from PyQt5.QtWidgets import QApplication
+        from app.ui.main_window import GeoTraceMainWindow
+    except ImportError as exc:
+        print("GeoTrace could not start because a required dependency is missing.", file=sys.stderr)
+        print("Run setup_windows.bat or: python -m pip install -r requirements.txt", file=sys.stderr)
+        print(f"Import error: {exc}", file=sys.stderr)
+        return 2
+
     app = QApplication(sys.argv)
-    app.setApplicationName(APP_NAME)
-    app.setOrganizationName(APP_ORGANIZATION)
-
-    icon_path = project_root / "assets" / "app_icon.png"
-    if icon_path.exists():
-        app.setWindowIcon(QIcon(str(icon_path)))
-    return app
-
-
-def main() -> None:
-    app = configure_application(PROJECT_ROOT)
-    splash = build_splash(PROJECT_ROOT)
-    splash.show()
-    splash.set_status("Loading forensic UI shell...", 18)
-
-    splash.set_status("Preparing evidence database and custody log...", 42)
-    window = GeoTraceMainWindow(project_root=PROJECT_ROOT)
-    splash.set_status("Binding analysis modules and dashboards...", 76)
+    app.setApplicationName("GeoTrace Forensics X")
+    window = GeoTraceMainWindow(project_root)
     window.show()
-    splash.set_status("GeoTrace ready.", 100)
-    splash.finish(window)
-    sys.exit(app.exec_())
+    return app.exec_()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

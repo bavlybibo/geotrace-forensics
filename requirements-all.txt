@@ -1,0 +1,8 @@
+# Full GeoTrace stack: core + UI + geo + OSINT + heavy AI
+-r requirements.txt
+-r requirements-ui.txt
+-r requirements-geo.txt
+-r requirements-osint.txt
+-r requirements-ai.txt
+-r requirements-forensics.txt
+-r requirements-ai-heavy.txt

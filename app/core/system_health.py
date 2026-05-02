@@ -134,6 +134,45 @@ def _count_geo_aliases(path: Path) -> tuple[int, int]:
     cities = data.get("cities", []) if isinstance(data, dict) else []
     return (len(countries) if isinstance(countries, list) else 0, len(cities) if isinstance(cities, list) else 0)
 
+
+
+def _optional_module_ok(import_name: str) -> bool:
+    return importlib.util.find_spec(import_name) is not None
+
+
+def _raw_geonames_status(root: Path) -> dict[str, Any]:
+    raw = root / "data" / "geo" / "raw"
+    city_files = [
+        raw / "cities1000.zip",
+        raw / "cities1000.txt",
+        raw / "cities5000.zip",
+        raw / "cities5000.txt",
+        raw / "cities15000.zip",
+        raw / "cities15000.txt",
+        raw / "allCountries.zip",
+        raw / "allCountries.txt",
+    ]
+    aux_files = {
+        "alternateNamesV2": raw / "alternateNamesV2.zip",
+        "countryInfo": raw / "countryInfo.txt",
+        "admin1CodesASCII": raw / "admin1CodesASCII.txt",
+        "admin2Codes": raw / "admin2Codes.txt",
+        "timeZones": raw / "timeZones.txt",
+    }
+    present_city_files = [path.name for path in city_files if path.exists()]
+    present_aux_files = [name for name, path in aux_files.items() if path.exists()]
+    return {
+        "raw_dir": str(raw),
+        "present_city_files": present_city_files,
+        "present_aux_files": present_aux_files,
+        "cities1000_zip": (raw / "cities1000.zip").exists(),
+        "cities15000_zip": (raw / "cities15000.zip").exists(),
+        "alternateNamesV2_zip": (raw / "alternateNamesV2.zip").exists(),
+        "ready": bool(present_city_files),
+        "aux_ready": bool(present_aux_files),
+    }
+
+
 def _scan_security_patterns(project_root: Path) -> list[str]:
     findings: list[str] = []
     for folder_name in ("app", "tools"):
@@ -159,7 +198,16 @@ def build_system_health_report(project_root: Path | str) -> SystemHealthReport:
     geocoder_rows = _count_json_rows(root / "data" / "osint" / "local_geocoder_places.json", "places")
     generated_geocoder_rows = _count_json_rows(root / "data" / "osint" / "generated_geocoder_index.json", "places")
     project_geo_source_rows = _count_json_rows(root / "data" / "geo" / "processed" / "places_geonames.json", "places")
+    raw_geonames = _raw_geonames_status(root)
     geo_alias_countries, geo_alias_cities = _count_geo_aliases(root / "data" / "osint" / "geo_aliases.json")
+    optional_stack = {
+        "ui": {"qtawesome": _optional_module_ok("qtawesome"), "pyqtgraph": _optional_module_ok("pyqtgraph")},
+        "geo": {"rapidfuzz": _optional_module_ok("rapidfuzz"), "geopy": _optional_module_ok("geopy"), "shapely": _optional_module_ok("shapely"), "h3": _optional_module_ok("h3")},
+        "forensics": {"exiftool_py": _optional_module_ok("exiftool"), "zxingcpp": _optional_module_ok("zxingcpp"), "imagehash": _optional_module_ok("imagehash")},
+        "geo_plus": {"timezonefinder": _optional_module_ok("timezonefinder"), "pycountry": _optional_module_ok("pycountry"), "duckdb": _optional_module_ok("duckdb")},
+        "ai": {"cv2": _optional_module_ok("cv2"), "easyocr": _optional_module_ok("easyocr"), "onnxruntime": _optional_module_ok("onnxruntime"), "sentence_transformers": _optional_module_ok("sentence_transformers"), "open_clip": _optional_module_ok("open_clip"), "ultralytics": _optional_module_ok("ultralytics"), "paddleocr": _optional_module_ok("paddleocr"), "paddlepaddle": _optional_module_ok("paddle")},
+        "osint": {"requests": _optional_module_ok("requests"), "requests_cache": _optional_module_ok("requests_cache")},
+    }
     validation_template = root / "data" / "validation_ground_truth.real_template.json"
     validation_cases = root / "data" / "validation_cases" / "ground_truth_v12_10_24.json"
     benchmark_tool = root / "tools" / "benchmark_accuracy.py"
@@ -176,9 +224,16 @@ def build_system_health_report(project_root: Path | str) -> SystemHealthReport:
         "offline_geocoder_seed_rows": geocoder_rows,
         "offline_geocoder_generated_rows": generated_geocoder_rows,
         "project_geo_source_rows": project_geo_source_rows,
+        "raw_cities15000_ready": raw_geonames["ready"],
+        "optional_stack": optional_stack,
         "geo_alias_countries": geo_alias_countries,
         "geo_alias_cities": geo_alias_cities,
         "offline_geocoder_importer": "available" if (root / "tools" / "build_offline_geocoder_index.py").exists() else "missing",
+        "online_osint_connectors": "available / privacy-gated" if (root / "app" / "core" / "osint" / "online_enrichment.py").exists() else "missing",
+        "exiftool_bridge": "available" if (root / "app" / "core" / "forensics" / "exiftool_bridge.py").exists() else "missing",
+        "qr_barcode_detector": "available" if (root / "app" / "core" / "vision" / "barcode_detector.py").exists() else "missing",
+        "yolo_bridge": "available / disabled by default" if (root / "app" / "core" / "vision" / "yolo_detector.py").exists() else "missing",
+        "geo_confidence_cells": "available" if (root / "app" / "core" / "osint" / "geocell.py").exists() else "missing",
         "geo_data_sources_doc": "available" if (root / "docs" / "GEO_DATA_SOURCES.md").exists() else "missing",
         "visual_similarity_search": "available" if similarity_tool.exists() else "missing",
         "validation_dataset_template": "available" if validation_template.exists() else "missing",
@@ -208,6 +263,18 @@ def build_system_health_report(project_root: Path | str) -> SystemHealthReport:
         ],
     ))
     sections.append(HealthSection(
+        "Optional forensic/AI engines",
+        "PASS" if (root / "app" / "core" / "forensics" / "exiftool_bridge.py").exists() and (root / "app" / "core" / "vision" / "barcode_detector.py").exists() else "WARN",
+        "ExifTool/QR/ImageHash/timezone/YOLO bridges are code-ready and fail-safe.",
+        [
+            f"ExifTool bridge: {p2.get('exiftool_bridge')}",
+            f"QR/barcode detector: {p2.get('qr_barcode_detector')}",
+            f"YOLO bridge: {p2.get('yolo_bridge')}",
+            "Install requirements-forensics.txt for ExifTool Python wrapper, QR/barcode, ImageHash, timezonefinder, pycountry, and DuckDB.",
+            "Install requirements-ai-heavy.txt only on capable machines; YOLO requires GEOTRACE_YOLO_ENABLED=1 and GEOTRACE_YOLO_MODEL.",
+        ],
+    ))
+    sections.append(HealthSection(
         "Map provider bridge",
         "PASS",
         str(p2["map_provider_bridge"]),
@@ -222,6 +289,22 @@ def build_system_health_report(project_root: Path | str) -> SystemHealthReport:
         "PASS" if len(landmarks) >= 80 and geocoder_rows >= 40 else "WARN",
         f"{len(landmarks)} landmark aliases + {geocoder_rows} seed places + {generated_geocoder_rows} generated places loaded/offline.",
         ["Still a seed database, not a global proof engine; every derived location needs corroboration."],
+    ))
+    sections.append(HealthSection(
+        "Optional stack and city database",
+        "PASS" if raw_geonames["ready"] or generated_geocoder_rows > 0 else "WARN",
+        "GeoNames source detected or generated index already exists." if raw_geonames["ready"] or generated_geocoder_rows > 0 else "Put cities1000.zip/cities15000.zip in data/geo/raw, then run import_project_geo_data.bat.",
+        [
+            f"Raw GeoNames ready: {raw_geonames['ready']} (city files={', '.join(raw_geonames.get('present_city_files', [])) or 'none'})",
+            f"Aux GeoNames enrichment: {raw_geonames.get('aux_ready', False)} (aux files={', '.join(raw_geonames.get('present_aux_files', [])) or 'none'})",
+            f"UI optional installed: {sum(optional_stack['ui'].values())}/{len(optional_stack['ui'])}",
+            f"Geo optional installed: {sum(optional_stack['geo'].values())}/{len(optional_stack['geo'])}",
+            f"Forensics optional installed: {sum(optional_stack['forensics'].values())}/{len(optional_stack['forensics'])}",
+            f"Geo+ optional installed: {sum(optional_stack['geo_plus'].values())}/{len(optional_stack['geo_plus'])}",
+            f"AI optional installed: {sum(optional_stack['ai'].values())}/{len(optional_stack['ai'])}",
+            f"OSINT optional installed: {sum(optional_stack['osint'].values())}/{len(optional_stack['osint'])}",
+            "Heavy AI note: YOLO/PaddleOCR are disabled unless explicitly installed and configured.",
+        ],
     ))
     sections.append(HealthSection(
         "Validation and benchmark",
@@ -247,6 +330,7 @@ def build_system_health_report(project_root: Path | str) -> SystemHealthReport:
     score += 8 if release_ok else 0
     score += 7 if len(landmarks) >= 80 else 0
     score += 5 if (geocoder_rows + generated_geocoder_rows) >= 40 else 0
+    score += 3 if raw_geonames["ready"] or generated_geocoder_rows > 0 else 0
     score += 5 if validation_template.exists() and benchmark_tool.exists() else 0
     score += 5 if similarity_tool.exists() else 0
     score += 3

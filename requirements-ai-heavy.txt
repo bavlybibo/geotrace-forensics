@@ -1,0 +1,5 @@
+# Optional heavy local AI stack.
+# Not required for normal GeoTrace operation; enable intentionally on capable machines.
+ultralytics>=8.3.0
+paddleocr>=2.8.0
+paddlepaddle>=2.6.0

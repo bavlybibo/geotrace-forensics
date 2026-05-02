@@ -114,11 +114,20 @@ def refresh_system_health_page(window) -> None:
             f"Visual similarity search: {p2.get('visual_similarity_search')}",
             f"Validation dataset template: {p2.get('validation_dataset_template')}",
             f"Benchmark tool: {p2.get('benchmark_accuracy_tool')}",
+            f"ExifTool bridge: {p2.get('exiftool_bridge')}",
+            f"QR/barcode detector: {p2.get('qr_barcode_detector')}",
+            f"YOLO bridge: {p2.get('yolo_bridge')}",
             "",
             "Do not claim global AI accuracy until you run a real labelled validation dataset.",
             "Recommended commands:",
+            r"setup_forensics_stack_windows.bat",
             r"python tools\visual_similarity_search.py query.jpg evidence_folder --threshold 82",
             r"python tools\benchmark_accuracy.py records.json data\validation_ground_truth.real_template.json",
+            "",
+            "Optional heavy AI:",
+            r"pip install -r requirements-ai-heavy.txt",
+            r"set GEOTRACE_YOLO_ENABLED=1",
+            r"set GEOTRACE_YOLO_MODEL=C:\path\to\yolov8n.pt",
         ]
         window.p2_readiness_view.setPlainText("\n".join(lines))
 

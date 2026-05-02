@@ -84,6 +84,20 @@ def _norm(text: str) -> str:
     return text.strip()
 
 
+def _alias_in_text(alias: str, text: str) -> bool:
+    alias_norm = _norm(alias).lower()
+    text_norm = _norm(text).lower()
+    if not alias_norm or not text_norm:
+        return False
+    alias_compact = re.sub(r"[^a-z0-9\u0600-\u06ff]+", "", alias_norm)
+    if re.fullmatch(r"[a-z]{1,2}", alias_compact):
+        return False
+    return re.search(
+        rf"(?<![a-z0-9\u0600-\u06ff]){re.escape(alias_norm)}(?![a-z0-9\u0600-\u06ff])",
+        text_norm,
+    ) is not None
+
+
 def _good_label(text: str) -> bool:
     clean = _norm(text).strip(" -:|•·")
     if len(clean) < 3:
@@ -160,7 +174,7 @@ def match_offline_places(texts: Iterable[str], *, limit: int = 8) -> list[dict[s
     hits: list[OfflinePlaceHit] = []
     for item in _combined_place_index():
         aliases = [str(a) for a in item.get("aliases", [])]
-        alias_hits = [alias for alias in aliases if _norm(alias).lower() in blob]
+        alias_hits = [alias for alias in aliases if _alias_in_text(alias, blob)]
         if not alias_hits:
             continue
         score = min(94, 68 + min(16, len(alias_hits) * 8))
@@ -345,7 +359,7 @@ def match_offline_places(texts: Iterable[str], *, limit: int = 8) -> list[dict[s
             if score_alias_against_text:
                 score, label = score_alias_against_text(alias, segments)  # type: ignore[misc]
             else:
-                score = 100 if _norm(alias).lower() in _norm("\n".join(segments)).lower() else 0
+                score = 100 if _alias_in_text(alias, "\n".join(segments)) else 0
                 label = alias if score else ""
             if score > best_text_score:
                 best_text_score = score
@@ -390,7 +404,10 @@ def geocoder_data_sources() -> list[dict[str, str]]:
     return [
         {"name": "GeoNames", "role": "large city/place index + alternate names", "mode": "offline dump import"},
         {"name": "Natural Earth Populated Places", "role": "curated global cities/capitals seed", "mode": "offline CSV/GeoJSON import"},
-        {"name": "OpenStreetMap/Nominatim", "role": "optional self-hosted geocoder/search", "mode": "disabled unless analyst enables online/self-hosted connector"},
-        {"name": "Wikidata", "role": "POI coordinates + multilingual labels", "mode": "optional exported JSON/CSV import"},
+        {"name": "OpenStreetMap/Nominatim", "role": "optional self-hosted/geocoder search + reverse lookup", "mode": "disabled unless analyst enables online/self-hosted connector"},
+        {"name": "Overpass API", "role": "nearby public OSM features for clue corroboration", "mode": "privacy-gated optional online connector"},
+        {"name": "Wikidata", "role": "POI coordinates + multilingual labels", "mode": "optional exported JSON/CSV import or privacy-gated query"},
+        {"name": "Mapillary", "role": "manual street-level imagery verification links", "mode": "manual/approved lookup only"},
+        {"name": "H3", "role": "confidence cells/zones for approximate coordinates", "mode": "optional local library"},
     ]
 

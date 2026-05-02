@@ -438,7 +438,25 @@ def assess_image_threat(
             _append_signal(signals, evidence, name="route overlay visible", weight=4, category="privacy", note="movement path may be exposed")
 
     quality_flags = [str(x) for x in _as_list(getattr(image_profile, "quality_flags", []))]
+    object_hints = [str(x) for x in _as_list(getattr(image_profile, "object_hints", []))]
     detail_metrics = dict(getattr(image_profile, "metrics", {}) or {}) if image_profile is not None else {}
+    barcode_scan = dict(detail_metrics.get("barcode_scan", {}) or {})
+    barcode_findings = list(barcode_scan.get("findings", []) or [])
+    if barcode_findings or any(("qr" in hint.lower() or "barcode" in hint.lower() or "machine-readable" in hint.lower()) for hint in object_hints):
+        score += 8
+        privacy.append("machine-readable QR/barcode content present")
+        zones.append("QR/barcode region")
+        _append_signal(
+            signals,
+            evidence,
+            name="machine-readable QR/barcode detected",
+            weight=8,
+            category="privacy",
+            confidence_delta=4,
+            note=f"items={len(barcode_findings)}",
+            evidence_line="A QR/barcode detector or object-hint layer found machine-readable content; redact/review payloads before export.",
+        )
+        guards.append("QR/barcode content is treated as privacy/exposure evidence unless hidden payload or executable content corroborates technical danger.")
     hidden_priority = int(detail_metrics.get("hidden_content_priority_score", 0) or 0)
     if hidden_priority >= 55 and not hidden_or_structural:
         score += 5

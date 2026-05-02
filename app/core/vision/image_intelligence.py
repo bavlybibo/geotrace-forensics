@@ -19,6 +19,9 @@ from PIL import Image, ImageStat
 
 from .local_vision_model import run_optional_local_vision
 from .semantic_embeddings import build_semantic_image_profile
+from .barcode_detector import detect_barcodes
+from .imagehash_plus import compute_imagehashes
+from .yolo_detector import detect_objects_yolo
 
 
 @dataclass(slots=True)
@@ -472,6 +475,9 @@ def analyze_image_details(file_path: Path) -> ImageDetailProfile:
 
     semantic_profile = build_semantic_image_profile(file_path)
     local_vision_result = run_optional_local_vision(file_path)
+    barcode_result = detect_barcodes(file_path)
+    imagehash_profile = compute_imagehashes(file_path)
+    yolo_result = detect_objects_yolo(file_path)
 
     total = max(1, len(rgb_pixels))
     ratios = _ratios(rgb_pixels, alpha_values)
@@ -600,6 +606,35 @@ def analyze_image_details(file_path: Path) -> ImageDetailProfile:
     elif local_vision_result.warnings:
         profile.performance_notes.extend(local_vision_result.warnings[:2])
 
+    if barcode_result.executed:
+        if barcode_result.findings:
+            label = "Machine-readable code / QR-bearing image" if label == "General image artifact" else label
+            confidence = max(confidence, 76)
+            for finding in barcode_result.findings[:4]:
+                object_hints.append(f"machine-readable code: {finding.kind} via {finding.engine}")
+                cues.append(f"QR/barcode payload detected ({finding.kind}); content retained in metrics for analyst review")
+            profile.next_actions.append("Review QR/barcode payloads in Deep Image Intelligence metrics; treat URLs/Wi-Fi/payment/auth codes as privacy-sensitive until validated.")
+        else:
+            profile.performance_notes.append(f"Barcode engine {barcode_result.engine} executed; no QR/barcode content found.")
+    elif barcode_result.available:
+        profile.performance_notes.append(f"Barcode engine {barcode_result.engine} available but produced no executed result.")
+    elif barcode_result.warnings:
+        profile.performance_notes.extend(barcode_result.warnings[:1])
+
+    if yolo_result.executed:
+        for item in yolo_result.objects[:6]:
+            object_hints.append(f"YOLO object: {item.get('label')} ({item.get('confidence', 0)}%)")
+        if yolo_result.objects:
+            confidence = max(confidence, min(90, int(max(float(item.get('confidence', 0)) for item in yolo_result.objects))))
+            profile.performance_notes.append(f"YOLO object detection executed with model {yolo_result.model}.")
+    elif yolo_result.available:
+        profile.performance_notes.extend(yolo_result.warnings[:1])
+    elif yolo_result.warnings:
+        profile.performance_notes.extend(yolo_result.warnings[:1])
+
+    if imagehash_profile.get("available"):
+        cues.append("ImageHash multi-hash profile available for near-duplicate/tamper comparison")
+
     scene_descriptors = _scene_descriptors(label, ratios, edge, block_var, brightness, contrast)
     review_strategy = _image_review_strategy(
         label=label,
@@ -661,6 +696,9 @@ def analyze_image_details(file_path: Path) -> ImageDetailProfile:
         "strategy_safeguards": list(review_strategy.get("safeguards", []) or []),
         "semantic_fingerprint": semantic_profile.to_dict(),
         "local_vision": local_vision_result.to_dict(),
+        "barcode_scan": barcode_result.to_dict(),
+        "imagehash_profile": imagehash_profile,
+        "yolo_detection": yolo_result.to_dict(),
         **ratios,
     }
     cue_text = "; ".join(
@@ -680,6 +718,10 @@ def analyze_image_details(file_path: Path) -> ImageDetailProfile:
         local_vision_phrase = f" Local vision: {local_vision_result.provider} executed."
     elif local_vision_result.available:
         local_vision_phrase = " Local vision configured but not executed; deterministic signals remain primary."
+    if barcode_result.executed and barcode_result.findings:
+        local_vision_phrase += f" QR/barcode engine found {len(barcode_result.findings)} machine-readable item(s)."
+    if yolo_result.executed:
+        local_vision_phrase += f" YOLO found {len(yolo_result.objects)} object candidate(s)."
     profile.summary = (
         f"Image detail AI v6: {label} ({profile.confidence}% confidence). "
         f"Strategy: {review_strategy.get('analysis_strategy', 'balanced visual review')}. "

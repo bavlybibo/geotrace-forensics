@@ -15,6 +15,11 @@ from difflib import SequenceMatcher
 import unicodedata
 from typing import Any, Iterable
 
+try:  # Optional speed/quality boost from requirements-geo.txt
+    from rapidfuzz import fuzz as _rapidfuzz_fuzz
+except Exception:  # pragma: no cover - base install stays dependency-light
+    _rapidfuzz_fuzz = None
+
 _ARABIC_DIACRITICS = re.compile(r"[\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06ed]")
 _TOKEN_RE = re.compile(r"[a-z0-9\u0600-\u06ff]{2,}", re.I)
 
@@ -53,6 +58,16 @@ def fuzzy_ratio(a: str, b: str) -> float:
     ta, tb = token_set(na), token_set(nb)
     token_score = len(ta & tb) / max(1, len(ta | tb)) if ta or tb else 0.0
     seq_score = SequenceMatcher(None, na, nb).ratio()
+    if _rapidfuzz_fuzz is not None:
+        try:
+            rapid_score = max(
+                float(_rapidfuzz_fuzz.ratio(na, nb)) / 100.0,
+                float(_rapidfuzz_fuzz.token_set_ratio(na, nb)) / 100.0,
+                float(_rapidfuzz_fuzz.partial_ratio(na, nb)) / 100.0 if min(len(na), len(nb)) >= 5 else 0.0,
+            )
+            return max(seq_score, token_score, rapid_score)
+        except Exception:
+            pass
     return max(seq_score, token_score)
 
 

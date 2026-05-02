@@ -1,1 +1,7 @@
-scikit-learn>=1.4.0
+# Heavy optional local AI / vision stack
+# EasyOCR and OpenCLIP may install PyTorch dependencies.
+opencv-python>=4.10.0
+easyocr>=1.7.1
+onnxruntime>=1.18.0
+sentence-transformers>=3.0.0
+open-clip-torch>=2.24.0

@@ -181,20 +181,39 @@ def _good_place_candidate(value: str) -> bool:
     return True
 
 
+def _alias_in_text(alias: str, text: str) -> bool:
+    """Return True only for full-token place aliases, never loose substrings.
+
+    This intentionally rejects very short Latin aliases (for example ``la``)
+    because they create false positives inside common words such as
+    ``available``. Short aliases can still be recovered through stronger
+    evidence such as coordinates, map URLs, or explicit analyst review.
+    """
+    alias_norm = _normalize(alias).lower()
+    text_norm = _normalize(text).lower()
+    if not alias_norm or not text_norm:
+        return False
+    alias_compact = re.sub(r"[^a-z0-9\u0600-\u06ff]+", "", alias_norm)
+    if re.fullmatch(r"[a-z]{1,2}", alias_compact):
+        return False
+    return re.search(
+        rf"(?<![a-z0-9\u0600-\u06ff]){re.escape(alias_norm)}(?![a-z0-9\u0600-\u06ff])",
+        text_norm,
+    ) is not None
+
+
 def _first_match(text: str, aliases: Mapping[str, tuple[str, ...]]) -> str:
-    lower = text.lower()
     for canonical, tokens in aliases.items():
         for token in tokens:
-            if token.lower() in lower:
+            if _alias_in_text(token, text):
                 return canonical
     return "Unavailable"
 
 
 def _all_matches(text: str, aliases: Mapping[str, tuple[str, ...]], limit: int = 8) -> list[str]:
-    lower = text.lower()
     out: list[str] = []
     for canonical, tokens in aliases.items():
-        if any(token.lower() in lower for token in tokens):
+        if any(_alias_in_text(token, text) for token in tokens):
             out.append(canonical)
     return _unique(out, limit=limit)
 

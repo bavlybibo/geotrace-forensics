@@ -1,0 +1,3 @@
+# Optional online OSINT helpers (privacy-gated by environment settings)
+requests>=2.32.0
+requests-cache>=1.2.0

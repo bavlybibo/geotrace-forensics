@@ -1,0 +1,52 @@
+GeoTrace v12.9.4 — CTF Image Workbench Upgrade
+
+Focus of this iteration
+- Stronger support for image-heavy CTF questions.
+- Make the CTF GeoLocator page feel like an answer-oriented workbench, not only a clue viewer.
+
+What was added
+1) New CTF question-support engine
+   - New module: app/core/osint/ctf_question_support.py
+   - Converts current OSINT/CTF evidence into answer-ready support for common image-CTF questions.
+   - Covers:
+     * exact coordinates
+     * landmark / POI
+     * city / area
+     * country / region
+     * map app / platform
+     * visible language / script
+     * best next manual pivot
+
+2) Page-level UX upgrade for the CTF GeoLocator page
+   - Added Selected Candidate Detail panel.
+   - Added CTF Answer Engine panel.
+   - Added Question Coverage Matrix panel.
+   - Candidate selection now refreshes the page context so the detail/answer panes follow the selected row.
+
+3) Better analyst workflow
+   - You can now inspect the selected candidate’s:
+     * basis
+     * limitations
+     * next actions
+     * analyst note
+   - The Answer Engine gives a top answer candidate plus strongest evidence and next steps.
+   - The Question Coverage Matrix explicitly shows which common CTF question types are fully supported, partially supported, or still missing signal.
+
+Why this matters
+- The page now helps solve image CTF tasks more directly instead of forcing the analyst to mentally translate clues into likely answers.
+- It is especially better for challenges that ask things like:
+  * Where was this image taken?
+  * Which city is this?
+  * Which country/region does this hint at?
+  * What landmark is visible?
+  * Which map app is this screenshot from?
+  * What language is shown?
+  * What should I search next?
+
+Validation
+- python -m compileall -q app tests main.py  ✅
+- pytest -q tests/test_ctf_geolocator_v12_8_17.py tests/test_ctf_question_support_v12_9_3.py tests/test_osint_location_pro_v12_8_13.py tests/test_location_estimator_v12_9_2.py  ✅
+
+Notes
+- This upgrade stays offline-first and conservative.
+- It improves analyst reasoning and answer support but does not fabricate exact locations when the evidence is weak.

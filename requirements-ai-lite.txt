@@ -1,0 +1,4 @@
+# Optional lighter local-vision foundations.
+# Install before the heavy AI pack if you only need computer-vision helpers.
+opencv-python>=4.10.0
+onnxruntime>=1.18.0

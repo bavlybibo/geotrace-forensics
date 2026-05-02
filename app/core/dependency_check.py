@@ -92,12 +92,44 @@ _MODULES: tuple[tuple[str, str, bool, str], ...] = (
     ("exifread", "exifread", False, "pip install -r requirements.txt"),
     ("pytesseract", "pytesseract", False, "pip install -r requirements.txt"),
     ("pillow-heif", "pillow_heif", False, "pip install -r requirements.txt"),
+
+    # P0+ forensic/geo precision stack
+    ("PyExifTool", "exiftool", False, "setup_recommended_stack_windows.bat or pip install -r requirements-forensics.txt"),
+    ("zxing-cpp", "zxingcpp", False, "setup_recommended_stack_windows.bat or pip install -r requirements-forensics.txt"),
+    ("ImageHash", "imagehash", False, "setup_recommended_stack_windows.bat or pip install -r requirements-forensics.txt"),
+    ("timezonefinder", "timezonefinder", False, "setup_recommended_stack_windows.bat or pip install -r requirements-forensics.txt"),
+    ("pycountry", "pycountry", False, "setup_recommended_stack_windows.bat or pip install -r requirements-forensics.txt"),
+    ("DuckDB", "duckdb", False, "setup_recommended_stack_windows.bat or pip install -r requirements-forensics.txt"),
+
+    # P0 safe optional stack
+    ("QtAwesome", "qtawesome", False, "setup_recommended_stack_windows.bat or pip install -r requirements-ui.txt"),
+    ("PyQtGraph", "pyqtgraph", False, "setup_recommended_stack_windows.bat or pip install -r requirements-ui.txt"),
+    ("RapidFuzz", "rapidfuzz", False, "setup_recommended_stack_windows.bat or pip install -r requirements-geo.txt"),
+    ("geopy", "geopy", False, "setup_recommended_stack_windows.bat or pip install -r requirements-geo.txt"),
+    ("shapely", "shapely", False, "setup_recommended_stack_windows.bat or pip install -r requirements-geo.txt"),
+    ("h3", "h3", False, "setup_recommended_stack_windows.bat or pip install -r requirements-geo.txt"),
+
+    # P1 heavy optional local AI stack
+    ("opencv-python", "cv2", False, "pip install -r requirements-ai.txt"),
+    ("EasyOCR", "easyocr", False, "pip install -r requirements-ai.txt"),
+    ("ONNX Runtime", "onnxruntime", False, "pip install -r requirements-ai.txt"),
+    ("SentenceTransformers", "sentence_transformers", False, "pip install -r requirements-ai.txt"),
+    ("OpenCLIP", "open_clip", False, "pip install -r requirements-ai.txt"),
+    ("Ultralytics YOLO", "ultralytics", False, "pip install -r requirements-ai-heavy.txt"),
+    ("PaddleOCR", "paddleocr", False, "pip install -r requirements-ai-heavy.txt"),
+    ("PaddlePaddle", "paddle", False, "pip install -r requirements-ai-heavy.txt"),
+
+    # P2 online OSINT helpers
+    ("requests", "requests", False, "pip install -r requirements-osint.txt"),
+    ("requests-cache", "requests_cache", False, "setup_recommended_stack_windows.bat or pip install -r requirements-osint.txt"),
+
     ("pytest", "pytest", False, "pip install -r requirements-dev.txt"),
     ("pyinstaller", "PyInstaller", False, "pip install -r requirements-dev.txt"),
 )
 
 _BINARIES: tuple[tuple[str, str, bool, str], ...] = (
     ("Tesseract OCR", "tesseract", False, "Install Tesseract and add it to PATH, or keep OCR mode quick/off."),
+    ("ExifTool binary", "exiftool", False, "Install ExifTool, place exiftool.exe in tools\\bin\\exiftool, or set GEOTRACE_EXIFTOOL_CMD."),
 )
 
 
@@ -130,13 +162,27 @@ def _binary_status(label: str, executable: str, required: bool, fix_hint: str) -
     return DependencyItem(label, "external-binary", "ok", version="found", detail=path, required=required)
 
 
+def _exiftool_binary_status(root: Path, required: bool, fix_hint: str) -> DependencyItem:
+    try:
+        from .forensics.exiftool_bridge import resolve_exiftool_binary
+        path = resolve_exiftool_binary(root)
+    except Exception:
+        path = ""
+    if not path:
+        return DependencyItem("ExifTool binary", "external-binary", "missing", detail="ExifTool not found in GEOTRACE_EXIFTOOL_CMD, tools/bin/exiftool, or PATH.", required=required, fix_hint=fix_hint)
+    return DependencyItem("ExifTool binary", "external-binary", "ok", version="found", detail=path, required=required)
+
+
 def run_dependency_check(project_root: Path | str | None = None) -> DependencyReport:
     root = Path(project_root) if project_root is not None else Path.cwd()
     items: list[DependencyItem] = []
     for package_name, import_name, required, fix_hint in _MODULES:
         items.append(_module_status(package_name, import_name, required, fix_hint))
     for label, executable, required, fix_hint in _BINARIES:
-        items.append(_binary_status(label, executable, required, fix_hint))
+        if label == "ExifTool binary":
+            items.append(_exiftool_binary_status(root, required, fix_hint))
+        else:
+            items.append(_binary_status(label, executable, required, fix_hint))
 
     runtime_dirs = runtime_dir_paths(root)
     warnings: list[str] = []
@@ -151,6 +197,17 @@ def run_dependency_check(project_root: Path | str | None = None) -> DependencyRe
     py_ok = sys.version_info >= (3, 10)
     if not py_ok:
         warnings.append("Python 3.10+ is recommended for PyQt5/PyInstaller compatibility.")
+    if sys.version_info >= (3, 14):
+        warnings.append("Python 3.14 detected: keep AI-heavy packages separate. If heavy AI install fails, use setup_recommended_stack_windows.bat and keep local AI optional.")
+
+    raw_geo = root / "data" / "geo" / "raw"
+    generated_geo = root / "data" / "osint" / "generated_geocoder_index.json"
+    primary_geo_names = ("cities1000", "cities5000", "cities15000", "allCountries")
+    primary_geo_present = any((raw_geo / f"{name}.zip").exists() or (raw_geo / f"{name}.txt").exists() for name in primary_geo_names)
+    if not primary_geo_present:
+        warnings.append("GeoNames primary dataset missing. Put cities1000.zip or cities15000.zip in data/geo/raw, then run import_project_geo_data.bat.")
+    elif not generated_geo.exists():
+        warnings.append("GeoNames source detected but generated index is missing. Run import_project_geo_data.bat before expecting large offline city matching.")
 
     local_vision_command = os.environ.get("GEOTRACE_LOCAL_VISION_COMMAND", "").strip()
     local_vision_model = os.environ.get("GEOTRACE_LOCAL_VISION_MODEL", "").strip()
@@ -167,6 +224,11 @@ def run_dependency_check(project_root: Path | str | None = None) -> DependencyRe
         "ocr_mode": os.environ.get("GEOTRACE_OCR_MODE", "quick"),
         "log_privacy": os.environ.get("GEOTRACE_LOG_PRIVACY", "redacted"),
         "online_map_lookup": "enabled" if os.environ.get("GEOTRACE_ONLINE_MAP_LOOKUP", "0").strip().lower() in {"1", "true", "yes", "on"} else "disabled/privacy-first",
+        "online_osint": "enabled" if os.environ.get("GEOTRACE_OSINT_ONLINE", "0").strip().lower() in {"1", "true", "yes", "on"} else "disabled/privacy-first",
+        "mapillary_token": "configured" if os.environ.get("GEOTRACE_MAPILLARY_TOKEN", "").strip() else "not configured",
+        "exiftool_cmd": "configured" if os.environ.get("GEOTRACE_EXIFTOOL_CMD", "").strip() else "auto-detect",
+        "yolo_enabled": "enabled" if os.environ.get("GEOTRACE_YOLO_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"} else "disabled",
+        "yolo_model": os.environ.get("GEOTRACE_YOLO_MODEL", "").strip() or "not configured",
     }
     return DependencyReport(
         app_ready=(required_ok == len(required) and py_ok),

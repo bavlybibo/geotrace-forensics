@@ -29,6 +29,7 @@ from ..osint.analyst_decisions import attach_decisions, default_decisions_for_hy
 from ..osint.cache import load_osint_cache, save_osint_cache
 from ..osint.privacy_review import build_osint_privacy_review
 from ..osint.location_estimator import estimate_location
+from ..osint.timezone_service import lookup_timezone
 from ..exif_service import (
     build_metadata_summary,
     build_osint_leads,
@@ -400,7 +401,7 @@ class CaseManager:
         imported_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         created_time, modified_time, created_time_note = extract_file_times(original_path)
         metadata = build_metadata_summary(exif)
-        normalized_exif = {k: v for k, v in exif.items() if k not in {"__raw_tags__", "__warning__"}}
+        normalized_exif = {k: v for k, v in exif.items() if k not in {"__raw_tags__", "__warning__", "__exiftool_status__"}}
         container_metadata = {
             k: v for k, v in normalized_exif.items()
             if k.startswith("ImageInfo ") or k.startswith("PNG ")
@@ -420,6 +421,12 @@ class CaseManager:
         embedded_scan = extract_embedded_text_hints(staged_path, str(basic["format_name"]))
         pixel_profile = analyze_pixel_forensics(staged_path)
         image_profile = analyze_image_details(staged_path)
+        barcode_scan = dict((getattr(image_profile, "metrics", {}) or {}).get("barcode_scan", {}) or {})
+        barcode_payloads = [
+            str(item.get("text", "")).strip()
+            for item in list(barcode_scan.get("findings", []) or [])
+            if isinstance(item, dict) and str(item.get("text", "")).strip()
+        ][:8]
         carved_files = self._carve_hidden_payloads(evidence_id, list(embedded_scan.get("recoverable_segments", [])))
         lower_name = original_path.name.lower()
         # v12.10.5: do not rely on the filename to decide whether a screenshot needs map OCR.
@@ -472,10 +479,14 @@ class CaseManager:
             map_intel.candidate_area,
             original_path.stem,
             *list(embedded_scan.get("context_strings", [])),
+            *barcode_payloads,
+        ]
+        visible_and_machine_urls = list(visible.get("visible_urls", [])) + list(embedded_scan.get("urls", [])) + [
+            payload for payload in barcode_payloads if payload.lower().startswith(("http://", "https://", "geo:"))
         ]
         derived_geo = parse_derived_geo(
             map_text_candidates,
-            list(visible.get("visible_urls", [])) + list(embedded_scan.get("urls", [])),
+            visible_and_machine_urls,
             source_type=initial_source_type,
         )
         source_profile = infer_source_profile(
@@ -485,7 +496,7 @@ class CaseManager:
             height=int(basic["height"]),
             has_exif=bool(normalized_exif),
             software=software,
-            visible_urls=list(visible.get("visible_urls", [])),
+            visible_urls=visible_and_machine_urls[:16],
             app_detected=app_detected_runtime,
             visible_lines=list(visible.get("lines", [])),
             map_labels=list(visible.get("ocr_map_labels", [])) + map_intel.place_candidates + map_intel.landmarks_detected,
@@ -621,8 +632,8 @@ class CaseManager:
             ocr_app_names=list(visible.get("app_names", [])),
             ocr_username_entities=list(visible.get("ocr_username_entities", [])),
             ocr_map_labels=list(visible.get("ocr_map_labels", [])),
-            visible_urls=list(visible.get("visible_urls", [])),
-            ocr_url_entities=list(visible.get("visible_urls", [])),
+            visible_urls=visible_and_machine_urls[:16],
+            ocr_url_entities=visible_and_machine_urls[:16],
             visible_time_strings=list(visible.get("visible_time_strings", [])),
             ocr_time_entities=list(visible.get("visible_time_strings", [])),
             visible_location_strings=list(visible.get("visible_location_strings", [])),
@@ -703,7 +714,7 @@ class CaseManager:
             image_scene_descriptors=list(getattr(image_profile, "scene_descriptors", [])),
             image_analysis_methodology=list(getattr(image_profile, "methodology_steps", [])),
             image_performance_notes=list(getattr(image_profile, "performance_notes", [])),
-            urls_found=list(embedded_scan.get("urls", [])),
+            urls_found=(list(embedded_scan.get("urls", [])) + barcode_payloads)[:16],
             time_candidates=list(time_assessment.get("candidates", [])),
             time_conflicts=list(time_assessment.get("conflicts", [])),
         )
@@ -747,6 +758,15 @@ class CaseManager:
         record.map_reverse_lookup_label = map_bridge.reverse_lookup_label
         record.map_reverse_lookup_confidence = int(map_bridge.reverse_lookup_confidence)
         record.map_bridge_status = map_bridge.status
+        tz_lat = record.gps_latitude if record.gps_latitude is not None else record.derived_latitude
+        tz_lon = record.gps_longitude if record.gps_longitude is not None else record.derived_longitude
+        timezone_lookup = lookup_timezone(tz_lat, tz_lon)
+        if timezone_lookup.available and timezone_lookup.timezone != "Unavailable":
+            record.raw_exif.setdefault("GeoTrace Timezone", timezone_lookup.timezone)
+            if record.geo_status:
+                record.geo_status += f" Offline timezone: {timezone_lookup.timezone}."
+        elif timezone_lookup.warning and (tz_lat is not None and tz_lon is not None):
+            record.raw_exif.setdefault("GeoTrace Timezone Warning", timezone_lookup.warning)
         record.place_candidate_rankings = list(map_intel.place_candidate_rankings)
         record.filename_location_hints = list(getattr(map_intel, "filename_location_hints", []))
         scene_prediction = predict_osint_scene(record)
@@ -792,7 +812,11 @@ class CaseManager:
                 "Map/place UI context was detected, but no stable coordinate or venue label was recovered. Use deep OCR, source app history, or the original map/share link for confirmation."
             )
         if record.visible_urls:
-            record.osint_leads.append(f"Visible URL clue(s): {', '.join(record.visible_urls[:2])}.")
+            record.osint_leads.append(f"Visible URL / machine-readable clue(s): {', '.join(record.visible_urls[:2])}.")
+        if barcode_payloads:
+            record.osint_leads.append(f"QR/barcode payload(s) detected locally: {len(barcode_payloads)}. Review and redact before export.")
+        if record.raw_exif.get("GeoTrace Timezone"):
+            record.osint_leads.append(f"Offline timezone lookup: {record.raw_exif.get('GeoTrace Timezone')} from native/derived coordinates.")
         if record.visible_text_excerpt:
             record.osint_leads.append("On-screen text was recovered through OCR. Preserve the screenshot origin and any matching browser/application logs.")
         if record.possible_geo_clues:

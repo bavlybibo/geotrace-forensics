@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from html import escape
 import webbrowser
-from PyQt5.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 try:
     from ...core.map_workspace import build_map_workspace_bundle, render_map_workspace_markdown
@@ -98,7 +98,27 @@ def _open_selected_provider_link(window) -> None:
                 break
     for link in links:
         if isinstance(link, dict) and link.get('url'):
-            webbrowser.open(str(link['url']))
+            provider = str(link.get('provider', 'map provider'))
+            url = str(link.get('url'))
+            privacy_note = str(link.get('privacy_note', 'Open only after approval.'))
+            try:
+                answer = QMessageBox.question(
+                    window,
+                    'Privacy Approval Required',
+                    'This will open a third-party map provider outside GeoTrace.\n\n'
+                    f'Provider: {provider}\n'
+                    f'URL: {url}\n\n'
+                    f'{privacy_note}\n\n'
+                    'Open this provider link now?',
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if answer != QMessageBox.Yes:
+                    return
+            except Exception:
+                # In headless/test contexts, fail closed and do not open external URLs.
+                return
+            webbrowser.open(url)
             return
     try:
         window.show_info(

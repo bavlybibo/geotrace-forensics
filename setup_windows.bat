@@ -1,66 +1,39 @@
 @echo off
-setlocal ENABLEDELAYEDEXPANSION
-cd /d %~dp0
+setlocal EnableExtensions
+cd /d "%~dp0"
 
-set "GT_LOCAL_TEMP=%CD%\.temp"
-if not exist "%GT_LOCAL_TEMP%" mkdir "%GT_LOCAL_TEMP%"
-set "TEMP=%GT_LOCAL_TEMP%"
-set "TMP=%GT_LOCAL_TEMP%"
-set "PIP_CACHE_DIR=%GT_LOCAL_TEMP%\pip-cache"
-
-where py >nul 2>nul
-if %errorlevel%==0 (
-    set "PYTHON_LAUNCH=py -3"
-) else (
-    set "PYTHON_LAUNCH=python"
+echo [GeoTrace] Creating local virtual environment...
+if not exist .venv (
+  python -m venv .venv
+  if errorlevel 1 goto :error
 )
 
-%PYTHON_LAUNCH% -c "import sys; print(sys.version)" >nul 2>nul
-if errorlevel 1 (
-    echo [GeoTrace] Python 3 was not found. Install Python 3.11+ first.
-    pause
-    exit /b 1
-)
+echo [GeoTrace] Upgrading pip...
+.venv\Scripts\python.exe -m pip install --upgrade pip
+if errorlevel 1 goto :error
 
-if not exist ".venv\Scripts\python.exe" (
-    echo [GeoTrace] Creating local virtual environment...
-    %PYTHON_LAUNCH% -m venv .venv
-    if errorlevel 1 (
-        echo [GeoTrace] Failed to create .venv.
-        pause
-        exit /b 1
-    )
-)
+echo [GeoTrace] Installing core runtime dependencies...
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+if errorlevel 1 goto :error
 
-if not exist ".venv\Scripts\python.exe" (
-    echo [GeoTrace] .venv was not created correctly.
-    pause
-    exit /b 1
-)
+echo [GeoTrace] Installing safe optional UI/Geo/OSINT stack...
+.venv\Scripts\python.exe -m pip install -r requirements-ui.txt -r requirements-geo.txt -r requirements-osint.txt
+if errorlevel 1 goto :error
 
-if not defined GEOTRACE_TESSERACT_CMD (
-    if exist "C:\Program Files\Tesseract-OCR\tesseract.exe" set "GEOTRACE_TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe"
-)
-if defined GEOTRACE_TESSERACT_CMD (
-    echo [GeoTrace] Tesseract: %GEOTRACE_TESSERACT_CMD%
-) else (
-    echo [GeoTrace] Tesseract not found. OCR will fall back to visual map intelligence.
-)
+echo [GeoTrace] Installing developer/release dependencies...
+.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+if errorlevel 1 goto :error
 
-set "VENV_PYTHON=%CD%\.venv\Scripts\python.exe"
+echo [GeoTrace] Running release smoke check...
+.venv\Scripts\python.exe tools\smoke_check.py
+if errorlevel 1 goto :error
 
-"%VENV_PYTHON%" -m pip install --disable-pip-version-check --no-cache-dir -r requirements.txt
-if errorlevel 1 (
-    echo [GeoTrace] Dependency installation failed.
-    pause
-    exit /b 1
-)
+echo.
+echo [GeoTrace] Setup complete. Run run_windows.bat to start the app.
+echo [GeoTrace] Heavy AI stack is optional. To install it, run setup_full_stack_windows.bat.
+exit /b 0
 
-echo [GeoTrace] Generating demo evidence...
-"%VENV_PYTHON%" tools\generate_demo_evidence.py
-if errorlevel 1 (
-    echo [GeoTrace] Demo evidence generation hit a non-fatal issue. The app can still run.
-)
-
-echo [GeoTrace] Setup finished.
-pause
+:error
+echo.
+echo [GeoTrace] Setup failed. Check the error above.
+exit /b 1

@@ -1,0 +1,6 @@
+# Recommended optional stack for normal analyst work.
+# This avoids the largest local-AI packages so setup is more reliable on Windows.
+-r requirements-ui.txt
+-r requirements-geo.txt
+-r requirements-forensics.txt
+-r requirements-osint.txt

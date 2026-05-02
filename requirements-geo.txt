@@ -1,0 +1,6 @@
+# Optional geo intelligence stack
+# Install with: pip install -r requirements-geo.txt
+rapidfuzz>=3.9.0
+geopy>=2.4.1
+shapely>=2.0.4
+h3>=4.1.0

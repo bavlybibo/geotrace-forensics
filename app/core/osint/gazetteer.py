@@ -101,17 +101,35 @@ def unique(items: Iterable[str], limit: int = 12) -> list[str]:
     return out
 
 
+def alias_in_text(alias: str, text: str) -> bool:
+    """Conservative full-token alias match for OCR/geocoder text.
+
+    Loose substring matching made short aliases such as ``la`` match words like
+    ``available``. This helper requires token boundaries and suppresses 1-2
+    character Latin aliases unless a stronger geolocation source is present.
+    """
+    alias_norm = normalize_text(alias).lower()
+    text_norm = normalize_text(text).lower()
+    if not alias_norm or not text_norm:
+        return False
+    alias_compact = re.sub(r"[^a-z0-9\u0600-\u06ff]+", "", alias_norm)
+    if re.fullmatch(r"[a-z]{1,2}", alias_compact):
+        return False
+    return re.search(
+        rf"(?<![a-z0-9\u0600-\u06ff]){re.escape(alias_norm)}(?![a-z0-9\u0600-\u06ff])",
+        text_norm,
+    ) is not None
+
+
 def first_match(text: str, aliases: Mapping[str, tuple[str, ...]]) -> str:
-    lower = normalize_text(text).lower()
     for canonical, tokens in aliases.items():
-        if any(normalize_text(token).lower() in lower for token in tokens):
+        if any(alias_in_text(token, text) for token in tokens):
             return canonical
     return "Unavailable"
 
 
 def all_matches(text: str, aliases: Mapping[str, tuple[str, ...]], limit: int = 8) -> list[str]:
-    lower = normalize_text(text).lower()
-    matches = [canonical for canonical, tokens in aliases.items() if any(normalize_text(token).lower() in lower for token in tokens)]
+    matches = [canonical for canonical, tokens in aliases.items() if any(alias_in_text(token, text) for token in tokens)]
     return unique(matches, limit=limit)
 
 

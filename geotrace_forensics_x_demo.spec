@@ -1,52 +1,34 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""Demo PyInstaller spec for GeoTrace Forensics X.
+from pathlib import Path
 
-This build includes demo_evidence for classroom walkthroughs and recordings.
-Do not use this spec for public production releases.
-"""
-from PyInstaller.utils.hooks import collect_submodules
-
-hiddenimports = (
-    collect_submodules('PIL')
-    + collect_submodules('reportlab')
-    + collect_submodules('folium')
-    + collect_submodules('matplotlib')
-    + collect_submodules('pytesseract')
-    + collect_submodules('pillow_heif')
-)
+block_cipher = None
+project = Path.cwd()
 
 a = Analysis(
     ['main.py'],
-    pathex=[],
+    pathex=[str(project)],
     binaries=[],
-    datas=[('assets', 'assets'), ('data', 'data'), ('demo_evidence', 'demo_evidence')],
-    hiddenimports=hiddenimports,
+    datas=[
+        ('assets', 'assets'),
+        ('data', 'data'),
+        ('docs', 'docs'),
+        ('demo_evidence', 'demo_evidence'),
+        ('README.md', '.'),
+        ('LICENSE', '.'),
+        ('PRIVACY.md', '.'),
+        ('SECURITY.md', '.'),
+        ('DISCLAIMER.md', '.'),
+    ],
+    hiddenimports=['matplotlib.backends.backend_agg', 'PIL._tkinter_finder'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['tests'],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
     noarchive=False,
 )
-pyz = PYZ(a.pure)
-exe = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
-    name='GeoTraceForensicsX-Demo',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    console=False,
-    icon='assets/app_icon.ico',
-)
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='GeoTraceForensicsX-Demo',
-)
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='GeoTraceForensicsXDemo', debug=False, console=False)
+coll = COLLECT(exe, a.binaries, a.zipfiles, a.datas, strip=False, upx=True, name='GeoTraceForensicsXDemo')

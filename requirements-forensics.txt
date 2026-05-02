@@ -1,0 +1,8 @@
+# Optional forensic + geo precision stack.
+# Install only when you need deeper metadata/barcode/timezone/indexing features.
+PyExifTool>=0.5.6
+zxing-cpp>=3.0.0
+ImageHash>=4.3.1
+timezonefinder>=6.5.0
+pycountry>=24.6.1
+duckdb>=1.0.0

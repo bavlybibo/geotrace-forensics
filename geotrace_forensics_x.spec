@@ -1,35 +1,34 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""Production PyInstaller spec for GeoTrace Forensics X.
+from pathlib import Path
 
-Production releases use a one-folder bundle so Qt/report/map assets stay easy to
-inspect and the release script can smoke-test dist\GeoTraceForensicsX\GeoTraceForensicsX.exe.
-Demo evidence is intentionally excluded from this production build. Use
-geotrace_forensics_x_demo.spec for classroom/demo bundles.
-"""
-from PyInstaller.utils.hooks import collect_submodules
-
-hiddenimports = (
-    collect_submodules('PIL')
-    + collect_submodules('reportlab')
-    + collect_submodules('folium')
-    + collect_submodules('matplotlib')
-    + collect_submodules('pytesseract')
-    + collect_submodules('pillow_heif')
-)
+block_cipher = None
+project = Path.cwd()
 
 a = Analysis(
     ['main.py'],
-    pathex=[],
+    pathex=[str(project)],
     binaries=[],
-    datas=[('assets', 'assets'), ('data', 'data')],
-    hiddenimports=hiddenimports,
+    datas=[
+        ('assets', 'assets'),
+        ('data', 'data'),
+        ('docs', 'docs'),
+        ('README.md', '.'),
+        ('LICENSE', '.'),
+        ('PRIVACY.md', '.'),
+        ('SECURITY.md', '.'),
+        ('DISCLAIMER.md', '.'),
+    ],
+    hiddenimports=['matplotlib.backends.backend_agg', 'PIL._tkinter_finder'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['demo_evidence', 'tests'],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
     noarchive=False,
 )
-pyz = PYZ(a.pure)
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
@@ -41,11 +40,16 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
-    icon='assets/app_icon.ico',
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
 )
 coll = COLLECT(
     exe,
     a.binaries,
+    a.zipfiles,
     a.datas,
     strip=False,
     upx=True,

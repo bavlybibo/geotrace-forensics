@@ -30,6 +30,11 @@ except Exception as exc:
 
 from ..gps_utils import dms_to_decimal, format_coordinates, gps_confidence_summary
 
+try:
+    from ..forensics.exiftool_bridge import extract_exiftool_metadata
+except Exception:  # pragma: no cover
+    extract_exiftool_metadata = None  # type: ignore
+
 LOGGER = logging.getLogger("geotrace.exif_service")
 
 
@@ -345,6 +350,23 @@ def extract_exif(file_path: Path) -> Dict[str, str]:
                         data.setdefault(f"PNG {key}", rendered[:280])
     except Exception as exc:
         LOGGER.debug("Non-critical EXIF parsing branch failed: %s", exc)
+
+    if extract_exiftool_metadata is not None:
+        try:
+            exiftool_result = extract_exiftool_metadata(file_path)
+            for key, value in exiftool_result.aliases.items():
+                data.setdefault(key, value)
+            for key, value in exiftool_result.metadata.items():
+                data.setdefault(key, value)
+            data["__exiftool_status__"] = (
+                "executed" if exiftool_result.executed
+                else "available_not_executed" if exiftool_result.available
+                else "not_available"
+            )
+            if exiftool_result.warnings and exiftool_result.available:
+                warnings.append("ExifTool: " + " ".join(exiftool_result.warnings[:2]))
+        except Exception as exc:
+            warnings.append(f"ExifTool enrichment failed: {exc.__class__.__name__}")
 
     data["__raw_tags__"] = raw_tags
     if warnings:
@@ -940,6 +962,15 @@ def _parse_gps_string(value: str) -> List[float]:
     return [float(item) for item in re.findall(r"-?\d+(?:\.\d+)?", value or "")[:3]]
 
 
+def _gps_values_to_decimal(values: List[float], ref: str) -> float:
+    if len(values) == 1:
+        result = float(values[0])
+        if str(ref or "").upper().strip() in {"S", "W"} and result > 0:
+            result *= -1
+        return round(result, 6)
+    return dms_to_decimal(values, ref)
+
+
 def extract_gps(exif: Dict[str, str]):
     tags = exif.get("__raw_tags__", {})
     try:
@@ -978,8 +1009,8 @@ def extract_gps(exif: Dict[str, str]):
         if lat_text and lon_text:
             lat_ref = exif.get("GPS GPSLatitudeRef", "N")
             lon_ref = exif.get("GPS GPSLongitudeRef", "E")
-            latitude = dms_to_decimal(_parse_gps_string(lat_text), lat_ref)
-            longitude = dms_to_decimal(_parse_gps_string(lon_text), lon_ref)
+            latitude = _gps_values_to_decimal(_parse_gps_string(lat_text), lat_ref)
+            longitude = _gps_values_to_decimal(_parse_gps_string(lon_text), lon_ref)
             altitude = None
             if exif.get("GPS GPSAltitude"):
                 alt_values = _parse_gps_string(exif.get("GPS GPSAltitude", ""))
