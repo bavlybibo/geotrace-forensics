@@ -8,6 +8,7 @@ visual tags only. It does not call external services or claim exact visual recog
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Iterable, Any
 
@@ -41,8 +42,33 @@ def load_local_landmarks() -> list[dict[str, Any]]:
     return merged
 
 
+def _normalise_alias_text(value: str) -> str:
+    """Normalize aliases/OCR text for conservative full-token matching.
+
+    Supports English, digits, and Arabic while avoiding weak substring matches
+    such as matching a short alias inside an unrelated word.
+    """
+    value = str(value or "").lower()
+    value = re.sub(r"[^0-9a-z\u0600-\u06ff]+", " ", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _alias_in_text(alias: str, blob: str) -> bool:
+    alias_norm = _normalise_alias_text(alias)
+    blob_norm = _normalise_alias_text(blob)
+    if not alias_norm or not blob_norm:
+        return False
+    # Reject extremely short Latin aliases unless they are part of a longer,
+    # explicit alias in the dataset. This keeps the matcher conservative.
+    alias_compact = re.sub(r"[^a-z0-9\u0600-\u06ff]+", "", alias_norm)
+    if re.fullmatch(r"[a-z]{1,2}", alias_compact):
+        return False
+    pattern = rf"(?<![0-9a-z\u0600-\u06ff]){re.escape(alias_norm)}(?![0-9a-z\u0600-\u06ff])"
+    return re.search(pattern, blob_norm) is not None
+
+
 def match_local_landmarks(texts: Iterable[str], visual_tags: Iterable[str] = (), *, limit: int = 8) -> list[dict[str, Any]]:
-    blob = "\n".join(str(t or "") for t in texts).lower()
+    blob = "\n".join(str(t or "") for t in texts)
     visual = {str(tag or "").lower() for tag in visual_tags if str(tag or "").strip()}
     matches: list[dict[str, Any]] = []
     for item in load_local_landmarks():

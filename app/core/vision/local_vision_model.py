@@ -88,6 +88,16 @@ def _safe_int(value: Any, default: int = 8) -> int:
         return default
 
 
+def _split_command(command: str) -> list[str]:
+    """Split a direct runner command safely on Linux/macOS and Windows.
+
+    Python's POSIX shlex mode strips backslashes from Windows paths such as
+    C:\\hostedtoolcache\\windows\\Python\\python.exe. Using posix=False on
+    Windows preserves those paths so CI/self-test commands execute correctly.
+    """
+    return shlex.split(command, posix=(os.name != "nt"))
+
+
 def _load_manifest(path: Path) -> dict[str, Any]:
     manifest_path = path if path.is_file() else path / "manifest.json"
     if not manifest_path.exists():
@@ -152,7 +162,7 @@ def _resolve_status() -> tuple[LocalVisionModelStatus, dict[str, Any]]:
     if command:
         capabilities.append("local-model-execution")
         try:
-            args = shlex.split(command)
+            args = _split_command(command)
         except Exception as exc:
             args = []
             warnings.append(f"Local vision command cannot be parsed safely: {exc}")
@@ -313,7 +323,7 @@ def run_optional_local_vision(image_path: Path | str) -> LocalVisionInferenceRes
 
     timeout = _safe_int(manifest.get("timeout_seconds", status.timeout_seconds), status.timeout_seconds)
     try:
-        args = shlex.split(command)
+        args = _split_command(command)
     except Exception as exc:
         return LocalVisionInferenceResult(
             available=True,

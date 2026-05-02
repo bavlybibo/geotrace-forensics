@@ -178,6 +178,13 @@ def parse_map_url_signals(texts: Iterable[str], *, source: str = "visible_text",
                 candidate_has_precise_signal |= _append_coordinate_signal(out, seen, provider="DMS coordinate text", raw=match.group(0), coords=coords, source=source, confidence=84, key_prefix="dms")
 
             for match in _PLAIN_COORD_RE.finditer(decoded):
+                # A provider URL such as Google Maps @lat,lon is already captured
+                # above. Do not emit a second generic/plain coordinate signal for
+                # the same candidate URL. Plain-coordinate extraction still runs
+                # for non-provider text and for candidates without a stronger
+                # provider-specific coordinate pattern.
+                if candidate_has_precise_signal and provider != "Map/coordinate text":
+                    continue
                 coords = _to_float_pair(match.group(1), match.group(2))
                 provider_for_plain = provider if provider != "Map/coordinate text" else "Visible coordinate text"
                 candidate_has_precise_signal |= _append_coordinate_signal(out, seen, provider=provider_for_plain, raw=match.group(0), coords=coords, source=source, confidence=86, key_prefix="plain")

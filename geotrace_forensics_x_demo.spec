@@ -30,5 +30,5 @@ a = Analysis(
     noarchive=False,
 )
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='GeoTraceForensicsXDemo', debug=False, console=False)
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='GeoTraceForensicsXDemo', debug=False, console=False, icon=str(project / 'assets' / 'app_icon.ico'))
 coll = COLLECT(exe, a.binaries, a.zipfiles, a.datas, strip=False, upx=True, name='GeoTraceForensicsXDemo')

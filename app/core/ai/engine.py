@@ -21,6 +21,7 @@ from .evidence_graph import (
 from .evidence_strength import assess_map_strength, assess_record_strength
 from .findings import BatchAIFinding
 from .evidence_fusion import attach_fused_claims_to_finding
+from .context_reasoner import attach_deep_context_reasoning
 from .planning import assign_priority_ranks, attach_plans
 
 
@@ -200,6 +201,7 @@ def run_ai_batch_assessment(records: Iterable[EvidenceRecord]) -> Dict[str, Batc
     _attach_deep_image_methodology(records_list, findings)
     _attach_image_threat_decision(records_list, findings)
     _attach_evidence_fusion(records_list, findings)
+    attach_deep_context_reasoning(records_list, findings)
     attach_plans(records_list, findings)
     _attach_graph_and_readiness(records_list, findings)
     assign_priority_ranks(records_list, findings)
