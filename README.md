@@ -16,6 +16,10 @@
   <img alt="Privacy" src="https://img.shields.io/badge/privacy-local--first-success" />
 </p>
 
+<p align="center">
+  <strong>Current release:</strong> v12.10.31 &nbsp;|&nbsp; <strong>Build channel:</strong> Optional Stack Doctor + GeoData Ready
+</p>
+
 ---
 
 ## Overview

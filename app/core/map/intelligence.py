@@ -449,14 +449,8 @@ def analyze_map_intelligence(file_path: Path, visible: Mapping[str, object]) -> 
     )
     if filename_only_signal:
         # A filename such as map.png or cairo_scene.jpg is useful as a triage hint,
-        # but it must not become a strong map screenshot finding or plotted coordinate
-        # by itself. Retain the city/area as a weak candidate so the UI can show
-        # what triggered the hint while the evidence basis remains filename-only.
+        # but it must not become a map screenshot finding or plotted coordinate by itself.
         detected = bool(filename_location_hints)
-        if candidate_city == "Unavailable" and candidate_city_filename != "Unavailable":
-            candidate_city = candidate_city_filename
-        if candidate_area == "Unavailable" and candidate_area_filename != "Unavailable":
-            candidate_area = candidate_area_filename
         app_detected = "Filename hint only" if detected else "Unknown"
         map_type = "Filename location hint only" if detected else "Unknown"
         route_overlay = False
@@ -534,14 +528,11 @@ def analyze_map_intelligence(file_path: Path, visible: Mapping[str, object]) -> 
         reasons.append("region-aware OCR found place text in a high-value map/screenshot zone")
     if offline_hits:
         top_offline = offline_hits[0]
-        offline_confidence = min(88, int(top_offline.get("confidence", 0) or 0))
-        if filename_only_signal and not (textual_google or labels or locations or urls or map_url_signals):
-            offline_confidence = min(48, offline_confidence)
-        confidence = max(confidence, offline_confidence)
+        confidence = max(confidence, min(88, int(top_offline.get("confidence", 0) or 0)))
         reasons.append(f"offline geocoder seed matched: {top_offline.get('name', 'place')}")
         if candidate_city == "Unavailable" and top_offline.get("city"):
             candidate_city = str(top_offline.get("city"))
-        if not filename_only_signal and not landmarks and top_offline.get("level") == "poi":
+        if not landmarks and top_offline.get("level") == "poi":
             landmarks = _unique([str(top_offline.get("name", ""))], limit=4)
     if route_start_label or route_end_label:
         route_overlay = True

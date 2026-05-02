@@ -37,6 +37,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import subprocess
 import tempfile
@@ -46,6 +47,33 @@ from typing import Any
 _BLOCKED_COMMAND_TOKENS = {"&&", "||", "|", ";", "<", ">", ">>", "2>", "`"}
 _BLOCKED_SHELL_EXECUTABLES = {"cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe", "bash", "bash.exe", "sh", "sh.exe"}
 _DEFAULT_MAX_OUTPUT_BYTES = 200_000
+
+
+
+def _looks_like_windows_command(command: str) -> bool:
+    """Detect Windows path syntax before shlex parsing on non-Windows hosts."""
+    return bool(re.search(r"(^|\s|[\"'])(?:[A-Za-z]:[\\/]|\\\\)", str(command or "")))
+
+
+def _strip_outer_quotes(value: str) -> str:
+    text = str(value or "")
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+        return text[1:-1]
+    return text
+
+
+def _split_command(command: str) -> list[str]:
+    """Split a local runner command without corrupting Windows paths.
+
+    ``shlex.split`` defaults to POSIX parsing on Linux/macOS, which treats
+    backslashes in ``C:\\Users\\...`` as escapes and turns the path into
+    ``C:Users...``.  The project is Windows-first, so use non-POSIX parsing
+    whenever a Windows-looking path is present, then trim only surrounding
+    quotes.  Shell-control tokens are still left as individual args so the
+    policy gate can block them.
+    """
+    posix = not _looks_like_windows_command(command)
+    return [_strip_outer_quotes(arg) for arg in shlex.split(command, posix=posix)]
 
 
 @dataclass(slots=True)
@@ -86,16 +114,6 @@ def _safe_int(value: Any, default: int = 8) -> int:
         return max(1, min(60, int(value)))
     except Exception:
         return default
-
-
-def _split_command(command: str) -> list[str]:
-    """Split a direct runner command safely on Linux/macOS and Windows.
-
-    Python's POSIX shlex mode strips backslashes from Windows paths such as
-    C:\\hostedtoolcache\\windows\\Python\\python.exe. Using posix=False on
-    Windows preserves those paths so CI/self-test commands execute correctly.
-    """
-    return shlex.split(command, posix=(os.name != "nt"))
 
 
 def _load_manifest(path: Path) -> dict[str, Any]:
