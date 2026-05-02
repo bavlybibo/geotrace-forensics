@@ -1,10 +1,17 @@
 from __future__ import annotations
 
-"""Compatibility facade for the legacy CTF GeoLocator import path.
+"""Compatibility facade for the CTF GeoLocator page.
 
-The real implementation lives in :mod:`app.ui.pages.ctf.geolocator_page`.
-Keep private helper exports explicit because wildcard imports intentionally skip
-underscore-prefixed names, while regression tests import those helpers directly.
+This module preserves the old import path:
+
+    app.ui.pages.ctf_geolocator_page
+
+The real implementation lives in:
+
+    app.ui.pages.ctf.geolocator_page
+
+Wildcard imports do not export private helpers starting with an underscore,
+so this facade explicitly re-exports the helpers used by regression tests.
 """
 
 from .ctf.geolocator_page import *  # noqa: F401,F403
