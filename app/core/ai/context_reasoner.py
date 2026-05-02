@@ -201,12 +201,43 @@ def apply_deep_context_reasoning(records: Iterable[EvidenceRecord], findings: Di
             finding.add_action("Compare duplicate peers side by side and keep only corroborated location claims in the final narrative.")
 
 
+def attach_deep_context_reasoning(
+    records: EvidenceRecord | Iterable[EvidenceRecord],
+    findings: Dict[str, BatchAIFinding] | BatchAIFinding | None = None,
+) -> Dict[str, BatchAIFinding]:
+    """Compatibility wrapper used by older tests/extensions.
+
+    Historically the AI engine exposed an ``attach_*`` function.  Keep that
+    public behavior while delegating to the current deterministic
+    implementation.  The wrapper accepts either a record iterable with a
+    findings dict, a single record with a single finding, or records without
+    findings (in which case findings are created and returned).
+    """
+    if isinstance(records, EvidenceRecord):
+        records_list = [records]
+    else:
+        records_list = list(records)
+
+    if findings is None:
+        findings_map: Dict[str, BatchAIFinding] = {r.evidence_id: BatchAIFinding() for r in records_list}
+    elif isinstance(findings, BatchAIFinding):
+        if len(records_list) != 1:
+            raise ValueError("A single BatchAIFinding can only be attached to one EvidenceRecord.")
+        findings_map = {records_list[0].evidence_id: findings}
+    else:
+        findings_map = findings
+
+    apply_deep_context_reasoning(records_list, findings_map)
+    return findings_map
+
+
 # Compatibility aliases for older tests/extensions.
 run_deep_context_reasoning = apply_deep_context_reasoning
 reason_about_deep_context = apply_deep_context_reasoning
 
 __all__ = [
     "apply_deep_context_reasoning",
+    "attach_deep_context_reasoning",
     "run_deep_context_reasoning",
     "reason_about_deep_context",
 ]
