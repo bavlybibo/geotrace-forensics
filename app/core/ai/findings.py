@@ -117,6 +117,8 @@ class BatchAIFinding:
             self.add_action("Resolve evidence-strength limitation: " + self.evidence_strength_limitations[0])
         if self.next_best_action == "No AI next-best-action generated yet." and self.action_plan:
             self.next_best_action = self.action_plan[0]
+        if self.action_plan and "Suggested first step" not in self.summary:
+            self.summary = self.summary.rstrip(" .") + f". Suggested first step: {self.action_plan[0]}"
         if self.flags:
             self.executive_note = f"Review this item because {self.reasons[0] if self.reasons else 'one or more cross-evidence signals require review'}"
         elif self.action_plan:

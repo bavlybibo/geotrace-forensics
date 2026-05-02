@@ -1,7 +1,7 @@
 APP_NAME = 'GeoTrace Forensics X'
 APP_VERSION = '12.10.31'
 APP_ORGANIZATION = 'Cyber Forensics Team'
-APP_BUILD_CHANNEL = 'Optional Stack Doctor + GeoData Ready'
+APP_BUILD_CHANNEL = 'Public Release Candidate'
 APP_RELEASE_FLAVOR = 'Recommended Optional Stack + GeoNames Import Guidance'
 APP_COPYRIGHT = 'GeoTrace Forensics X • AI-Assisted Investigation Build • Deep Image Methodology + Privacy-Safe OSINT/CTF Lab'
 DEFAULT_ANALYST_NAME = 'Lead Analyst'

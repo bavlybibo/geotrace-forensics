@@ -448,11 +448,17 @@ def analyze_map_intelligence(file_path: Path, visible: Mapping[str, object]) -> 
         textual_google or visual_map_usable or has_map_label or route_overlay or map_url_detected
     )
     if filename_only_signal:
-        # A filename such as map.png or cairo_scene.jpg is useful as a triage hint,
-        # but it must not become a map screenshot finding or plotted coordinate by itself.
+        # A filename such as map.png or Screenshot_Map_Cairo.png is useful as a
+        # triage hint, but it must remain weak and must not become GPS/coordinate
+        # proof.  Keep the candidate visible for UX/tests while the basis and
+        # confidence cap preserve the forensic limitation.
         detected = bool(filename_location_hints)
         app_detected = "Filename hint only" if detected else "Unknown"
         map_type = "Filename location hint only" if detected else "Unknown"
+        if candidate_city == "Unavailable" and candidate_city_filename != "Unavailable":
+            candidate_city = candidate_city_filename
+        if candidate_area == "Unavailable" and candidate_area_filename != "Unavailable":
+            candidate_area = candidate_area_filename
         route_overlay = False
         route_confidence = min(route_confidence, 35)
 

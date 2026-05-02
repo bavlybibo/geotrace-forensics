@@ -118,10 +118,23 @@ def _has_reliable_time_anchor(record: EvidenceRecord) -> bool:
     timestamp = _clean(getattr(record, "timestamp", ""))
     if not timestamp or timestamp.casefold() in {"unknown", "unavailable", "n/a", "none"}:
         return False
+
+    confidence = int(getattr(record, "timestamp_confidence", 0) or 0)
+    if confidence <= 0:
+        # Older tests/fixtures may provide a concrete timestamp without a
+        # confidence/source field.  Treat the timestamp as usable unless the
+        # source explicitly says it is weak.  If a fixture intentionally sets
+        # timestamp_confidence=0 while using the default Unknown timestamp, the
+        # guard above still marks it unreliable.
+        source = _norm(getattr(record, "timestamp_source", ""))
+        if source in _WEAK_TIME_SOURCES or "filename" in source:
+            return False
+        return True
+
     source = _norm(getattr(record, "timestamp_source", ""))
     if source in _WEAK_TIME_SOURCES or "filename" in source:
         return False
-    return True
+    return confidence >= 45
 
 
 def _location_signature(record: EvidenceRecord) -> str:
@@ -160,6 +173,9 @@ def apply_deep_context_reasoning(records: Iterable[EvidenceRecord], findings: Di
                 confidence_delta=1,
                 breakdown_detail="displayed location context without native GPS proof",
             )
+            finding.add_matrix_line(
+                "AI reasoning: Location posture — displayed/OCR/map/filename location context is an investigative lead, not native GPS proof."
+            )
             finding.add_action("Separate native GPS evidence from displayed map/OCR/filename location leads in the report wording.")
 
         if _has_any_location_anchor(record) and not _has_reliable_time_anchor(record):
@@ -170,6 +186,9 @@ def apply_deep_context_reasoning(records: Iterable[EvidenceRecord], findings: Di
                 delta=5,
                 confidence_delta=1,
                 breakdown_detail="location context without reliable capture/display time anchor",
+            )
+            finding.add_matrix_line(
+                "AI reasoning: Location posture — location context lacks a reliable non-filename time anchor for timeline claims."
             )
             finding.add_action("Corroborate the location lead with a reliable timestamp before using it in a timeline claim.")
 

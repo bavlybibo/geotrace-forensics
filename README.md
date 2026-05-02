@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <strong>Current release:</strong> v12.10.31 &nbsp;|&nbsp; <strong>Build channel:</strong> Optional Stack Doctor + GeoData Ready
+  <strong>Current release:</strong> v12.10.31 &nbsp;|&nbsp; <strong>Build channel:</strong> Public Release Candidate
 </p>
 
 ---
